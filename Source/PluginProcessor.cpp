@@ -394,7 +394,6 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     // avoids reading from and writing to the same host buffer while applying lookahead.
     if (numSamples > triggerBuffer.getNumSamples())
     {
-        mainOutput.clear();
         const int copyChannels = juce::jmin (mainInput.getNumChannels(), mainOutput.getNumChannels());
         for (int ch = 0; ch < copyChannels; ++ch)
             mainOutput.copyFrom (ch, 0, mainInput, ch, 0, numSamples);
