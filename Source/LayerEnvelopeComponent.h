@@ -58,7 +58,5 @@ private:
     std::unique_ptr<ComboAtt> attackCurveAttachment, decayCurveAttachment, releaseCurveAttachment;
 
     Handle activeHandle = Handle::None;
-    juce::Point<float> mouseDownPosition;
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LayerEnvelopeComponent)
 };
