@@ -72,7 +72,24 @@ float LayerEnvelopeComponent::curveValue (float progress, int curve) noexcept
         case 1: return (std::exp (5.0f * t) - 1.0f) / (std::exp (5.0f) - 1.0f);
         case 2: return std::log1p (9.0f * t) / std::log (10.0f);
         case 3: return t * t * (3.0f - 2.0f * t);
-        case 4: return t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f);
+        case 4:
+        {
+            float u = t;
+            for (int iteration = 0; iteration < 6; ++iteration)
+            {
+                const float oneMinus = 1.0f - u;
+                const float x = 3.0f * oneMinus * oneMinus * u * 0.22f
+                                + 3.0f * oneMinus * u * u * 0.42f + u * u * u;
+                const float dx = 3.0f * oneMinus * oneMinus * 0.22f
+                                 + 6.0f * oneMinus * u * (0.42f - 0.22f)
+                                 + 3.0f * u * u * (1.0f - 0.42f);
+                if (std::abs (dx) > 1.0e-5f)
+                    u = juce::jlimit (0.0f, 1.0f, u + (t - x) / dx);
+            }
+            const float oneMinus = 1.0f - u;
+            return 3.0f * oneMinus * oneMinus * u * 0.02f
+                   + 3.0f * oneMinus * u * u * 0.98f + u * u * u;
+        }
         default: return t;
     }
 }
