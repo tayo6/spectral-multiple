@@ -189,6 +189,12 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
     }
 
     const auto& p = parameters[(size_t) layer];
+    if (p.muted)
+    {
+        voice.active = false;
+        return 0.0f;
+    }
+
     const auto& audio = voice.sample->audio;
     const int length = audio.getNumSamples();
 
@@ -284,10 +290,14 @@ void LayeredSampleEngine::processBlock (const juce::AudioBuffer<float>& triggerI
 
     for (int sample = 0; sample < numSamples; ++sample)
     {
+        bool midiTriggeredThisSample = false;
         while (hasMidiEvent && midiPosition <= sample)
         {
             if (midiEnabled && midiMessage.isNoteOn())
+            {
                 triggerAllLayers();
+                midiTriggeredThisSample = true;
+            }
 
             hasMidiEvent = midiIterator.getNextEvent (midiMessage, midiPosition);
         }
@@ -296,7 +306,7 @@ void LayeredSampleEngine::processBlock (const juce::AudioBuffer<float>& triggerI
         const float inputR = inputChannels > 1 ? triggerInput.getSample (1, sample) : inputL;
         const float inputLevel = juce::jmax (std::abs (inputL), std::abs (inputR));
 
-        if (audioEnabled && refractoryRemaining <= 0
+        if (audioEnabled && ! midiTriggeredThisSample && refractoryRemaining <= 0
             && inputLevel >= threshold && previousInputLevel < threshold)
         {
             triggerAllLayers();
