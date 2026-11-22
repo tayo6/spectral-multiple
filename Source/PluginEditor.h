@@ -1,0 +1,132 @@
+#pragma once
+
+#include "PluginProcessor.h"
+
+/** Trace colour of signal n (0-based). Chosen to stay apart on a dark background. */
+inline juce::Colour signalColour (int n)
+{
+    static const juce::uint32 table[] = { 0xff4fd1ff,   // 1 cyan
+                                          0xffffb04a,   // 2 orange
+                                          0xffff6bd6,   // 3 pink
+                                          0xff7be07a,   // 4 green
+                                          0xffb48cff,   // 5 violet
+                                          0xffff6b5e }; // 6 red
+    return juce::Colour (table[juce::jlimit (0, 5, n)]);
+}
+
+//==============================================================================
+/** The oscilloscope display. */
+class ScopeView final : public juce::Component, private juce::Timer
+{
+public:
+    explicit ScopeView (WaveLensProcessor&);
+    ~ScopeView() override { stopTimer(); }
+
+    void paint (juce::Graphics&) override;
+
+private:
+    void timerCallback() override { repaint(); }
+
+    struct Snapshot
+    {
+        int  head = 0, passStart = 0, filled = 0, heldFrom = 0, heldTo = 0;
+        bool has = false, heldValid = false;
+    };
+
+    struct Trace { int ch; juce::Colour colour; };
+
+    void drawLane (juce::Graphics&, juce::Rectangle<float> lane, const std::vector<Trace>&,
+                   const Snapshot&, float gain, bool showHeld, const juce::String& title);
+    void drawTrace (juce::Graphics&, juce::Rectangle<float> lane, int ch, juce::Colour,
+                    const Snapshot&, float gain, bool held, float fillAlpha);
+    juce::String windowLabel() const;
+
+    WaveLensProcessor& proc;
+    std::atomic<float>* pView;
+    std::atomic<float>* pCapture;
+    std::atomic<float>* pBars;
+    std::atomic<float>* pTimeMs;
+    std::atomic<float>* pGain;
+    std::atomic<float>* pShowLow;
+    std::atomic<float>* pShowMid;
+    std::atomic<float>* pShowHigh;
+    std::atomic<float>* pLayout;
+    std::atomic<float>* pShowSig[WaveLensProcessor::kMaxSignals];
+    std::atomic<float>* pFreeze;
+    std::atomic<float>* pHold;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ScopeView)
+};
+
+//==============================================================================
+/** Peak / RMS / Crest meter. Click to cycle the mode. */
+class MeterView final : public juce::Component, private juce::Timer
+{
+public:
+    explicit MeterView (WaveLensProcessor&);
+    ~MeterView() override { stopTimer(); }
+
+    void paint (juce::Graphics&) override;
+    void mouseDown (const juce::MouseEvent&) override;
+
+private:
+    void timerCallback() override { repaint(); }
+
+    WaveLensProcessor& proc;
+    std::atomic<float>* pMeter;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MeterView)
+};
+
+//==============================================================================
+class WaveLensLookAndFeel final : public juce::LookAndFeel_V4
+{
+public:
+    WaveLensLookAndFeel();
+};
+
+//==============================================================================
+class WaveLensEditor final : public juce::AudioProcessorEditor, private juce::Timer
+{
+public:
+    explicit WaveLensEditor (WaveLensProcessor&);
+    ~WaveLensEditor() override;
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+
+private:
+    void timerCallback() override;
+    void updateEnabledStates();
+
+    using SliderAtt = juce::AudioProcessorValueTreeState::SliderAttachment;
+    using ComboAtt  = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
+    using ButtonAtt = juce::AudioProcessorValueTreeState::ButtonAttachment;
+
+    void setupCombo (juce::ComboBox&, const char* paramId, std::unique_ptr<ComboAtt>&);
+    void setupToggle (juce::TextButton&, const juce::String& text, const char* paramId,
+                      std::unique_ptr<ButtonAtt>&);
+
+    WaveLensProcessor& proc;
+    WaveLensLookAndFeel lnf;
+
+    ScopeView scope;
+    MeterView meter;
+
+    juce::ComboBox viewBox, captureBox, barsBox, inputBox, layoutBox;
+    juce::Slider timeSlider, gainSlider, loSlider, hiSlider;
+    juce::TextButton lowBtn, midBtn, highBtn, listenBtn, freezeBtn, holdBtn, resetBtn;
+    juce::TextButton sigBtn[WaveLensProcessor::kMaxSignals];
+
+    std::unique_ptr<ComboAtt>  viewAtt, captureAtt, barsAtt, inputAtt, layoutAtt;
+    std::unique_ptr<SliderAtt> timeAtt, gainAtt, loAtt, hiAtt;
+    std::unique_ptr<ButtonAtt> lowAtt, midAtt, highAtt, listenAtt, freezeAtt, holdAtt;
+    std::unique_ptr<ButtonAtt> sigAtt[WaveLensProcessor::kMaxSignals];
+
+    struct Caption { juce::String text; juce::Rectangle<int> area; };
+    std::vector<Caption> captions;
+    struct Group { juce::String title; juce::Rectangle<int> area; };
+    std::vector<Group> groups;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaveLensEditor)
+};
