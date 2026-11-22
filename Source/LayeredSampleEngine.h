@@ -10,9 +10,10 @@
 /**
     Six-layer transient sampler engine.
 
-    Slots 0-2 are pre-sample layers. They start as soon as a trigger is detected.
-    Slots 3-5 are main-sample layers. They start after the fixed pre-roll interval,
-    aligned with the latency-compensated dry input.
+    Slots 0-2 are pre-sample layers. Their start is scheduled earlier than the
+    delayed transient by the selected PRE lead.
+    Slots 3-5 are main-sample layers. They start at the fixed 100 ms lookahead
+    position, aligned with the latency-compensated dry input.
 
     Sample memory is immutable after loading. Replaced sample buffers are retained
     until the processor is destroyed so the audio thread never observes freed memory.
