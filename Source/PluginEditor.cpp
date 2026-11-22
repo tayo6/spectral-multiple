@@ -578,7 +578,7 @@ void WaveLensEditor::updateEnabledStates()
     barsBox.setVisible (capture == 0);
     timeSlider.setVisible (capture != 0);
 
-    // A signal's toggle is available once an input is routed to it in the host.
+    // A layer's visibility toggle is enabled once its sample has been loaded.
     for (int n = 0; n < WaveLensProcessor::kMaxSignals; ++n)
         sigBtn[n].setEnabled ((mask & (1 << n)) != 0);
 
