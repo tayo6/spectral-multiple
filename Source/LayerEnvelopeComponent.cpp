@@ -310,7 +310,7 @@ void LayerEnvelopeComponent::applyDrag (juce::Point<float> position)
 {
     const auto geometry = getGeometry();
     const float width = juce::jmax (1.0f, geometry.plot.getWidth());
-    const float x = juce::jlimit (0.015f, 0.985f,
+    const float x = juce::jlimit (0.0001f, 0.9999f,
                                   (position.x - geometry.plot.getX()) / width);
 
     const float attack = pAttack->load();
@@ -384,7 +384,6 @@ void LayerEnvelopeComponent::mouseDown (const juce::MouseEvent& event)
         return;
 
     beginGesture (bestHandle);
-    applyDrag (point);
 }
 
 void LayerEnvelopeComponent::mouseDrag (const juce::MouseEvent& event)
