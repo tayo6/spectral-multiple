@@ -47,6 +47,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
 
     AudioProcessorValueTreeState::ParameterLayout layout;
 
+    layout.add (std::make_unique<AudioParameterChoice> (PID { ids::view, 1 }, "Display", StringArray { "Waveform", "Spectrum" }, 0));
     layout.add (std::make_unique<AudioParameterChoice> (PID { ids::capture, 1 },  "Capture",
                                                         StringArray { "Tempo", "Live", "Scroll" }, 0));
     layout.add (std::make_unique<AudioParameterChoice> (PID { ids::bars, 1 },     "Window (bars)",
@@ -111,6 +112,9 @@ WaveLensProcessor::WaveLensProcessor()
         for (auto& a : *arr)
             a.store (0.0f, relaxed);
 
+    for (auto& a : spectrumDb) for (auto& b : a) b.store (-120.0f, relaxed);
+    for (auto& a : heldSpectrumDb) for (auto& b : a) b.store (-120.0f, relaxed);
+    pView = apvts.getRawParameterValue (ids::view);
     pCapture  = apvts.getRawParameterValue (ids::capture);
     pBars     = apvts.getRawParameterValue (ids::bars);
     pTimeMs   = apvts.getRawParameterValue (ids::timeMs);
@@ -162,8 +166,12 @@ void WaveLensProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
         rangeLp[s].reset();
     }
 
-    lastRangeLo = lastRangeHi = -1.0f;      // force coefficient update
+    lastRangeLo = lastRangeHi = -1.0f;
     lastRangeActive = false;
+    fftWindowSum = 0.0f;
+    for (int n = 0; n < kFFTSize; ++n) { fftWindow[(size_t)n] = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (float)n / (float)(kFFTSize - 1)); fftWindowSum += fftWindow[(size_t)n]; }
+    for (int b = 0; b < kSpectrumBins; ++b) { const float f = 20.0f * std::pow (1000.0f, (float)b / (float)(kSpectrumBins - 1)); const float x = juce::jlimit (0.0f, (float)(kFFTSize / 2 - 1), f * (float)sampleRate / (float)sampleRate * (float)kFFTSize / (float)sampleRate); spectrumBinLo[(size_t)b] = (int)std::floor(x); spectrumBinMix[(size_t)b] = x - (float)spectrumBinLo[(size_t)b]; }
+    fftWritePos.fill (0); fftSamplesSinceUpdate = fftSamplesCollected = 0;
 
     peakDecay = (float) std::exp (-1.0 / (0.35 * sampleRate));
     msAlpha   = (float) (1.0 - std::exp (-1.0 / (0.30 * sampleRate)));
@@ -191,8 +199,7 @@ void WaveLensProcessor::resetCapture (bool clearHeld)
     passStartCol.store (0);
     filled.store (0);
     hasData.store (false);
-    if (clearHeld)
-        heldValid.store (false);
+    if (clearHeld) { heldValid.store (false); fftSamplesSinceUpdate = fftSamplesCollected = 0; fftWritePos.fill (0); for (auto& a : spectrumDb) for (auto& b : a) b.store (-120.0f, relaxed); for (auto& a : heldSpectrumDb) for (auto& b : a) b.store (-120.0f, relaxed); }
 }
 
 void WaveLensProcessor::copyPassToHeld()
@@ -202,6 +209,24 @@ void WaveLensProcessor::copyPassToHeld()
 
     if (curCol - passStart >= 8)           // ignore tiny fragments from stop/start
         copyRangeToHeld (*this, passStart, curCol);
+}
+
+void WaveLensProcessor::pushSpectrumSamples (const float* v) noexcept
+{
+    for (int s = 0; s < kMaxSignals; ++s) { fftRing[(size_t)s][(size_t)fftWritePos[(size_t)s]] = v[s]; fftWritePos[(size_t)s] = (fftWritePos[(size_t)s] + 1) % kFFTSize; }
+    fftSamplesCollected = juce::jmin (kFFTSize, fftSamplesCollected + 1);
+    if (++fftSamplesSinceUpdate >= kSpectrumHop) { fftSamplesSinceUpdate = 0; if (fftSamplesCollected == kFFTSize) processSpectrumFrame(); }
+}
+
+void WaveLensProcessor::processSpectrumFrame() noexcept
+{
+    const float scale = 2.0f / juce::jmax (fftWindowSum, 1.0f);
+    for (int s = 0; s < kMaxSignals; ++s) {
+        auto& d = fftScratch[(size_t)s]; const int oldest = fftWritePos[(size_t)s];
+        for (int n = 0; n < kFFTSize; ++n) { d[(size_t)n] = fftRing[(size_t)s][(size_t)((oldest+n)%kFFTSize)] * fftWindow[(size_t)n]; d[(size_t)(kFFTSize+n)] = 0.0f; }
+        spectrumFft.performFrequencyOnlyForwardTransform (d.data(), true);
+        for (int b = 0; b < kSpectrumBins; ++b) { const int lo = spectrumBinLo[(size_t)b]; const float m = spectrumBinMix[(size_t)b]; const float mag = (d[(size_t)lo]*(1.0f-m)+d[(size_t)(lo+1)]*m)*scale; const float db = juce::Decibels::gainToDecibels (mag, -120.0f); const float old = spectrumDb[(size_t)s][(size_t)b].load(relaxed); spectrumDb[(size_t)s][(size_t)b].store (old + (db-old)*(db>old?0.68f:0.20f), relaxed); }
+    }
 }
 
 void WaveLensProcessor::startNewPass (bool copyToHeld, double startColumn)
@@ -517,6 +542,7 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
                 v[Sig1 + s] = y;
             }
 
+            pushSpectrumSamples (v);
             pushSample (v);
         }
 
