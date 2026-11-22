@@ -704,7 +704,7 @@ void WaveLensEditor::resized()
 
     constexpr int rowH = 26, rowGap = 6, captionW = 52;
 
-    auto rowOf = [] (juce::Rectangle<int> cell, int row)
+    auto rowOf = [=] (juce::Rectangle<int> cell, int row)
     {
         return juce::Rectangle<int> (cell.getX() + 10, cell.getY() + 24 + row * (rowH + rowGap),
                                      cell.getWidth() - 20, rowH);
@@ -725,7 +725,7 @@ void WaveLensEditor::resized()
         timeSlider.setBounds (r);
     }
 
-    labelled (cells[1], 0, "View mode", inputBox);
+    labelled (cells[1], 0, "Input mode", inputBox);
     labelled (cells[1], 1, "Display gain", gainSlider);
     labelled (cells[1], 2, "Source", triggerModeBox);
     labelled (cells[1], 3, "Threshold", thresholdSlider);
