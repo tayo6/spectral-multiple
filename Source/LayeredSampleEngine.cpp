@@ -210,8 +210,7 @@ float LayeredSampleEngine::applyCurve (float progress, int curve) const noexcept
            + (table[(size_t) (lower + 1)] - table[(size_t) lower]) * fraction;
 }
 
-float LayeredSampleEngine::envelopeLevelAtAge (const Voice& voice,
-                                                const LayerParameters& p,
+float LayeredSampleEngine::envelopeLevelAtAge (const LayerParameters& p,
                                                 int age) const noexcept
 {
     const float attackSamples = juce::jmax (1.0f, p.attackMs * 0.001f * (float) currentSampleRate);
@@ -251,7 +250,7 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
     const auto& audio = voice.sample->audio;
     const int length = audio.getNumSamples();
 
-    if (length <= 0 || voice.position >= (double) (length - 1))
+    if (length <= 0 || voice.position >= (double) length)
     {
         voice.active = false;
         return 0.0f;
@@ -268,11 +267,16 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
     const float rawR = audio.getSample (1, index0)
                        + (audio.getSample (1, index1) - audio.getSample (1, index0)) * fraction;
 
-    const float remainingSamples = (float) ((double) (length - 1) - voice.position)
+    const float totalOutputSamples = (float) length / (float) juce::jmax (0.0001, speed);
+    const float remainingSamples = (float) ((double) length - voice.position)
                                    / (float) juce::jmax (0.0001, speed);
-    const float releaseSamples = juce::jmax (1.0f, p.releaseMs * 0.001f * (float) currentSampleRate);
+    const float requestedReleaseSamples = juce::jmax (1.0f, p.releaseMs * 0.001f * (float) currentSampleRate);
+    // Very short one-shots cannot contain a full release segment. Reserve at most
+    // the final half of the file for release so the attack portion is not muted.
+    const float releaseSamples = juce::jmin (requestedReleaseSamples,
+                                              juce::jmax (1.0f, totalOutputSamples * 0.5f));
 
-    float envelope = envelopeLevelAtAge (voice, p, voice.ageSamples);
+    float envelope = envelopeLevelAtAge (p, voice.ageSamples);
 
     // In one-shot mode, RELEASE is placed over the sample's final releaseMs.
     // This keeps each file self-contained and makes release audible for audio triggers too.
@@ -299,7 +303,7 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
     voice.position += speed;
     ++voice.ageSamples;
 
-    if (voice.position >= (double) (length - 1))
+    if (voice.position >= (double) length)
         voice.active = false;
 
     return (left + right) * 0.5f;
