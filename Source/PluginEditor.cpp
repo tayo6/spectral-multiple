@@ -279,7 +279,7 @@ void ScopeView::paint (juce::Graphics& g)
             auto lane = area.removeFromTop (laneH);
             area.removeFromTop (gap);
             if (spectrum) drawSpectrum (g, lane, { { n, signalColour (n) } }, showHeld);
-            else drawLane (g, lane, { { n, signalColour (n) } }, s, gain, showHeld, "SIGNAL " + juce::String (n + 1));
+            else drawLane (g, lane, { { n, signalColour (n) } }, s, gain, showHeld, (n < 3 ? "PRE " : "MAIN ") + juce::String (n < 3 ? n + 1 : n - 2));
         }
     }
     else
@@ -299,12 +299,13 @@ void ScopeView::paint (juce::Graphics& g)
             for (int k = (int) active.size() - 1; k >= 0; --k)
             {
                 const int n = active[(size_t) k];
-                auto chip = juce::Rectangle<float> (x - 18.0f, area.getY() + 6.0f, 18.0f, 14.0f);
+                auto chip = juce::Rectangle<float> (x - 24.0f, area.getY() + 6.0f, 24.0f, 14.0f);
                 g.setColour (signalColour (n).withAlpha (0.9f));
                 g.fillRoundedRectangle (chip, 3.0f);
                 g.setColour (juce::Colour (0xff04121a));
-                g.drawText (juce::String (n + 1), chip, juce::Justification::centred);
-                x -= 22.0f;
+                g.drawText (n < 3 ? ("P" + juce::String (n + 1)) : ("M" + juce::String (n - 2)),
+                            chip, juce::Justification::centred);
+                x -= 28.0f;
             }
         }
     }
@@ -315,11 +316,11 @@ void ScopeView::paint (juce::Graphics& g)
     g.setColour (kText);
     g.drawText (windowLabel(), footer, juce::Justification::centredLeft);
 
-    if ((mask & ~1) == 0)
+    if (mask == 0)
         g.drawText ("Load samples into the PRE and MAIN slots below to view their waveforms and spectra",
                     footer, juce::Justification::centred);
     else
-        g.drawText (juce::String (active.size()) + (active.size() == 1 ? " signal" : " signals"),
+        g.drawText (juce::String (active.size()) + (active.size() == 1 ? " layer" : " layers"),
                     footer, juce::Justification::centred);
 
     if (pFreeze->load() > 0.5f)
