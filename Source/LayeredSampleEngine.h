@@ -80,7 +80,7 @@ private:
     void triggerAllLayers() noexcept;
     void startLayer (int layer) noexcept;
     float renderLayerSample (int layer, float& left, float& right) noexcept;
-    float envelopeLevelAtAge (const Voice& voice, const LayerParameters& p, int age) const noexcept;
+    float envelopeLevelAtAge (const LayerParameters& p, int age) const noexcept;
     float applyCurve (float progress, int curve) const noexcept;
 
     juce::AudioFormatManager formatManager;
