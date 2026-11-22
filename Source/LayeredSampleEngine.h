@@ -32,6 +32,9 @@ public:
         float decayMs = 60.0f;
         float sustain = 1.0f;
         float releaseMs = 120.0f;
+        int attackCurve = 1;
+        int decayCurve = 1;
+        int releaseCurve = 1;
         bool muted = false;
     };
 
@@ -69,12 +72,16 @@ private:
         double position = 0.0;
         int delayRemaining = 0;
         int ageSamples = 0;
+        float releaseStartLevel = 1.0f;
+        bool inRelease = false;
         bool active = false;
     };
 
     void triggerAllLayers() noexcept;
     void startLayer (int layer) noexcept;
     float renderLayerSample (int layer, float& left, float& right) noexcept;
+    float envelopeLevelAtAge (const Voice& voice, const LayerParameters& p, int age) const noexcept;
+    float applyCurve (float progress, int curve) const noexcept;
 
     juce::AudioFormatManager formatManager;
     std::array<std::atomic<SampleData*>, kNumLayers> currentSamples {};
@@ -84,6 +91,7 @@ private:
     std::array<LayerParameters, kNumLayers> parameters {};
     std::array<Voice, kNumLayers> voices {};
     std::array<juce::AudioBuffer<float>, kNumLayers> layerBuffers;
+    std::array<std::array<float, 257>, 5> curveTables {};
 
     std::vector<float> delayLeft, delayRight;
     int delayWritePosition = 0;
