@@ -52,8 +52,7 @@ inline double barsFromIndex (int index)
 class WaveLensProcessor final : public juce::AudioProcessor
 {
 public:
-    // Number of display columns, and the signals that are captured per column.
-    // Signal 1 is the main input; signals 2-6 come from five auxiliary input buses.
+    // Number of display columns and the six sample layers captured per column.
     static constexpr int kCols = 1024;
     static constexpr int kMaxSignals = 6;
     static constexpr int kFFTOrder = 12, kFFTSize = 1 << kFFTOrder, kSpectrumBins = 512, kSpectrumHop = 1024;
@@ -110,7 +109,7 @@ public:
     std::atomic<bool> hasData { false };
     std::atomic<int>  heldFrom { 0 }, heldTo { 0 };
     std::atomic<bool> heldValid { false };
-    std::atomic<int>  connectedMask { 1 };   // bit n set = signal n+1 has an input routed
+    std::atomic<int>  connectedMask { 0 };   // bit n set = sample layer n+1 is loaded
 
     // Meter values (linear).
     std::atomic<float> peakNow { 0.0f }, rmsNow { 0.0f }, crestNow { 1.0f };
