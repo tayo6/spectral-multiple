@@ -48,9 +48,9 @@ public:
         float decayMs = 60.0f;
         float sustain = 1.0f;
         float releaseMs = 120.0f;
-        int attackCurve = 1;
-        int decayCurve = 1;
-        int releaseCurve = 1;
+        int attackCurve = 4;
+        int decayCurve = 4;
+        int releaseCurve = 4;
         bool muted = false;
     };
 
@@ -124,7 +124,7 @@ private:
     int refractoryRemaining = 0;
 
     double currentSampleRate = 44100.0;
-    float threshold = 0.12f;
+    float threshold = 0.03f;
     float previousInputLevel = 0.0f;
     int triggerMode = 0; // 0 = Audio, 1 = MIDI, 2 = Both
 
