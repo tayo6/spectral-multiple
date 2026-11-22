@@ -482,6 +482,20 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     loSlider.valueFromTextFunction = hzFromText;
     hiSlider.valueFromTextFunction = hzFromText;
 
+    // The old global Time / Trigger / Range controls are intentionally removed from the UI.
+    // Trigger detection remains active internally with a low threshold and Audio + MIDI support.
+    captureBox.setVisible (false);
+    barsBox.setVisible (false);
+    inputBox.setVisible (false);
+    triggerModeBox.setVisible (false);
+    listenBtn.setVisible (false);
+    timeSlider.setVisible (false);
+    gainSlider.setVisible (false);
+    loSlider.setVisible (false);
+    hiSlider.setVisible (false);
+    thresholdSlider.setVisible (false);
+    preRollSlider.setVisible (false);
+
     // Six sample slots: three amber PRE layers, followed by three cyan MAIN layers.
     for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
     {
@@ -525,6 +539,14 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
                 });
         };
 
+        auditionBtn[layer].setButtonText (">");
+        auditionBtn[layer].setTooltip ("Audition this sample layer");
+        auditionBtn[layer].setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1b2229));
+        auditionBtn[layer].setColour (juce::TextButton::buttonOnColourId, signalColour (layer).withAlpha (0.9f));
+        auditionBtn[layer].setColour (juce::TextButton::textColourOffId, juce::Colour (0xffe7edf2));
+        addAndMakeVisible (auditionBtn[layer]);
+        auditionBtn[layer].onClick = [this, layer] { proc.requestPreview (layer); };
+
         layerGainSlider[layer].setSliderStyle (juce::Slider::LinearHorizontal);
         layerGainSlider[layer].setTextBoxStyle (juce::Slider::TextBoxRight, false, 42, 16);
         layerGainSlider[layer].setColour (juce::Slider::trackColourId, signalColour (layer));
@@ -535,11 +557,23 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
             return juce::String (value * 100.0, 0) + "%";
         };
         layerGainSlider[layer].updateText();
+
+        layerDelaySlider[layer].setSliderStyle (juce::Slider::LinearHorizontal);
+        layerDelaySlider[layer].setTextBoxStyle (juce::Slider::TextBoxRight, false, 39, 16);
+        layerDelaySlider[layer].setColour (juce::Slider::trackColourId, signalColour (layer));
+        layerDelaySlider[layer].setTooltip ("Layer timing shift: negative advances the sample; positive delays it");
+        addAndMakeVisible (layerDelaySlider[layer]);
+        layerDelayAtt[layer] = std::make_unique<SliderAtt> (proc.apvts, ids::layerDelay (layer), layerDelaySlider[layer]);
+        layerDelaySlider[layer].textFromValueFunction = [] (double value)
+        {
+            return juce::String (value > 0.0 ? "+" : "") + juce::String (value, 1) + "ms";
+        };
+        layerDelaySlider[layer].updateText();
     }
 
     setResizable (true, true);
-    setResizeLimits (980, 820, 1920, 1400);
-    setSize (1100, 850);
+    setResizeLimits (900, 590, 1600, 1100);
+    setSize (1040, 650);
 
     updateEnabledStates();
     startTimerHz (10);
@@ -572,15 +606,15 @@ void WaveLensEditor::setupToggle (juce::TextButton& b, const juce::String& text,
 void WaveLensEditor::updateEnabledStates()
 {
     const auto& a = proc.apvts;
-    const int capture = juce::roundToInt (a.getRawParameterValue (ids::capture)->load());
     const int mask = proc.connectedMask.load();
-
-    barsBox.setVisible (capture == 0);
-    timeSlider.setVisible (capture != 0);
 
     // A layer's visibility toggle is enabled once its sample has been loaded.
     for (int n = 0; n < WaveLensProcessor::kMaxSignals; ++n)
-        sigBtn[n].setEnabled ((mask & (1 << n)) != 0);
+    {
+        const bool loaded = (mask & (1 << n)) != 0;
+        sigBtn[n].setEnabled (loaded);
+        auditionBtn[n].setEnabled (loaded);
+    }
 
     int loadedLayerCount = 0;
     for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
@@ -642,29 +676,49 @@ void WaveLensEditor::resized()
     captions.clear();
     groups.clear();
 
-    auto area = getLocalBounds().reduced (12, 8);
+    auto area = getLocalBounds().reduced (10, 7);
 
-    auto header = area.removeFromTop (30);
-    resetBtn.setBounds  (header.removeFromRight (70));
-    header.removeFromRight (6);
-    holdBtn.setBounds   (header.removeFromRight (70));
-    header.removeFromRight (6);
-    freezeBtn.setBounds (header.removeFromRight (70));
-    area.removeFromTop (6);
+    auto header = area.removeFromTop (28);
+    resetBtn.setBounds (header.removeFromRight (62));
+    header.removeFromRight (5);
+    holdBtn.setBounds (header.removeFromRight (62));
+    header.removeFromRight (5);
+    freezeBtn.setBounds (header.removeFromRight (62));
+    area.removeFromTop (5);
 
-    constexpr int layerPanelH = 290;
+    // One compact layer toolbar replaces the former Time, Trigger and Range panels.
+    auto toolbar = area.removeFromTop (58);
+    groups.push_back ({ "LAYERS", toolbar });
+    auto toolbarControls = toolbar.reduced (9, 0);
+    toolbarControls.removeFromTop (20);
+
+    auto rightControls = toolbarControls.removeFromRight (238);
+    captions.push_back ({ "View", rightControls.removeFromLeft (30).withY (rightControls.getY() + 2).withHeight (22) });
+    viewBox.setBounds (rightControls.removeFromLeft (92).withHeight (23));
+    rightControls.removeFromLeft (7);
+    captions.push_back ({ "Layout", rightControls.removeFromLeft (34).withY (rightControls.getY() + 2).withHeight (22) });
+    layoutBox.setBounds (rightControls.removeFromLeft (75).withHeight (23));
+
+    toolbarControls.removeFromRight (12);
+    const int toggleGap = 4;
+    const int toggleWidth = juce::jmin (43, (toolbarControls.getWidth() - toggleGap * 5) / 6);
+    for (int i = 0; i < WaveLensProcessor::kMaxSignals; ++i)
+    {
+        sigBtn[i].setBounds (toolbarControls.removeFromLeft (toggleWidth).withHeight (23));
+        toolbarControls.removeFromLeft (toggleGap);
+    }
+
+    area.removeFromTop (7);
+    const int layerPanelH = juce::jlimit (270, 322, juce::roundToInt (getHeight() * 0.47f));
     auto layerPanel = area.removeFromBottom (layerPanelH);
-    area.removeFromBottom (8);
+    area.removeFromBottom (7);
 
-    constexpr int controlPanelH = 146;
-    auto panel = area.removeFromBottom (controlPanelH);
-    area.removeFromBottom (8);
-
-    meter.setBounds (area.removeFromRight (84));
-    area.removeFromRight (8);
+    meter.setBounds (area.removeFromRight (66));
+    area.removeFromRight (7);
     scope.setBounds (area);
 
-    // Sample banks: three PRE layers and three MAIN layers.
+    // Three PRE cards and three MAIN cards. Each card now contains its own waveform,
+    // envelope, level, timing shift, audition and sound-shaping controls.
     auto bankArea = layerPanel.reduced (2, 0);
     const int bankGap = 8;
     const int bankWidth = (bankArea.getWidth() - bankGap) / 2;
@@ -687,75 +741,19 @@ void WaveLensEditor::resized()
 
         layerHeader[layer].setBounds (cell.removeFromTop (14));
         cell.removeFromTop (2);
-        loadSampleBtn[layer].setBounds (cell.removeFromTop (24));
+
+        auto loadRow = cell.removeFromTop (22);
+        auditionBtn[layer].setBounds (loadRow.removeFromRight (23));
+        loadRow.removeFromRight (3);
+        loadSampleBtn[layer].setBounds (loadRow);
+
         cell.removeFromTop (2);
-        layerGainSlider[layer].setBounds (cell.removeFromTop (24));
+        auto parameterRow = cell.removeFromTop (23);
+        const int half = parameterRow.getWidth() / 2;
+        layerGainSlider[layer].setBounds (parameterRow.removeFromLeft (half));
+        layerDelaySlider[layer].setBounds (parameterRow);
+
         cell.removeFromTop (3);
         envelopeComponents[(size_t) layer]->setBounds (cell);
     }
-
-    // Compact global controls.
-    constexpr int numGroups = 4;
-    const float weights[numGroups] = { 1.1f, 1.1f, 1.4f, 1.4f };
-    const char* titles[numGroups] = { "Time", "Trigger", "Range", "Layers" };
-    float total = 0.0f;
-    for (float w : weights) total += w;
-
-    juce::Rectangle<int> cells[numGroups];
-    const int gap = 8;
-    const int usable = panel.getWidth() - gap * (numGroups - 1);
-    int x = panel.getX();
-    for (int i = 0; i < numGroups; ++i)
-    {
-        const int w = i == numGroups - 1 ? panel.getRight() - x : juce::roundToInt (usable * weights[i] / total);
-        cells[i] = { x, panel.getY(), w, panel.getHeight() };
-        groups.push_back ({ titles[i], cells[i] });
-        x += w + gap;
-    }
-
-    constexpr int rowH = 26, rowGap = 6, captionW = 52;
-
-    auto rowOf = [=] (juce::Rectangle<int> cell, int row)
-    {
-        return juce::Rectangle<int> (cell.getX() + 10, cell.getY() + 24 + row * (rowH + rowGap),
-                                     cell.getWidth() - 20, rowH);
-    };
-
-    auto labelled = [&] (juce::Rectangle<int> cell, int row, const juce::String& text, juce::Component& c)
-    {
-        auto r = rowOf (cell, row);
-        captions.push_back ({ text, r.removeFromLeft (captionW) });
-        c.setBounds (r);
-    };
-
-    labelled (cells[0], 0, "Capture", captureBox);
-    {
-        auto r = rowOf (cells[0], 1);
-        captions.push_back ({ "Window", r.removeFromLeft (captionW) });
-        barsBox.setBounds (r);
-        timeSlider.setBounds (r);
-    }
-    labelled (cells[0], 2, "PRE lead", preRollSlider);
-
-    labelled (cells[1], 0, "Input mode", inputBox);
-    labelled (cells[1], 1, "Display gain", gainSlider);
-    labelled (cells[1], 2, "Source", triggerModeBox);
-    labelled (cells[1], 3, "Threshold", thresholdSlider);
-
-    labelled (cells[2], 0, "Low cut", loSlider);
-    labelled (cells[2], 1, "High cut", hiSlider);
-    listenBtn.setBounds (rowOf (cells[2], 2));
-
-    {
-        auto r = rowOf (cells[3], 0);
-        const int n = WaveLensProcessor::kMaxSignals;
-        const int bw = (r.getWidth() - 3 * (n - 1)) / n;
-        for (int i = 0; i < n; ++i)
-        {
-            sigBtn[i].setBounds (r.removeFromLeft (bw));
-            r.removeFromLeft (3);
-        }
-    }
-    labelled (cells[3], 1, "Layout", layoutBox);
-    labelled (cells[3], 2, "View", viewBox);
 }
