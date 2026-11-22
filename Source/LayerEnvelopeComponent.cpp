@@ -5,12 +5,6 @@ namespace
     constexpr float kSustainHoldMs = 350.0f;
     constexpr float kHandleRadius = 5.0f;
 
-    juce::String curveValueLabel (int curve)
-    {
-        static const char* labels[] = { "Lin", "Exp", "Log", "S", "Bez" };
-        return labels[juce::jlimit (0, 4, curve)];
-    }
-
     juce::String formatEnvelopeTime (float value)
     {
         if (value >= 1000.0f)
@@ -49,7 +43,6 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
         addAndMakeVisible (box);
     };
 
-    juce::ignoreUnused (curveNames);
     prepareCurveBox (attackCurveBox, "Attack curve: Linear, Exponential, Logarithmic, S-Curve or Bezier");
     prepareCurveBox (decayCurveBox, "Decay curve: Linear, Exponential, Logarithmic, S-Curve or Bezier");
     prepareCurveBox (releaseCurveBox, "Release curve: Linear, Exponential, Logarithmic, S-Curve or Bezier");
@@ -87,6 +80,7 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry() const
 {
     Geometry result;
     auto bounds = getLocalBounds().toFloat().reduced (6.0f);
+    bounds.removeFromTop (14.0f);
     bounds.removeFromBottom (22.0f);
     result.plot = bounds;
 
@@ -249,28 +243,18 @@ void LayerEnvelopeComponent::resized()
 void LayerEnvelopeComponent::beginGesture (Handle handle)
 {
     activeHandle = handle;
-    const char* id = nullptr;
+    juce::String parameterId;
     switch (handle)
     {
-        case Handle::Attack: id = "attack"; break;
-        case Handle::Decay: id = "decay"; break;
-        case Handle::Sustain: id = "sustain"; break;
-        case Handle::Release: id = "release"; break;
+        case Handle::Attack: parameterId = ids::layerAttack (layer); break;
+        case Handle::Decay: parameterId = ids::layerDecay (layer); break;
+        case Handle::Sustain: parameterId = ids::layerSustain (layer); break;
+        case Handle::Release: parameterId = ids::layerRelease (layer); break;
         default: break;
     }
 
-    if (id != nullptr)
+    if (parameterId.isNotEmpty())
     {
-        juce::String parameterId;
-        switch (handle)
-        {
-            case Handle::Attack: parameterId = ids::layerAttack (layer); break;
-            case Handle::Decay: parameterId = ids::layerDecay (layer); break;
-            case Handle::Sustain: parameterId = ids::layerSustain (layer); break;
-            case Handle::Release: parameterId = ids::layerRelease (layer); break;
-            default: break;
-        }
-
         if (auto* parameter = dynamic_cast<juce::RangedAudioParameter*> (processor.apvts.getParameter (parameterId)))
             parameter->beginChangeGesture();
     }
@@ -380,7 +364,6 @@ void LayerEnvelopeComponent::mouseDown (const juce::MouseEvent& event)
     if (bestHandle == Handle::None)
         return;
 
-    mouseDownPosition = point;
     beginGesture (bestHandle);
     applyDrag (point);
 }
