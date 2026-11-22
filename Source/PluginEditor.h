@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include "LayerEnvelopeComponent.h"
 
 /** Trace colour of signal n (0-based). Chosen to stay apart on a dark background. */
 inline juce::Colour signalColour (int n)
@@ -118,6 +119,7 @@ private:
     juce::TextButton loadSampleBtn[WaveLensProcessor::kMaxSignals];
     juce::Slider layerGainSlider[WaveLensProcessor::kMaxSignals];
     juce::Label layerHeader[WaveLensProcessor::kMaxSignals];
+    std::array<std::unique_ptr<LayerEnvelopeComponent>, WaveLensProcessor::kMaxSignals> envelopeComponents;
     std::array<juce::String, WaveLensProcessor::kMaxSignals> displayedSampleNames;
 
     std::unique_ptr<ComboAtt>  viewAtt, captureAtt, barsAtt, inputAtt, layoutAtt, triggerModeAtt;
