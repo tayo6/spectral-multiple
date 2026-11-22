@@ -117,7 +117,9 @@ private:
     juce::TextButton listenBtn, freezeBtn, holdBtn, resetBtn;
     juce::TextButton sigBtn[WaveLensProcessor::kMaxSignals];
     juce::TextButton loadSampleBtn[WaveLensProcessor::kMaxSignals];
+    juce::TextButton auditionBtn[WaveLensProcessor::kMaxSignals];
     juce::Slider layerGainSlider[WaveLensProcessor::kMaxSignals];
+    juce::Slider layerDelaySlider[WaveLensProcessor::kMaxSignals];
     juce::Label layerHeader[WaveLensProcessor::kMaxSignals];
     std::array<std::unique_ptr<LayerEnvelopeComponent>, WaveLensProcessor::kMaxSignals> envelopeComponents;
     std::array<juce::String, WaveLensProcessor::kMaxSignals> displayedSampleNames;
@@ -127,6 +129,7 @@ private:
     std::unique_ptr<ButtonAtt> listenAtt, freezeAtt, holdAtt;
     std::unique_ptr<ButtonAtt> sigAtt[WaveLensProcessor::kMaxSignals];
     std::unique_ptr<SliderAtt> layerGainAtt[WaveLensProcessor::kMaxSignals];
+    std::unique_ptr<SliderAtt> layerDelayAtt[WaveLensProcessor::kMaxSignals];
 
     struct Caption { juce::String text; juce::Rectangle<int> area; };
     std::vector<Caption> captions;
