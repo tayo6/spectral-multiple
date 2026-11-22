@@ -241,13 +241,14 @@ void LayerEnvelopeComponent::resized()
     row.removeFromTop (row.getHeight() - 18);
     row.removeFromBottom (1);
 
-    constexpr int labelWidth = 8;
-    constexpr int boxWidth = 42;
-    constexpr int gap = 3;
+    constexpr int labelWidth = 7;
+    constexpr int leftInset = 2;
+    constexpr int gap = 2;
+    const int boxWidth = juce::jlimit (32, 42, (row.getWidth() - 3 * (leftInset + labelWidth + gap)) / 3);
 
     auto place = [&] (juce::ComboBox& box)
     {
-        row.removeFromLeft (2);
+        row.removeFromLeft (leftInset);
         row.removeFromLeft (labelWidth);
         box.setBounds (row.removeFromLeft (boxWidth));
         row.removeFromLeft (gap);
