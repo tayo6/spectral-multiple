@@ -56,7 +56,10 @@ This is an active development branch, not a finished commercial plug-in.
 - Sample formats are provided by JUCE's registered basic audio formats (WAV, AIFF and supported FLAC/Ogg formats).
 - Samples are loaded into memory and sample paths are saved with the plug-in state.
 - Sample playback currently uses one voice per layer; a new trigger restarts that layer's current voice.
-- The envelope is currently a linear attack/decay/sustain shape with a linear tail fade. Selectable curve shapes and draggable envelope handles are a later GUI/DSP milestone.
+- Every layer has an editable A/D/S/R envelope graph. Drag A and D horizontally to change their time values, S vertically to set sustain, and R horizontally to change the tail release duration.
+- Attack, decay and release each have five curve choices: Linear, Exponential, Logarithmic, S-Curve and Bezier. Curve selections and time/level values are exposed as DAW automation parameters.
+- The envelope is applied to the rendered sample audio before the layer stem and combined master are written. The waveform/spectrum capture therefore shows the shaped output, not an unprocessed preview.
+- For one-shot samples, release is fitted into the final part of the file. On very short samples it is limited to at most half the sample duration so the release does not suppress the attack.
 - MIDI note-on currently triggers all loaded layers; per-layer MIDI note mapping is not implemented yet.
 - Replaced sample buffers are retained until the plug-in instance closes to avoid freeing memory while the audio thread might still be using it. Repeatedly replacing large samples can increase memory use; safe deferred reclamation is a follow-up task.
 - Hosts differ in their support for multiple optional VST3 output buses. Test the six separate stem routes in the target DAW.
@@ -89,9 +92,10 @@ The project statically links the MSVC runtime and targets JUCE 7.0.12. For a Win
 
 ```
 Source/
-  LayeredSampleEngine.h/.cpp   six sample voices, audio/MIDI trigger, pre-roll and stem rendering
-  PluginProcessor.h/.cpp       JUCE buses, parameters, host latency, sample state and spectrum capture
-  PluginEditor.h/.cpp          Ableton-inspired interface, six layer slots and waveform/spectrum UI
+  LayeredSampleEngine.h/.cpp     six sample voices, curved envelopes, trigger and stem rendering
+  LayerEnvelopeComponent.h/.cpp  draggable A/D/S/R graphs and curve selectors for each layer
+  PluginProcessor.h/.cpp         JUCE buses, parameters, host latency, sample state and spectrum capture
+  PluginEditor.h/.cpp            Ableton-inspired interface, six layer slots and waveform/spectrum UI
 ```
 
 JUCE is dual-licensed (AGPLv3 / commercial). Check the applicable JUCE licence before distributing a compiled plug-in.
