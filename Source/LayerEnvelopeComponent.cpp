@@ -52,6 +52,62 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     decayCurveAttachment = std::make_unique<ComboAtt> (state, ids::layerDecayCurve (layer), decayCurveBox);
     releaseCurveAttachment = std::make_unique<ComboAtt> (state, ids::layerReleaseCurve (layer), releaseCurveBox);
 
+    auto prepareSlider = [&] (juce::Slider& slider, const juce::String& tooltip)
+    {
+        slider.setSliderStyle (juce::Slider::LinearHorizontal);
+        slider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 31, 14);
+        slider.setColour (juce::Slider::trackColourId, colour);
+        slider.setColour (juce::Slider::backgroundColourId, juce::Colour (0xff303942));
+        slider.setColour (juce::Slider::thumbColourId, juce::Colour (0xffedf2f5));
+        slider.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xffe7edf2));
+        slider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour (0xff1b2229));
+        slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colour (0xff47525d));
+        slider.setTooltip (tooltip);
+        addAndMakeVisible (slider);
+    };
+
+    prepareSlider (panSlider, "Layer pan: left / centre / right");
+    prepareSlider (pitchSlider, "Layer pitch: -24 to +24 semitones");
+    prepareSlider (highPassSlider, "Layer high-pass filter: 20 Hz to 1 kHz");
+    prepareSlider (lowPassSlider, "Layer low-pass filter: 1 kHz to 20 kHz");
+
+    panAttachment = std::make_unique<SliderAtt> (state, ids::layerPan (layer), panSlider);
+    pitchAttachment = std::make_unique<SliderAtt> (state, ids::layerPitch (layer), pitchSlider);
+    highPassAttachment = std::make_unique<SliderAtt> (state, ids::layerHighPass (layer), highPassSlider);
+    lowPassAttachment = std::make_unique<SliderAtt> (state, ids::layerLowPass (layer), lowPassSlider);
+
+    panSlider.textFromValueFunction = [] (double value)
+    {
+        if (std::abs (value) < 0.005)
+            return juce::String ("C");
+        return juce::String (std::abs (value) * 100.0, 0) + (value < 0.0 ? "L" : "R");
+    };
+    pitchSlider.textFromValueFunction = [] (double value)
+    {
+        return juce::String (value > 0.0 ? "+" : "") + juce::String (value, 1);
+    };
+    auto hzText = [] (double value)
+    {
+        return value >= 1000.0 ? juce::String (value / 1000.0, 1) + "k"
+                               : juce::String (value, 0);
+    };
+    highPassSlider.textFromValueFunction = hzText;
+    lowPassSlider.textFromValueFunction = hzText;
+    panSlider.updateText();
+    pitchSlider.updateText();
+    highPassSlider.updateText();
+    lowPassSlider.updateText();
+
+    muteButton.setButtonText ("M");
+    muteButton.setClickingTogglesState (true);
+    muteButton.setTooltip ("Mute this sample layer");
+    muteButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1b2229));
+    muteButton.setColour (juce::TextButton::buttonOnColourId, colour.withAlpha (0.9f));
+    muteButton.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffaeb8c0));
+    muteButton.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff10151a));
+    addAndMakeVisible (muteButton);
+    muteAttachment = std::make_unique<ButtonAtt> (state, ids::layerMute (layer), muteButton);
+
     setMouseCursor (juce::MouseCursor::CrosshairCursor);
     setOpaque (false);
     startTimerHz (30);
@@ -99,7 +155,8 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry() const
     Geometry result;
     auto bounds = getLocalBounds().toFloat().reduced (6.0f);
     bounds.removeFromTop (14.0f);
-    bounds.removeFromBottom (22.0f);
+    // Reserve the lower strip for curve selectors and per-layer sound controls.
+    bounds.removeFromBottom (72.0f);
     result.plot = bounds;
 
     const float attack = pAttack->load();
@@ -233,30 +290,66 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
                 juce::Justification::centred);
     g.drawText ("R", releaseCurveBox.getBounds().translated (0, 0).withX (releaseCurveBox.getX() - 8).withWidth (8),
                 juce::Justification::centred);
+
+    g.setColour (juce::Colour (0xff9aa8b3));
+    g.setFont (juce::Font (7.5f, juce::Font::bold));
+    auto drawControlLabel = [&] (const juce::Slider& slider, const juce::String& label)
+    {
+        const auto r = slider.getBounds();
+        g.drawText (label, r.getX(), r.getY() - 8, r.getWidth(), 8, juce::Justification::centredLeft);
+    };
+    drawControlLabel (panSlider, "PAN");
+    drawControlLabel (pitchSlider, "PITCH");
+    drawControlLabel (highPassSlider, "HPF");
+    drawControlLabel (lowPassSlider, "LPF");
 }
 
 void LayerEnvelopeComponent::resized()
 {
-    auto row = getLocalBounds().reduced (6);
-    row.removeFromTop (row.getHeight() - 18);
-    row.removeFromBottom (1);
+    auto area = getLocalBounds().reduced (6);
+    area.removeFromTop (14); // A/D/S/R readout at the top.
+
+    auto curveRow = area.removeFromBottom (18);
+    muteButton.setBounds (curveRow.removeFromRight (19));
+    curveRow.removeFromRight (2);
 
     constexpr int labelWidth = 7;
     constexpr int leftInset = 2;
     constexpr int gap = 2;
-    const int boxWidth = juce::jlimit (32, 42, (row.getWidth() - 3 * (leftInset + labelWidth + gap)) / 3);
+    const int boxWidth = juce::jlimit (30, 40,
+        (curveRow.getWidth() - 3 * (leftInset + labelWidth + gap)) / 3);
 
-    auto place = [&] (juce::ComboBox& box)
+    auto placeCurve = [&] (juce::ComboBox& box)
     {
-        row.removeFromLeft (leftInset);
-        row.removeFromLeft (labelWidth);
-        box.setBounds (row.removeFromLeft (boxWidth));
-        row.removeFromLeft (gap);
+        curveRow.removeFromLeft (leftInset);
+        curveRow.removeFromLeft (labelWidth);
+        box.setBounds (curveRow.removeFromLeft (boxWidth));
+        curveRow.removeFromLeft (gap);
     };
 
-    place (attackCurveBox);
-    place (decayCurveBox);
-    place (releaseCurveBox);
+    placeCurve (attackCurveBox);
+    placeCurve (decayCurveBox);
+    placeCurve (releaseCurveBox);
+
+    area.removeFromBottom (3);
+    auto filterRow = area.removeFromBottom (23);
+    area.removeFromBottom (2);
+    auto pitchRow = area.removeFromBottom (23);
+
+    auto placePair = [] (juce::Rectangle<int> row, juce::Slider& first, juce::Slider& second)
+    {
+        constexpr int gapBetween = 4;
+        const int cellWidth = (row.getWidth() - gapBetween) / 2;
+        auto firstCell = row.removeFromLeft (cellWidth);
+        row.removeFromLeft (gapBetween);
+        auto secondCell = row;
+
+        first.setBounds (firstCell.withTrimmedTop (8).withHeight (15));
+        second.setBounds (secondCell.withTrimmedTop (8).withHeight (15));
+    };
+
+    placePair (pitchRow, panSlider, pitchSlider);
+    placePair (filterRow, highPassSlider, lowPassSlider);
 }
 
 void LayerEnvelopeComponent::beginGesture (Handle handle)
