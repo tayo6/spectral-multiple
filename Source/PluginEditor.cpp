@@ -10,9 +10,8 @@ namespace
     const juce::Colour kText       { 0xff9aa5b1 };
     const juce::Colour kTextBright { 0xffe6ebf0 };
     const juce::Colour kAccent     { 0xff4fd1ff };
-    const juce::Colour kLow        { 0xffff6b5e };
-    const juce::Colour kMid        { 0xff7be07a };
-    const juce::Colour kHigh       { 0xff6ea8ff };
+    const juce::Colour kMeterHot   { 0xffff6b5e };
+    const juce::Colour kMeterCool  { 0xff7be07a };
 
     juce::String formatHz (double hz)
     {
@@ -73,14 +72,10 @@ ScopeView::ScopeView (WaveLensProcessor& p)
     : proc (p)
 {
     auto& a = proc.apvts;
-    pView     = a.getRawParameterValue (ids::view);
     pCapture  = a.getRawParameterValue (ids::capture);
     pBars     = a.getRawParameterValue (ids::bars);
     pTimeMs   = a.getRawParameterValue (ids::timeMs);
     pGain     = a.getRawParameterValue (ids::gain);
-    pShowLow  = a.getRawParameterValue (ids::showLow);
-    pShowMid  = a.getRawParameterValue (ids::showMid);
-    pShowHigh = a.getRawParameterValue (ids::showHigh);
     pLayout   = a.getRawParameterValue (ids::layout);
     for (int n = 0; n < WaveLensProcessor::kMaxSignals; ++n)
         pShowSig[n] = a.getRawParameterValue (ids::showSig[n]);
@@ -251,7 +246,6 @@ void ScopeView::paint (juce::Graphics& g)
     s.heldValid = proc.heldValid.load();
 
     const float gain = std::pow (10.0f, pGain->load() / 20.0f);
-    const bool spectral = juce::roundToInt (pView->load()) == 1;
     const bool showHeld = pHold->load() > 0.5f;
     const int mask = proc.connectedMask.load (relaxed);
 
@@ -261,20 +255,12 @@ void ScopeView::paint (juce::Graphics& g)
         if ((mask & (1 << n)) != 0 && pShowSig[n]->load() > 0.5f)
             active.push_back (n);
 
-    const bool split = ! spectral && active.size() > 1 && juce::roundToInt (pLayout->load()) == 1;
+    const bool split = active.size() > 1 && juce::roundToInt (pLayout->load()) == 1;
 
     auto area = bounds.reduced (6.0f);
     area.removeFromBottom (16.0f);          // room for the footer text
 
-    if (spectral)
-    {
-        std::vector<Trace> traces;
-        if (pShowLow->load()  > 0.5f) traces.push_back ({ WaveLensProcessor::Low,  kLow });
-        if (pShowMid->load()  > 0.5f) traces.push_back ({ WaveLensProcessor::Mid,  kMid });
-        if (pShowHigh->load() > 0.5f) traces.push_back ({ WaveLensProcessor::High, kHigh });
-        drawLane (g, area, traces, s, gain, showHeld, {});
-    }
-    else if (split)
+    if (split)
     {
         const float gap = 4.0f;
         const float laneH = (area.getHeight() - gap * (float) (active.size() - 1)) / (float) active.size();
@@ -318,10 +304,10 @@ void ScopeView::paint (juce::Graphics& g)
     g.setColour (kText);
     g.drawText (windowLabel(), footer, juce::Justification::centredLeft);
 
-    if (! spectral && (mask & ~1) == 0)
+    if ((mask & ~1) == 0)
         g.drawText ("Route more inputs to this plug-in (Signal 2-6) to compare signals",
                     footer, juce::Justification::centred);
-    else if (! spectral)
+    else
         g.drawText (juce::String (active.size()) + (active.size() == 1 ? " signal" : " signals"),
                     footer, juce::Justification::centred);
 
@@ -393,7 +379,7 @@ void MeterView::paint (juce::Graphics& g)
     auto norm = [&] (float db) { return juce::jlimit (0.0f, 1.0f, (db - lo) / (hi - lo)); };
 
     const float h = bar.getHeight() * norm (nowDb);
-    juce::ColourGradient grad (kLow, 0.0f, bar.getY(), kMid, 0.0f, bar.getBottom(), false);
+    juce::ColourGradient grad (kMeterHot, 0.0f, bar.getY(), kMeterCool, 0.0f, bar.getBottom(), false);
     grad.addColour (0.25, juce::Colour (0xffffd24a));
     g.setGradientFill (grad);
     g.fillRoundedRectangle (bar.withTrimmedTop (bar.getHeight() - h), 3.0f);
@@ -428,22 +414,14 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     addAndMakeVisible (scope);
     addAndMakeVisible (meter);
 
-    setupCombo (viewBox,     ids::view,     viewAtt);
     setupCombo (captureBox,  ids::capture,  captureAtt);
     setupCombo (barsBox,     ids::bars,     barsAtt);
     setupCombo (inputBox,    ids::input,    inputAtt);
     setupCombo (layoutBox,   ids::layout,   layoutAtt);
 
-    setupToggle (lowBtn,    "Low",       ids::showLow,  lowAtt);
-    setupToggle (midBtn,    "Mid",       ids::showMid,  midAtt);
-    setupToggle (highBtn,   "High",      ids::showHigh, highAtt);
     setupToggle (listenBtn, "Listen",    ids::listen,   listenAtt);
     setupToggle (freezeBtn, "Freeze",    ids::freeze,   freezeAtt);
     setupToggle (holdBtn,   "Hold",      ids::hold,     holdAtt);
-
-    lowBtn.setColour  (juce::TextButton::buttonOnColourId, kLow);
-    midBtn.setColour  (juce::TextButton::buttonOnColourId, kMid);
-    highBtn.setColour (juce::TextButton::buttonOnColourId, kHigh);
 
     // One toggle per signal, in that signal's trace colour.
     for (int n = 0; n < WaveLensProcessor::kMaxSignals; ++n)
@@ -522,21 +500,16 @@ void WaveLensEditor::updateEnabledStates()
 {
     const auto& a = proc.apvts;
     const int capture = juce::roundToInt (a.getRawParameterValue (ids::capture)->load());
-    const bool spectral = juce::roundToInt (a.getRawParameterValue (ids::view)->load()) == 1;
     const int mask = proc.connectedMask.load();
 
     barsBox.setVisible (capture == 0);
     timeSlider.setVisible (capture != 0);
 
-    for (auto* b : { &lowBtn, &midBtn, &highBtn })
-        b->setEnabled (spectral);
-
     // A signal's toggle is available once an input is routed to it in the host.
-    // Signals 2-6 are only shown in the Wave view; Spectral looks at signal 1.
     for (int n = 0; n < WaveLensProcessor::kMaxSignals; ++n)
-        sigBtn[n].setEnabled (! spectral && (mask & (1 << n)) != 0);
+        sigBtn[n].setEnabled ((mask & (1 << n)) != 0);
 
-    layoutBox.setEnabled (! spectral && (mask & ~1) != 0);
+    layoutBox.setEnabled ((mask & ~1) != 0);
 }
 
 void WaveLensEditor::timerCallback()
@@ -599,19 +572,20 @@ void WaveLensEditor::resized()
     area.removeFromRight (8);
     scope.setBounds (area);
 
-    // Five groups share the panel width.
-    const float weights[] = { 1.0f, 1.1f, 1.1f, 1.4f, 1.3f };
-    const char* titles[] = { "View", "Time", "Signal", "Range", "Signals" };
+    // Four groups share the panel width.
+    constexpr int numGroups = 4;
+    const float weights[numGroups] = { 1.1f, 1.1f, 1.4f, 1.4f };
+    const char* titles[numGroups] = { "Time", "Signal", "Range", "Signals" };
     float total = 0.0f;
     for (float w : weights) total += w;
 
-    juce::Rectangle<int> cells[5];
+    juce::Rectangle<int> cells[numGroups];
     const int gap = 8;
-    const int usable = panel.getWidth() - gap * 4;
+    const int usable = panel.getWidth() - gap * (numGroups - 1);
     int x = panel.getX();
-    for (int i = 0; i < 5; ++i)
+    for (int i = 0; i < numGroups; ++i)
     {
-        const int w = i == 4 ? panel.getRight() - x : juce::roundToInt (usable * weights[i] / total);
+        const int w = i == numGroups - 1 ? panel.getRight() - x : juce::roundToInt (usable * weights[i] / total);
         cells[i] = { x, panel.getY(), w, panel.getHeight() };
         groups.push_back ({ titles[i], cells[i] });
         x += w + gap;
@@ -632,37 +606,27 @@ void WaveLensEditor::resized()
         c.setBounds (r);
     };
 
-    // View
-    labelled (cells[0], 0, "View", viewBox);
+    // Time
+    labelled (cells[0], 0, "Capture", captureBox);
     {
         auto r = rowOf (cells[0], 1);
-        const int w = (r.getWidth() - 8) / 3;
-        lowBtn.setBounds  (r.removeFromLeft (w)); r.removeFromLeft (4);
-        midBtn.setBounds  (r.removeFromLeft (w)); r.removeFromLeft (4);
-        highBtn.setBounds (r);
-    }
-
-    // Time
-    labelled (cells[1], 0, "Capture", captureBox);
-    {
-        auto r = rowOf (cells[1], 1);
         captions.push_back ({ "Window", r.removeFromLeft (captionW) });
         barsBox.setBounds (r);
         timeSlider.setBounds (r);
     }
 
     // Signal
-    labelled (cells[2], 0, "Input", inputBox);
-    labelled (cells[2], 1, "Gain", gainSlider);
+    labelled (cells[1], 0, "Input", inputBox);
+    labelled (cells[1], 1, "Gain", gainSlider);
 
     // Range
-    labelled (cells[3], 0, "Low cut", loSlider);
-    labelled (cells[3], 1, "High cut", hiSlider);
-    listenBtn.setBounds (rowOf (cells[3], 2));
+    labelled (cells[2], 0, "Low cut", loSlider);
+    labelled (cells[2], 1, "High cut", hiSlider);
+    listenBtn.setBounds (rowOf (cells[2], 2));
 
     // Signals: six numbered toggles, then the overlay / split choice.
     {
-        auto r = rowOf (cells[4], 0);
+        auto r = rowOf (cells[3], 0);
         const int n = WaveLensProcessor::kMaxSignals;
         const int bw = (r.getWidth() - 3 * (n - 1)) / n;
         for (int i = 0; i < n; ++i)
@@ -671,5 +635,5 @@ void WaveLensEditor::resized()
             r.removeFromLeft (3);
         }
     }
-    labelled (cells[4], 1, "Layout", layoutBox);
+    labelled (cells[3], 1, "Layout", layoutBox);
 }

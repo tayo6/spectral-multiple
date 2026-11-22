@@ -47,8 +47,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
 
     AudioProcessorValueTreeState::ParameterLayout layout;
 
-    layout.add (std::make_unique<AudioParameterChoice> (PID { ids::view, 1 },     "View",
-                                                        StringArray { "Wave", "Spectral" }, 0));
     layout.add (std::make_unique<AudioParameterChoice> (PID { ids::capture, 1 },  "Capture",
                                                         StringArray { "Tempo", "Live", "Scroll" }, 0));
     layout.add (std::make_unique<AudioParameterChoice> (PID { ids::bars, 1 },     "Window (bars)",
@@ -76,10 +74,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
     layout.add (std::make_unique<AudioParameterBool> (PID { ids::listen, 1 },   "Listen", false));
     layout.add (std::make_unique<AudioParameterChoice> (PID { ids::meter, 1 },  "Meter",
                                                         StringArray { "Peak", "RMS", "Crest" }, 0));
-
-    layout.add (std::make_unique<AudioParameterBool> (PID { ids::showLow, 1 },  "Show low",  true));
-    layout.add (std::make_unique<AudioParameterBool> (PID { ids::showMid, 1 },  "Show mid",  true));
-    layout.add (std::make_unique<AudioParameterBool> (PID { ids::showHigh, 1 }, "Show high", true));
 
     layout.add (std::make_unique<AudioParameterChoice> (PID { ids::layout, 1 }, "Signal layout",
                                                         StringArray { "Overlay", "Split" }, 0));
@@ -117,7 +111,6 @@ WaveLensProcessor::WaveLensProcessor()
         for (auto& a : *arr)
             a.store (0.0f, relaxed);
 
-    pView     = apvts.getRawParameterValue (ids::view);
     pCapture  = apvts.getRawParameterValue (ids::capture);
     pBars     = apvts.getRawParameterValue (ids::bars);
     pTimeMs   = apvts.getRawParameterValue (ids::timeMs);
@@ -155,7 +148,7 @@ void WaveLensProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) juce::jmax (1, samplesPerBlock), 1 };
 
-    for (auto* f : { &xoLow, &xoHigh, &listenHp[0], &listenHp[1], &listenLp[0], &listenLp[1] })
+    for (auto* f : { &listenHp[0], &listenHp[1], &listenLp[0], &listenLp[1] })
     {
         f->prepare (spec);
         f->reset();
@@ -168,9 +161,6 @@ void WaveLensProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
         rangeLp[s].prepare (spec);
         rangeLp[s].reset();
     }
-
-    xoLow.setCutoffFrequency (250.0f);
-    xoHigh.setCutoffFrequency (3000.0f);
 
     lastRangeLo = lastRangeHi = -1.0f;      // force coefficient update
     lastRangeActive = false;
@@ -512,14 +502,7 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
         if (capturing)
         {
-            float low = 0.0f, rest = 0.0f, mid = 0.0f, high = 0.0f;
-            xoLow.processSample (0, x, low, rest);
-            xoHigh.processSample (0, rest, mid, high);
-
             v[Sig1] = x;
-            v[Low]  = low;
-            v[Mid]  = mid;
-            v[High] = high;
 
             // Signals 2-6 go through the same input mode and range as signal 1.
             for (int s = 1; s < kMaxSignals; ++s)

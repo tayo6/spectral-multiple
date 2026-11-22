@@ -8,7 +8,6 @@
 
 namespace ids
 {
-    inline constexpr const char* view      = "view";       // Wave / Spectral
     inline constexpr const char* capture   = "capture";    // Tempo / Live / Scroll
     inline constexpr const char* bars      = "bars";       // tempo window
     inline constexpr const char* timeMs    = "timeMs";     // free window
@@ -18,9 +17,6 @@ namespace ids
     inline constexpr const char* rangeHi   = "rangeHi";
     inline constexpr const char* listen    = "listen";
     inline constexpr const char* meter     = "meter";      // Peak / RMS / Crest
-    inline constexpr const char* showLow   = "showLow";
-    inline constexpr const char* showMid   = "showMid";
-    inline constexpr const char* showHigh  = "showHigh";
     inline constexpr const char* layout    = "layout";     // Overlay / Split (multi-signal)
     inline constexpr const char* showSig[6] = { "show1", "show2", "show3", "show4", "show5", "show6" };
     inline constexpr const char* freeze    = "freeze";
@@ -43,10 +39,9 @@ class WaveLensProcessor final : public juce::AudioProcessor
 public:
     // Number of display columns, and the signals that are captured per column.
     // Signal 1 is the main input; signals 2-6 come from five auxiliary input buses.
-    // Low/Mid/High are the three frequency layers of signal 1 (Spectral view).
     static constexpr int kCols = 1024;
     static constexpr int kMaxSignals = 6;
-    enum Chan { Sig1 = 0, Sig2, Sig3, Sig4, Sig5, Sig6, Low, Mid, High, kNumChan };
+    enum Chan { Sig1 = 0, Sig2, Sig3, Sig4, Sig5, Sig6, kNumChan };
 
     WaveLensProcessor();
     ~WaveLensProcessor() override = default;
@@ -132,7 +127,6 @@ private:
 
     // DSP ---------------------------------------------------------------------
     double sr = 44100.0;
-    juce::dsp::LinkwitzRileyFilter<float> xoLow, xoHigh;
     juce::dsp::LinkwitzRileyFilter<float> rangeHp[kMaxSignals], rangeLp[kMaxSignals];   // one pair per signal
     juce::dsp::LinkwitzRileyFilter<float> listenHp[2], listenLp[2];
     float  lastRangeLo = -1.0f, lastRangeHi = -1.0f;
@@ -144,7 +138,6 @@ private:
     std::atomic<bool> resetRequest { false };
 
     // Cached parameter pointers.
-    std::atomic<float>* pView = nullptr;
     std::atomic<float>* pCapture = nullptr;
     std::atomic<float>* pBars = nullptr;
     std::atomic<float>* pTimeMs = nullptr;

@@ -42,14 +42,10 @@ private:
     juce::String windowLabel() const;
 
     WaveLensProcessor& proc;
-    std::atomic<float>* pView;
     std::atomic<float>* pCapture;
     std::atomic<float>* pBars;
     std::atomic<float>* pTimeMs;
     std::atomic<float>* pGain;
-    std::atomic<float>* pShowLow;
-    std::atomic<float>* pShowMid;
-    std::atomic<float>* pShowHigh;
     std::atomic<float>* pLayout;
     std::atomic<float>* pShowSig[WaveLensProcessor::kMaxSignals];
     std::atomic<float>* pFreeze;
@@ -113,14 +109,14 @@ private:
     ScopeView scope;
     MeterView meter;
 
-    juce::ComboBox viewBox, captureBox, barsBox, inputBox, layoutBox;
+    juce::ComboBox captureBox, barsBox, inputBox, layoutBox;
     juce::Slider timeSlider, gainSlider, loSlider, hiSlider;
-    juce::TextButton lowBtn, midBtn, highBtn, listenBtn, freezeBtn, holdBtn, resetBtn;
+    juce::TextButton listenBtn, freezeBtn, holdBtn, resetBtn;
     juce::TextButton sigBtn[WaveLensProcessor::kMaxSignals];
 
-    std::unique_ptr<ComboAtt>  viewAtt, captureAtt, barsAtt, inputAtt, layoutAtt;
+    std::unique_ptr<ComboAtt>  captureAtt, barsAtt, inputAtt, layoutAtt;
     std::unique_ptr<SliderAtt> timeAtt, gainAtt, loAtt, hiAtt;
-    std::unique_ptr<ButtonAtt> lowAtt, midAtt, highAtt, listenAtt, freezeAtt, holdAtt;
+    std::unique_ptr<ButtonAtt> listenAtt, freezeAtt, holdAtt;
     std::unique_ptr<ButtonAtt> sigAtt[WaveLensProcessor::kMaxSignals];
 
     struct Caption { juce::String text; juce::Rectangle<int> area; };

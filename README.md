@@ -1,21 +1,20 @@
 # WaveLens
 
 A zero-latency oscilloscope plug-in (VST3) built with **JUCE 7.0.12**. It is an original
-implementation of the oscilloscope idea (waveform, frequency layers, sidechain comparison,
+implementation of the oscilloscope idea (waveform, multi-signal comparison,
 freeze/hold, metering), not a copy of any commercial plug-in.
 
 ## Features
 
 | Area | What it does |
 |---|---|
-| **View** | *Wave* shows the full waveform. *Spectral* splits the same signal into Low (< 250 Hz), Mid (250 Hz - 3 kHz) and High (> 3 kHz) layers, each drawn as its own waveform. Layers can be hidden individually. |
 | **Capture** | *Tempo*: bar-based window locked to the host clock (1/16 ... 4 bars); each pass restarts on playback or a seek. *Live*: free-running 1 ms - 5 s window, ignores the transport. *Scroll*: history flows across the display. |
 | **Input** | Peak (louder channel, polarity kept), L, R, M, S. |
 | **Gain** | -24 ... +24 dB display gain. Never changes the output or the meter. |
 | **Range / Listen** | Limit the visible frequency range (low cut / high cut). *Listen* auditions only that range through the output. With Listen off the audio is passed through untouched. |
-| **Signals (up to 6)** | Signal 1 is the main input. Signals 2-6 are five extra input buses ("Signal 2" ... "Signal 6") that you route to in the DAW. Every routed signal is drawn in its own colour, overlaid on one shared axis (*Overlay*) or in one lane each (*Split*). Six numbered buttons show/hide each signal; a button is only enabled once an input is routed to it. All signals share the same input mode (Peak/L/R/M/S), range and gain. Wave view only. |
+| **Signals (up to 6)** | Signal 1 is the main input. Signals 2-6 are five extra input buses ("Signal 2" ... "Signal 6") that you route to in the DAW. Every routed signal is drawn in its own colour, overlaid on one shared axis (*Overlay*) or in one lane each (*Split*). Six numbered buttons show/hide each signal; a button is only enabled once an input is routed to it. All signals share the same input mode (Peak/L/R/M/S), range and gain. |
 | **Freeze / Hold / Reset** | Freeze stops the graph without touching audio. Hold keeps the previous pass as a dim trace. Reset clears the capture, the held pass and the meter holds. |
-| **Meter** | Click to cycle Peak / RMS / Crest. A white tick marks the retained maximum. The meter, Spectral view and Listen always follow signal 1. |
+| **Meter** | Click to cycle Peak / RMS / Crest. A white tick marks the retained maximum. The meter and Listen always follow signal 1. |
 
 No latency is reported or added. The only case where the output changes is *Listen*.
 
