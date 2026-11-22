@@ -5,12 +5,12 @@
 /** Trace colour of signal n (0-based). Chosen to stay apart on a dark background. */
 inline juce::Colour signalColour (int n)
 {
-    static const juce::uint32 table[] = { 0xff4fd1ff,   // 1 cyan
-                                          0xffffb04a,   // 2 orange
-                                          0xffff6bd6,   // 3 pink
-                                          0xff7be07a,   // 4 green
-                                          0xffb48cff,   // 5 violet
-                                          0xffff6b5e }; // 6 red
+    static const juce::uint32 table[] = { 0xffffb04a,   // Pre 1: amber
+                                          0xffffc36b,   // Pre 2: light amber
+                                          0xffff8c38,   // Pre 3: deep orange
+                                          0xff4fd1ff,   // Main 1: cyan
+                                          0xff78deff,   // Main 2: light cyan
+                                          0xff22b7e6 }; // Main 3: deep cyan
     return juce::Colour (table[juce::jlimit (0, 5, n)]);
 }
 
@@ -115,11 +115,16 @@ private:
     juce::Slider timeSlider, gainSlider, loSlider, hiSlider;
     juce::TextButton listenBtn, freezeBtn, holdBtn, resetBtn;
     juce::TextButton sigBtn[WaveLensProcessor::kMaxSignals];
+    juce::TextButton loadSampleBtn[WaveLensProcessor::kMaxSignals];
+    juce::Slider layerGainSlider[WaveLensProcessor::kMaxSignals];
+    juce::Label layerHeader[WaveLensProcessor::kMaxSignals];
+    std::array<juce::String, WaveLensProcessor::kMaxSignals> displayedSampleNames;
 
     std::unique_ptr<ComboAtt>  viewAtt, captureAtt, barsAtt, inputAtt, layoutAtt;
     std::unique_ptr<SliderAtt> timeAtt, gainAtt, loAtt, hiAtt;
     std::unique_ptr<ButtonAtt> listenAtt, freezeAtt, holdAtt;
     std::unique_ptr<ButtonAtt> sigAtt[WaveLensProcessor::kMaxSignals];
+    std::unique_ptr<SliderAtt> layerGainAtt[WaveLensProcessor::kMaxSignals];
 
     struct Caption { juce::String text; juce::Rectangle<int> area; };
     std::vector<Caption> captions;
