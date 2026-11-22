@@ -29,10 +29,12 @@ namespace ids
     inline juce::String layerGain (int n)    { return "layerGain" + juce::String (n + 1); }
     inline juce::String layerPan (int n)     { return "layerPan" + juce::String (n + 1); }
     inline juce::String layerPitch (int n)   { return "layerPitch" + juce::String (n + 1); }
+    inline juce::String layerDelay (int n)   { return "layerDelay" + juce::String (n + 1); }
     inline juce::String layerHighPass (int n) { return "layerHighPass" + juce::String (n + 1); }
     inline juce::String layerLowPass (int n) { return "layerLowPass" + juce::String (n + 1); }
     inline juce::String layerAttack (int n)  { return "layerAttack" + juce::String (n + 1); }
     inline juce::String layerDecay (int n)   { return "layerDecay" + juce::String (n + 1); }
+    inline juce::String layerHold (int n)    { return "layerHold" + juce::String (n + 1); }
     inline juce::String layerSustain (int n) { return "layerSustain" + juce::String (n + 1); }
     inline juce::String layerRelease (int n) { return "layerRelease" + juce::String (n + 1); }
     inline juce::String layerAttackCurve (int n) { return "layerAttackCurve" + juce::String (n + 1); }
@@ -95,6 +97,8 @@ public:
     bool loadSampleFile (int layer, const juce::File& file, juce::String& error);
     void clearSample (int layer);
     juce::String getSampleName (int layer) const;
+    LayeredSampleEngine::WaveformPreview getWaveformPreview (int layer) const noexcept;
+    void requestPreview (int layer) noexcept;
 
     juce::AudioProcessorValueTreeState apvts;
 
@@ -186,10 +190,12 @@ private:
     std::array<std::atomic<float>*, kMaxSignals> pLayerGain {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerPan {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerPitch {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerDelay {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerHighPass {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerLowPass {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerAttack {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerDecay {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerHold {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerSustain {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerRelease {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerAttackCurve {};
