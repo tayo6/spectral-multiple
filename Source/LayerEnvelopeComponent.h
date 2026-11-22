@@ -54,8 +54,15 @@ private:
     std::atomic<float>* pReleaseCurve = nullptr;
 
     juce::ComboBox attackCurveBox, decayCurveBox, releaseCurveBox;
+    juce::Slider panSlider, pitchSlider, highPassSlider, lowPassSlider;
+    juce::TextButton muteButton;
+
     using ComboAtt = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
+    using SliderAtt = juce::AudioProcessorValueTreeState::SliderAttachment;
+    using ButtonAtt = juce::AudioProcessorValueTreeState::ButtonAttachment;
     std::unique_ptr<ComboAtt> attackCurveAttachment, decayCurveAttachment, releaseCurveAttachment;
+    std::unique_ptr<SliderAtt> panAttachment, pitchAttachment, highPassAttachment, lowPassAttachment;
+    std::unique_ptr<ButtonAtt> muteAttachment;
 
     Handle activeHandle = Handle::None;
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LayerEnvelopeComponent)
