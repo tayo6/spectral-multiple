@@ -25,15 +25,26 @@ public:
     static constexpr int kPreLayers = 3;
     static constexpr double kMaximumPreRollMilliseconds = 100.0;
     static constexpr double kDefaultPreRollMilliseconds = 50.0;
+    static constexpr int kPreviewPoints = 256;
+
+    struct WaveformPreview
+    {
+        std::array<float, kPreviewPoints> minimum {};
+        std::array<float, kPreviewPoints> maximum {};
+        double durationMs = 0.0;
+        bool loaded = false;
+    };
 
     struct LayerParameters
     {
         float gain = 1.0f;
         float pan = 0.0f;
         float pitchSemitones = 0.0f;
+        float delayShiftMs = 0.0f;
         float highPassHz = 20.0f;
         float lowPassHz = 20000.0f;
         float attackMs = 2.0f;
+        float holdMs = 20.0f;
         float decayMs = 60.0f;
         float sustain = 1.0f;
         float releaseMs = 120.0f;
@@ -53,6 +64,8 @@ public:
     bool loadSampleFromFile (int layer, const juce::File& file, juce::String& error);
     void clearSample (int layer);
     juce::String getSampleName (int layer) const;
+    WaveformPreview getWaveformPreview (int layer) const noexcept;
+    void requestPreview (int layer) noexcept;
     int getLoadedMask() const noexcept;
 
     void setLayerParameters (int layer, const LayerParameters& parameters) noexcept;
@@ -70,6 +83,7 @@ private:
         juce::AudioBuffer<float> audio;
         double sourceSampleRate = 44100.0;
         juce::String displayName;
+        WaveformPreview preview;
     };
 
     struct Voice
@@ -84,7 +98,7 @@ private:
     };
 
     void triggerAllLayers() noexcept;
-    void startLayer (int layer) noexcept;
+    void startLayer (int layer, bool ignoreTimingShift = false) noexcept;
     float renderLayerSample (int layer, float& left, float& right) noexcept;
     float envelopeLevelAtAge (const LayerParameters& p, int age) const noexcept;
     float applyCurve (float progress, int curve) const noexcept;
@@ -92,6 +106,7 @@ private:
     juce::AudioFormatManager formatManager;
     std::array<std::atomic<SampleData*>, kNumLayers> currentSamples {};
     std::array<std::atomic<bool>, kNumLayers> clearRequests {};
+    std::array<std::atomic<bool>, kNumLayers> previewRequests {};
     std::array<std::vector<std::unique_ptr<SampleData>>, kNumLayers> ownedSamples;
     std::array<juce::String, kNumLayers> sampleNames;
     std::array<LayerParameters, kNumLayers> parameters {};
@@ -99,7 +114,7 @@ private:
     std::array<juce::AudioBuffer<float>, kNumLayers> layerBuffers;
     std::array<juce::dsp::LinkwitzRileyFilter<float>, kNumLayers> layerHighPass;
     std::array<juce::dsp::LinkwitzRileyFilter<float>, kNumLayers> layerLowPass;
-    std::array<std::array<float, 257>, 5> curveTables {};
+    std::array<std::array<float, 257>, 7> curveTables {};
 
     std::vector<float> delayLeft, delayRight;
     int delayWritePosition = 0;
