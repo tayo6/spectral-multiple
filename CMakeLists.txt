@@ -46,7 +46,9 @@ target_sources(WaveLens PRIVATE
     Source/PluginEditor.cpp
     Source/PluginEditor.h
     Source/LayeredSampleEngine.cpp
-    Source/LayeredSampleEngine.h)
+    Source/LayeredSampleEngine.h
+    Source/LayerEnvelopeComponent.cpp
+    Source/LayerEnvelopeComponent.h)
 
 target_compile_definitions(WaveLens PUBLIC
     JUCE_WEB_BROWSER=0
