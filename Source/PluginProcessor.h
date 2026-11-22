@@ -8,6 +8,7 @@
 
 namespace ids
 {
+    inline constexpr const char* view      = "view";
     inline constexpr const char* capture   = "capture";    // Tempo / Live / Scroll
     inline constexpr const char* bars      = "bars";       // tempo window
     inline constexpr const char* timeMs    = "timeMs";     // free window
@@ -41,6 +42,7 @@ public:
     // Signal 1 is the main input; signals 2-6 come from five auxiliary input buses.
     static constexpr int kCols = 1024;
     static constexpr int kMaxSignals = 6;
+    static constexpr int kFFTOrder = 12, kFFTSize = 1 << kFFTOrder, kSpectrumBins = 512, kSpectrumHop = 1024;
     enum Chan { Sig1 = 0, Sig2, Sig3, Sig4, Sig5, Sig6, kNumChan };
 
     WaveLensProcessor();
@@ -83,6 +85,7 @@ public:
     using AF = std::atomic<float>;
     std::array<AF, kCols * kNumChan> colMin, colMax;     // current pass
     std::array<AF, kCols * kNumChan> heldMin, heldMax;   // previous pass
+    std::array<std::array<AF, kSpectrumBins>, kMaxSignals> spectrumDb, heldSpectrumDb;
 
     std::atomic<int>  head { 0 };          // column being written
     std::atomic<int>  passStartCol { 0 };  // first valid column of the current pass
@@ -110,6 +113,8 @@ private:
     void initColumn (int col, const float* v) noexcept;
     void updateColumn (int col, const float* v) noexcept;
     void pushSample (const float* v) noexcept;
+    void pushSpectrumSamples (const float* v) noexcept;
+    void processSpectrumFrame() noexcept;
 
     CaptureMode mode = CaptureMode::Tempo;
     double colF = 0.0;          // fractional column position
@@ -129,6 +134,15 @@ private:
     double sr = 44100.0;
     juce::dsp::LinkwitzRileyFilter<float> rangeHp[kMaxSignals], rangeLp[kMaxSignals];   // one pair per signal
     juce::dsp::LinkwitzRileyFilter<float> listenHp[2], listenLp[2];
+    juce::dsp::FFT spectrumFft { kFFTOrder };
+    std::array<float, kFFTSize> fftWindow {};
+    std::array<std::array<float, kFFTSize>, kMaxSignals> fftRing {};
+    std::array<std::array<float, kFFTSize * 2>, kMaxSignals> fftScratch {};
+    std::array<int, kMaxSignals> fftWritePos {};
+    std::array<int, kSpectrumBins> spectrumBinLo {};
+    std::array<float, kSpectrumBins> spectrumBinMix {};
+    int fftSamplesSinceUpdate = 0, fftSamplesCollected = 0;
+    float fftWindowSum = 1.0f;
     float  lastRangeLo = -1.0f, lastRangeHi = -1.0f;
     bool   lastRangeActive = false;
 
@@ -138,6 +152,7 @@ private:
     std::atomic<bool> resetRequest { false };
 
     // Cached parameter pointers.
+    std::atomic<float>* pView = nullptr;
     std::atomic<float>* pCapture = nullptr;
     std::atomic<float>* pBars = nullptr;
     std::atomic<float>* pTimeMs = nullptr;
