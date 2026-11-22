@@ -35,6 +35,7 @@ private:
 
     struct Trace { int ch; juce::Colour colour; };
 
+    void drawSpectrum (juce::Graphics&, juce::Rectangle<float>, const std::vector<Trace>&, bool);
     void drawLane (juce::Graphics&, juce::Rectangle<float> lane, const std::vector<Trace>&,
                    const Snapshot&, float gain, bool showHeld, const juce::String& title);
     void drawTrace (juce::Graphics&, juce::Rectangle<float> lane, int ch, juce::Colour,
@@ -42,6 +43,7 @@ private:
     juce::String windowLabel() const;
 
     WaveLensProcessor& proc;
+    std::atomic<float>* pView;
     std::atomic<float>* pCapture;
     std::atomic<float>* pBars;
     std::atomic<float>* pTimeMs;
@@ -109,12 +111,12 @@ private:
     ScopeView scope;
     MeterView meter;
 
-    juce::ComboBox captureBox, barsBox, inputBox, layoutBox;
+    juce::ComboBox viewBox, captureBox, barsBox, inputBox, layoutBox;
     juce::Slider timeSlider, gainSlider, loSlider, hiSlider;
     juce::TextButton listenBtn, freezeBtn, holdBtn, resetBtn;
     juce::TextButton sigBtn[WaveLensProcessor::kMaxSignals];
 
-    std::unique_ptr<ComboAtt>  captureAtt, barsAtt, inputAtt, layoutAtt;
+    std::unique_ptr<ComboAtt>  viewAtt, captureAtt, barsAtt, inputAtt, layoutAtt;
     std::unique_ptr<SliderAtt> timeAtt, gainAtt, loAtt, hiAtt;
     std::unique_ptr<ButtonAtt> listenAtt, freezeAtt, holdAtt;
     std::unique_ptr<ButtonAtt> sigAtt[WaveLensProcessor::kMaxSignals];
