@@ -78,6 +78,7 @@ private:
 
     juce::AudioFormatManager formatManager;
     std::array<std::atomic<SampleData*>, kNumLayers> currentSamples {};
+    std::array<std::atomic<bool>, kNumLayers> clearRequests {};
     std::array<std::vector<std::unique_ptr<SampleData>>, kNumLayers> ownedSamples;
     std::array<juce::String, kNumLayers> sampleNames;
     std::array<LayerParameters, kNumLayers> parameters {};
