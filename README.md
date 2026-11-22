@@ -6,10 +6,10 @@ WaveLens is a JUCE 7.0.12 VST3 audio effect that combines transient-triggered sa
 
 | Slots | Role | Playback start |
 |---|---|---|
-| PRE 1–3 | Three independent pre-sample layers | Immediately when a trigger is detected |
-| MAIN 1–3 | Three independent main-sample layers | 50 ms after the trigger |
+| PRE 1–3 | Three independent pre-sample layers | Scheduled before the aligned transient by the selected PRE lead |
+| MAIN 1–3 | Three independent main-sample layers | At the delayed transient position |
 
-Load a separate audio file into each slot. All six layers can play together. Each slot has its own gain, pan, pitch, attack, decay, sustain, release and mute parameters. Gain is available directly on the device panel; the full parameter set is exposed for DAW automation.
+Load a separate audio file into each slot. All six layers can play together. Every layer has independent gain, pan, pitch, high-pass, low-pass, attack, decay, sustain, release, curve selection and mute controls. Pan, pitch, filters and mute are available on the layer panel; the envelope is editable directly in its graph. All values are also exposed for DAW automation.
 
 ### Triggering and timing
 
@@ -17,9 +17,9 @@ Load a separate audio file into each slot. All six layers can play together. Eac
 - **MIDI**: any MIDI note-on triggers all loaded layers.
 - **Both**: accepts audio and MIDI triggers.
 - A 25 ms retrigger guard reduces repeated triggering from one transient.
-- The main input is delayed by 50 ms and that latency is reported to the host. PRE layers start immediately; MAIN layers start at the delayed transient position.
-
-The 50 ms pre-roll is currently fixed in this first engine milestone. This is intentional: the reported plug-in latency, delayed dry path and MAIN-layer trigger stay aligned.
+- PRE lead is adjustable from 0 to 100 ms.
+- The plug-in reports a fixed 100 ms lookahead latency to the host. The dry input and MAIN sample layers are delayed by 100 ms; PRE layers are placed earlier by the selected PRE lead. This keeps host delay compensation stable when the PRE lead knob changes.
+- At a PRE lead of 0 ms, PRE and MAIN layers start together. At 50 ms, PRE samples start 50 ms before the aligned main transient. At 100 ms, PRE samples start at the transient-detection point.
 
 ## Individual DAW outputs
 
@@ -57,6 +57,7 @@ This is an active development branch, not a finished commercial plug-in.
 - Samples are loaded into memory and sample paths are saved with the plug-in state.
 - Sample playback currently uses one voice per layer; a new trigger restarts that layer's current voice.
 - Every layer has an editable A/D/S/R envelope graph. Drag A and D horizontally to change their time values, S vertically to set sustain, and R horizontally to change the tail release duration.
+- Each layer also has its own Pan, Pitch, HPF, LPF and Mute controls. The 4th-order Linkwitz-Riley high-pass and low-pass filters are applied before the envelope and output routing.
 - Attack, decay and release each have five curve choices: Linear, Exponential, Logarithmic, S-Curve and Bezier. Curve selections and time/level values are exposed as DAW automation parameters.
 - The envelope is applied to the rendered sample audio before the layer stem and combined master are written. The waveform/spectrum capture therefore shows the shaped output, not an unprocessed preview.
 - For one-shot samples, release is fitted into the final part of the file. On very short samples it is limited to at most half the sample duration so the release does not suppress the attack.
