@@ -29,6 +29,7 @@ endif()
 
 juce_add_plugin(WaveLens
     COMPANY_NAME                "WaveLens Audio"
+    BUNDLE_ID                   "audio.wavlensaudio.wavlens"
     PLUGIN_MANUFACTURER_CODE    Wlau
     PLUGIN_CODE                 Wlns
     FORMATS                     VST3
