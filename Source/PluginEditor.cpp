@@ -491,6 +491,9 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
         layerHeader[layer].setColour (juce::Label::textColourId, signalColour (layer));
         addAndMakeVisible (layerHeader[layer]);
 
+        envelopeComponents[(size_t) layer] = std::make_unique<LayerEnvelopeComponent> (proc, layer, signalColour (layer));
+        addAndMakeVisible (*envelopeComponents[(size_t) layer]);
+
         loadSampleBtn[layer].setButtonText ("Load sample...");
         loadSampleBtn[layer].setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1b2229));
         loadSampleBtn[layer].setColour (juce::TextButton::buttonOnColourId, signalColour (layer).withAlpha (0.85f));
@@ -533,8 +536,8 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     }
 
     setResizable (true, true);
-    setResizeLimits (900, 620, 1920, 1200);
-    setSize (1060, 700);
+    setResizeLimits (980, 740, 1920, 1200);
+    setSize (1100, 760);
 
     updateEnabledStates();
     startTimerHz (10);
@@ -647,7 +650,7 @@ void WaveLensEditor::resized()
     freezeBtn.setBounds (header.removeFromRight (70));
     area.removeFromTop (6);
 
-    constexpr int layerPanelH = 88;
+    constexpr int layerPanelH = 204;
     auto layerPanel = area.removeFromBottom (layerPanelH);
     area.removeFromBottom (8);
 
@@ -685,6 +688,8 @@ void WaveLensEditor::resized()
         loadSampleBtn[layer].setBounds (cell.removeFromTop (24));
         cell.removeFromTop (2);
         layerGainSlider[layer].setBounds (cell.removeFromTop (24));
+        cell.removeFromTop (3);
+        envelopeComponents[(size_t) layer]->setBounds (cell);
     }
 
     // Compact global controls.
