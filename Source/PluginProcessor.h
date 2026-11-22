@@ -2,6 +2,7 @@
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_dsp/juce_dsp.h>
+#include "LayeredSampleEngine.h"
 
 #include <array>
 #include <atomic>
@@ -22,6 +23,16 @@ namespace ids
     inline constexpr const char* showSig[6] = { "show1", "show2", "show3", "show4", "show5", "show6" };
     inline constexpr const char* freeze    = "freeze";
     inline constexpr const char* hold      = "hold";
+    inline constexpr const char* triggerMode = "triggerMode";
+    inline constexpr const char* threshold   = "threshold";
+    inline juce::String layerGain (int n)    { return "layerGain" + juce::String (n + 1); }
+    inline juce::String layerPan (int n)     { return "layerPan" + juce::String (n + 1); }
+    inline juce::String layerPitch (int n)   { return "layerPitch" + juce::String (n + 1); }
+    inline juce::String layerAttack (int n)  { return "layerAttack" + juce::String (n + 1); }
+    inline juce::String layerDecay (int n)   { return "layerDecay" + juce::String (n + 1); }
+    inline juce::String layerSustain (int n) { return "layerSustain" + juce::String (n + 1); }
+    inline juce::String layerRelease (int n) { return "layerRelease" + juce::String (n + 1); }
+    inline juce::String layerMute (int n)    { return "layerMute" + juce::String (n + 1); }
 }
 
 enum class CaptureMode { Tempo = 0, Live, Scroll };
@@ -59,7 +70,7 @@ public:
     bool hasEditor() const override { return true; }
 
     const juce::String getName() const override { return "WaveLens"; }
-    bool acceptsMidi() const override  { return false; }
+    bool acceptsMidi() const override  { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
@@ -76,6 +87,9 @@ public:
     //==========================================================================
     /** Asks the audio thread to clear the capture, the held pass and the meter holds. */
     void requestReset() noexcept { resetRequest.store (true); }
+    bool loadSampleFile (int layer, const juce::File& file, juce::String& error);
+    void clearSample (int layer);
+    juce::String getSampleName (int layer) const;
 
     juce::AudioProcessorValueTreeState apvts;
 
@@ -161,6 +175,21 @@ private:
     std::atomic<float>* pRangeHi = nullptr;
     std::atomic<float>* pListen = nullptr;
     std::atomic<float>* pFreeze = nullptr;
+    std::atomic<float>* pTriggerMode = nullptr;
+    std::atomic<float>* pThreshold = nullptr;
+    std::array<std::atomic<float>*, kMaxSignals> pLayerGain {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerPan {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerPitch {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerAttack {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerDecay {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerSustain {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerRelease {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerMute {};
+
+    // Six immutable sample layers and a separate copy of the trigger input.
+    LayeredSampleEngine layerEngine;
+    juce::AudioBuffer<float> triggerBuffer;
+    std::array<juce::String, kMaxSignals> samplePaths;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaveLensProcessor)
 };
