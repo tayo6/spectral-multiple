@@ -81,9 +81,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
     layout.add (std::make_unique<AudioParameterBool> (PID { ids::showMid, 1 },  "Show mid",  true));
     layout.add (std::make_unique<AudioParameterBool> (PID { ids::showHigh, 1 }, "Show high", true));
 
-    layout.add (std::make_unique<AudioParameterBool> (PID { ids::scOn, 1 },     "Sidechain", false));
-    layout.add (std::make_unique<AudioParameterChoice> (PID { ids::scLayout, 1 }, "Sidechain layout",
+    layout.add (std::make_unique<AudioParameterChoice> (PID { ids::layout, 1 }, "Signal layout",
                                                         StringArray { "Overlay", "Split" }, 0));
+
+    for (int i = 0; i < kMaxSignals; ++i)
+        layout.add (std::make_unique<AudioParameterBool> (PID { ids::showSig[i], 1 },
+                                                          "Show signal " + String (i + 1), true));
 
     layout.add (std::make_unique<AudioParameterBool> (PID { ids::freeze, 1 },   "Freeze", false));
     layout.add (std::make_unique<AudioParameterBool> (PID { ids::hold, 1 },     "Hold", false));
@@ -92,11 +95,22 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
 }
 
 //==============================================================================
+juce::AudioProcessor::BusesProperties WaveLensProcessor::makeBuses()
+{
+    // Signal 1 is the main in/out. Signals 2-6 are optional extra inputs (sidechain-style
+    // buses) that the host routes to; they are analysed but never written to the output.
+    auto props = BusesProperties()
+                     .withInput  ("Signal 1", juce::AudioChannelSet::stereo(), true)
+                     .withOutput ("Output",   juce::AudioChannelSet::stereo(), true);
+
+    for (int i = 2; i <= kMaxSignals; ++i)
+        props = props.withInput ("Signal " + juce::String (i), juce::AudioChannelSet::stereo(), false);
+
+    return props;
+}
+
 WaveLensProcessor::WaveLensProcessor()
-    : AudioProcessor (BusesProperties()
-                          .withInput  ("Input",     juce::AudioChannelSet::stereo(), true)
-                          .withOutput ("Output",    juce::AudioChannelSet::stereo(), true)
-                          .withInput  ("Sidechain", juce::AudioChannelSet::stereo(), false)),
+    : AudioProcessor (makeBuses()),
       apvts (*this, nullptr, "STATE", createLayout())
 {
     for (auto* arr : { &colMin, &colMax, &heldMin, &heldMax })
@@ -125,10 +139,10 @@ bool WaveLensProcessor::isBusesLayoutSupported (const BusesLayout& layouts) cons
     if (mainOut != juce::AudioChannelSet::mono() && mainOut != juce::AudioChannelSet::stereo())
         return false;
 
-    if (layouts.inputBuses.size() > 1)
+    for (int b = 1; b < layouts.inputBuses.size(); ++b)
     {
-        const auto sc = layouts.getChannelSet (true, 1);
-        if (! sc.isDisabled() && sc != juce::AudioChannelSet::mono() && sc != juce::AudioChannelSet::stereo())
+        const auto extra = layouts.getChannelSet (true, b);
+        if (! extra.isDisabled() && extra != juce::AudioChannelSet::mono() && extra != juce::AudioChannelSet::stereo())
             return false;
     }
 
@@ -141,11 +155,18 @@ void WaveLensProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) juce::jmax (1, samplesPerBlock), 1 };
 
-    for (auto* f : { &xoLow, &xoHigh, &rangeHpMain, &rangeLpMain, &rangeHpSide, &rangeLpSide,
-                     &listenHp[0], &listenHp[1], &listenLp[0], &listenLp[1] })
+    for (auto* f : { &xoLow, &xoHigh, &listenHp[0], &listenHp[1], &listenLp[0], &listenLp[1] })
     {
         f->prepare (spec);
         f->reset();
+    }
+
+    for (int s = 0; s < kMaxSignals; ++s)
+    {
+        rangeHp[s].prepare (spec);
+        rangeHp[s].reset();
+        rangeLp[s].prepare (spec);
+        rangeLp[s].reset();
     }
 
     xoLow.setCutoffFrequency (250.0f);
@@ -307,20 +328,26 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     float* chL = mainBus.getWritePointer (0);
     float* chR = mainCh > 1 ? mainBus.getWritePointer (1) : chL;
 
-    // Optional sidechain input.
-    const float* scL = nullptr;
-    const float* scR = nullptr;
+    // Signal sources: signal 1 is the main bus, signals 2-6 are the optional extra input buses.
+    struct Source { const float* l = nullptr; const float* r = nullptr; };
+    Source src[kMaxSignals];
+    src[0] = { chL, chR };
+    int mask = 1;
 
-    if (getBusCount (true) > 1 && getBus (true, 1) != nullptr && getBus (true, 1)->isEnabled())
+    for (int s = 1; s < kMaxSignals && s < getBusCount (true); ++s)
     {
-        auto sc = getBusBuffer (buffer, true, 1);
-        if (sc.getNumChannels() > 0)
+        auto* bus = getBus (true, s);
+        if (bus == nullptr || ! bus->isEnabled())
+            continue;
+
+        auto extra = getBusBuffer (buffer, true, s);
+        if (extra.getNumChannels() > 0)
         {
-            scL = sc.getReadPointer (0);
-            scR = sc.getNumChannels() > 1 ? sc.getReadPointer (1) : scL;
+            src[s] = { extra.getReadPointer (0), extra.getReadPointer (extra.getNumChannels() > 1 ? 1 : 0) };
+            mask |= 1 << s;
         }
     }
-    sidechainConnected.store (scL != nullptr, relaxed);
+    connectedMask.store (mask, relaxed);
 
     // Parameters ---------------------------------------------------------------
     const auto inputMode = (InputMode) juce::jlimit (0, 4, juce::roundToInt (pInput->load()));
@@ -342,20 +369,25 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     if (rangeLo != lastRangeLo)
     {
-        for (auto* f : { &rangeHpMain, &rangeHpSide, &listenHp[0], &listenHp[1] })
+        for (auto& f : rangeHp)
+            f.setCutoffFrequency (rangeLo);
+        for (auto* f : { &listenHp[0], &listenHp[1] })
             f->setCutoffFrequency (rangeLo);
         lastRangeLo = rangeLo;
     }
     if (rangeHi != lastRangeHi)
     {
-        for (auto* f : { &rangeLpMain, &rangeLpSide, &listenLp[0], &listenLp[1] })
+        for (auto& f : rangeLp)
+            f.setCutoffFrequency (rangeHi);
+        for (auto* f : { &listenLp[0], &listenLp[1] })
             f->setCutoffFrequency (rangeHi);
         lastRangeHi = rangeHi;
     }
     if (rangeActive != lastRangeActive)
     {
-        for (auto* f : { &rangeHpMain, &rangeLpMain, &rangeHpSide, &rangeLpSide,
-                         &listenHp[0], &listenHp[1], &listenLp[0], &listenLp[1] })
+        for (auto& f : rangeHp) f.reset();
+        for (auto& f : rangeLp) f.reset();
+        for (auto* f : { &listenHp[0], &listenHp[1], &listenLp[0], &listenLp[1] })
             f->reset();
         lastRangeActive = rangeActive;
     }
@@ -469,12 +501,12 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
         float lo_ = 0.0f, hi_ = 0.0f;
 
-        // Main signal, selected input, then the visible frequency range.
+        // Signal 1: selected input, then the visible frequency range.
         float x = pickSample (l, r, inputMode);
-        if (loOn) { rangeHpMain.processSample (0, x, lo_, hi_); x = hi_; }
-        if (hiOn) { rangeLpMain.processSample (0, x, lo_, hi_); x = lo_; }
+        if (loOn) { rangeHp[0].processSample (0, x, lo_, hi_); x = hi_; }
+        if (hiOn) { rangeLp[0].processSample (0, x, lo_, hi_); x = lo_; }
 
-        // Meter (before display gain, after range).
+        // Meter (signal 1, before display gain, after range).
         peakEnv = juce::jmax (std::abs (x), peakEnv * peakDecay);
         meanSquare += msAlpha * (x * x - meanSquare);
 
@@ -484,19 +516,23 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
             xoLow.processSample (0, x, low, rest);
             xoHigh.processSample (0, rest, mid, high);
 
-            v[Full] = x;
+            v[Sig1] = x;
             v[Low]  = low;
             v[Mid]  = mid;
             v[High] = high;
 
-            float s = 0.0f;
-            if (scL != nullptr)
+            // Signals 2-6 go through the same input mode and range as signal 1.
+            for (int s = 1; s < kMaxSignals; ++s)
             {
-                s = pickSample (scL[i], scR[i], inputMode);
-                if (loOn) { rangeHpSide.processSample (0, s, lo_, hi_); s = hi_; }
-                if (hiOn) { rangeLpSide.processSample (0, s, lo_, hi_); s = lo_; }
+                float y = 0.0f;
+                if (src[s].l != nullptr)
+                {
+                    y = pickSample (src[s].l[i], src[s].r[i], inputMode);
+                    if (loOn) { rangeHp[s].processSample (0, y, lo_, hi_); y = hi_; }
+                    if (hiOn) { rangeLp[s].processSample (0, y, lo_, hi_); y = lo_; }
+                }
+                v[Sig1 + s] = y;
             }
-            v[Side] = s;
 
             pushSample (v);
         }

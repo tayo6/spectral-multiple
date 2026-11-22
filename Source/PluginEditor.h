@@ -2,6 +2,18 @@
 
 #include "PluginProcessor.h"
 
+/** Trace colour of signal n (0-based). Chosen to stay apart on a dark background. */
+inline juce::Colour signalColour (int n)
+{
+    static const juce::uint32 table[] = { 0xff4fd1ff,   // 1 cyan
+                                          0xffffb04a,   // 2 orange
+                                          0xffff6bd6,   // 3 pink
+                                          0xff7be07a,   // 4 green
+                                          0xffb48cff,   // 5 violet
+                                          0xffff6b5e }; // 6 red
+    return juce::Colour (table[juce::jlimit (0, 5, n)]);
+}
+
 //==============================================================================
 /** The oscilloscope display. */
 class ScopeView final : public juce::Component, private juce::Timer
@@ -26,7 +38,7 @@ private:
     void drawLane (juce::Graphics&, juce::Rectangle<float> lane, const std::vector<Trace>&,
                    const Snapshot&, float gain, bool showHeld, const juce::String& title);
     void drawTrace (juce::Graphics&, juce::Rectangle<float> lane, int ch, juce::Colour,
-                    const Snapshot&, float gain, bool held);
+                    const Snapshot&, float gain, bool held, float fillAlpha);
     juce::String windowLabel() const;
 
     WaveLensProcessor& proc;
@@ -38,8 +50,8 @@ private:
     std::atomic<float>* pShowLow;
     std::atomic<float>* pShowMid;
     std::atomic<float>* pShowHigh;
-    std::atomic<float>* pScOn;
-    std::atomic<float>* pScLayout;
+    std::atomic<float>* pLayout;
+    std::atomic<float>* pShowSig[WaveLensProcessor::kMaxSignals];
     std::atomic<float>* pFreeze;
     std::atomic<float>* pHold;
 
@@ -101,13 +113,15 @@ private:
     ScopeView scope;
     MeterView meter;
 
-    juce::ComboBox viewBox, captureBox, barsBox, inputBox, scLayoutBox;
+    juce::ComboBox viewBox, captureBox, barsBox, inputBox, layoutBox;
     juce::Slider timeSlider, gainSlider, loSlider, hiSlider;
-    juce::TextButton lowBtn, midBtn, highBtn, listenBtn, scOnBtn, freezeBtn, holdBtn, resetBtn;
+    juce::TextButton lowBtn, midBtn, highBtn, listenBtn, freezeBtn, holdBtn, resetBtn;
+    juce::TextButton sigBtn[WaveLensProcessor::kMaxSignals];
 
-    std::unique_ptr<ComboAtt>  viewAtt, captureAtt, barsAtt, inputAtt, scLayoutAtt;
+    std::unique_ptr<ComboAtt>  viewAtt, captureAtt, barsAtt, inputAtt, layoutAtt;
     std::unique_ptr<SliderAtt> timeAtt, gainAtt, loAtt, hiAtt;
-    std::unique_ptr<ButtonAtt> lowAtt, midAtt, highAtt, listenAtt, scOnAtt, freezeAtt, holdAtt;
+    std::unique_ptr<ButtonAtt> lowAtt, midAtt, highAtt, listenAtt, freezeAtt, holdAtt;
+    std::unique_ptr<ButtonAtt> sigAtt[WaveLensProcessor::kMaxSignals];
 
     struct Caption { juce::String text; juce::Rectangle<int> area; };
     std::vector<Caption> captions;

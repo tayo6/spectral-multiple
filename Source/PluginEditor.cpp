@@ -10,11 +10,9 @@ namespace
     const juce::Colour kText       { 0xff9aa5b1 };
     const juce::Colour kTextBright { 0xffe6ebf0 };
     const juce::Colour kAccent     { 0xff4fd1ff };
-    const juce::Colour kMain       { 0xff7fe3ff };
     const juce::Colour kLow        { 0xffff6b5e };
     const juce::Colour kMid        { 0xff7be07a };
     const juce::Colour kHigh       { 0xff6ea8ff };
-    const juce::Colour kSide       { 0xffffb04a };
 
     juce::String formatHz (double hz)
     {
@@ -83,8 +81,9 @@ ScopeView::ScopeView (WaveLensProcessor& p)
     pShowLow  = a.getRawParameterValue (ids::showLow);
     pShowMid  = a.getRawParameterValue (ids::showMid);
     pShowHigh = a.getRawParameterValue (ids::showHigh);
-    pScOn     = a.getRawParameterValue (ids::scOn);
-    pScLayout = a.getRawParameterValue (ids::scLayout);
+    pLayout   = a.getRawParameterValue (ids::layout);
+    for (int n = 0; n < WaveLensProcessor::kMaxSignals; ++n)
+        pShowSig[n] = a.getRawParameterValue (ids::showSig[n]);
     pFreeze   = a.getRawParameterValue (ids::freeze);
     pHold     = a.getRawParameterValue (ids::hold);
 
@@ -106,7 +105,7 @@ juce::String ScopeView::windowLabel() const
 }
 
 void ScopeView::drawTrace (juce::Graphics& g, juce::Rectangle<float> lane, int ch, juce::Colour colour,
-                           const Snapshot& s, float gain, bool held)
+                           const Snapshot& s, float gain, bool held, float fillAlpha)
 {
     const bool scroll = juce::roundToInt (pCapture->load()) == 2;
     constexpr int N = WaveLensProcessor::kCols;
@@ -167,7 +166,7 @@ void ScopeView::drawTrace (juce::Graphics& g, juce::Rectangle<float> lane, int c
         path.lineTo (xOf (j), yOf (minBuf[(size_t) WaveLensProcessor::idx (ch, colOf (j))].load (relaxed)));
     path.closeSubPath();
 
-    g.setColour (colour.withAlpha (held ? 0.10f : 0.30f));
+    g.setColour (colour.withAlpha (held ? fillAlpha * 0.35f : fillAlpha));
     g.fillPath (path);
     g.setColour (colour.withAlpha (held ? 0.35f : 0.95f));
     g.strokePath (path, juce::PathStrokeType (1.0f));
@@ -203,13 +202,17 @@ void ScopeView::drawLane (juce::Graphics& g, juce::Rectangle<float> lane, const 
     g.setColour (juce::Colours::white.withAlpha (0.14f));
     g.drawHorizontalLine (juce::roundToInt (centre), lane.getX(), lane.getRight());
 
-    // Previous pass first, so it sits behind the current one.
-    if (showHeld)
-        for (auto& t : traces)
-            drawTrace (g, lane, t.ch, t.colour, s, gain, true);
+    // With several overlapping traces the fills are lighter so every trace stays readable.
+    const float fillAlpha = traces.size() > 1 ? 0.10f : 0.30f;
 
-    for (auto& t : traces)
-        drawTrace (g, lane, t.ch, t.colour, s, gain, false);
+    // Previous pass first, so it sits behind the current one. Traces are drawn from the last
+    // to the first, which keeps signal 1 on top of the stack.
+    if (showHeld)
+        for (auto it = traces.rbegin(); it != traces.rend(); ++it)
+            drawTrace (g, lane, it->ch, it->colour, s, gain, true, fillAlpha);
+
+    for (auto it = traces.rbegin(); it != traces.rend(); ++it)
+        drawTrace (g, lane, it->ch, it->colour, s, gain, false, fillAlpha);
 
     // Write cursor for the fixed-window modes.
     if (mode != 2 && s.has)
@@ -249,9 +252,16 @@ void ScopeView::paint (juce::Graphics& g)
 
     const float gain = std::pow (10.0f, pGain->load() / 20.0f);
     const bool spectral = juce::roundToInt (pView->load()) == 1;
-    const bool scOn = ! spectral && pScOn->load() > 0.5f;
-    const bool split = scOn && juce::roundToInt (pScLayout->load()) == 1;
     const bool showHeld = pHold->load() > 0.5f;
+    const int mask = proc.connectedMask.load (relaxed);
+
+    // Signals that are routed in the host and not hidden with their toggle.
+    std::vector<int> active;
+    for (int n = 0; n < WaveLensProcessor::kMaxSignals; ++n)
+        if ((mask & (1 << n)) != 0 && pShowSig[n]->load() > 0.5f)
+            active.push_back (n);
+
+    const bool split = ! spectral && active.size() > 1 && juce::roundToInt (pLayout->load()) == 1;
 
     auto area = bounds.reduced (6.0f);
     area.removeFromBottom (16.0f);          // room for the footer text
@@ -266,17 +276,40 @@ void ScopeView::paint (juce::Graphics& g)
     }
     else if (split)
     {
-        auto top = area.removeFromTop (area.getHeight() * 0.5f - 2.0f);
-        area.removeFromTop (4.0f);
-        drawLane (g, top,  { { WaveLensProcessor::Full, kMain } }, s, gain, showHeld, "MAIN");
-        drawLane (g, area, { { WaveLensProcessor::Side, kSide } }, s, gain, showHeld, "SIDECHAIN");
+        const float gap = 4.0f;
+        const float laneH = (area.getHeight() - gap * (float) (active.size() - 1)) / (float) active.size();
+
+        for (int n : active)
+        {
+            auto lane = area.removeFromTop (laneH);
+            area.removeFromTop (gap);
+            drawLane (g, lane, { { n, signalColour (n) } }, s, gain, showHeld, "SIGNAL " + juce::String (n + 1));
+        }
     }
     else
     {
-        std::vector<Trace> traces { { WaveLensProcessor::Full, kMain } };
-        if (scOn)
-            traces.push_back ({ WaveLensProcessor::Side, kSide });
-        drawLane (g, area, traces, s, gain, showHeld, scOn ? "MAIN + SIDECHAIN" : juce::String());
+        std::vector<Trace> traces;
+        for (int n : active)
+            traces.push_back ({ n, signalColour (n) });
+
+        drawLane (g, area, traces, s, gain, showHeld, {});
+
+        // Colour key, so the overlapping traces can be told apart.
+        if (traces.size() > 1)
+        {
+            g.setFont (juce::Font (11.0f, juce::Font::bold));
+            float x = area.getRight() - 8.0f;
+            for (int k = (int) active.size() - 1; k >= 0; --k)
+            {
+                const int n = active[(size_t) k];
+                auto chip = juce::Rectangle<float> (x - 18.0f, area.getY() + 6.0f, 18.0f, 14.0f);
+                g.setColour (signalColour (n).withAlpha (0.9f));
+                g.fillRoundedRectangle (chip, 3.0f);
+                g.setColour (juce::Colour (0xff04121a));
+                g.drawText (juce::String (n + 1), chip, juce::Justification::centred);
+                x -= 22.0f;
+            }
+        }
     }
 
     // Footer
@@ -285,11 +318,12 @@ void ScopeView::paint (juce::Graphics& g)
     g.setColour (kText);
     g.drawText (windowLabel(), footer, juce::Justification::centredLeft);
 
-    if (scOn && ! proc.sidechainConnected.load (relaxed))
-    {
-        g.setColour (kSide);
-        g.drawText ("No sidechain input routed in the host", footer, juce::Justification::centred);
-    }
+    if (! spectral && (mask & ~1) == 0)
+        g.drawText ("Route more inputs to this plug-in (Signal 2-6) to compare signals",
+                    footer, juce::Justification::centred);
+    else if (! spectral)
+        g.drawText (juce::String (active.size()) + (active.size() == 1 ? " signal" : " signals"),
+                    footer, juce::Justification::centred);
 
     if (pFreeze->load() > 0.5f)
     {
@@ -398,20 +432,26 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     setupCombo (captureBox,  ids::capture,  captureAtt);
     setupCombo (barsBox,     ids::bars,     barsAtt);
     setupCombo (inputBox,    ids::input,    inputAtt);
-    setupCombo (scLayoutBox, ids::scLayout, scLayoutAtt);
+    setupCombo (layoutBox,   ids::layout,   layoutAtt);
 
     setupToggle (lowBtn,    "Low",       ids::showLow,  lowAtt);
     setupToggle (midBtn,    "Mid",       ids::showMid,  midAtt);
     setupToggle (highBtn,   "High",      ids::showHigh, highAtt);
     setupToggle (listenBtn, "Listen",    ids::listen,   listenAtt);
-    setupToggle (scOnBtn,   "Sidechain", ids::scOn,     scOnAtt);
     setupToggle (freezeBtn, "Freeze",    ids::freeze,   freezeAtt);
     setupToggle (holdBtn,   "Hold",      ids::hold,     holdAtt);
 
     lowBtn.setColour  (juce::TextButton::buttonOnColourId, kLow);
     midBtn.setColour  (juce::TextButton::buttonOnColourId, kMid);
     highBtn.setColour (juce::TextButton::buttonOnColourId, kHigh);
-    scOnBtn.setColour (juce::TextButton::buttonOnColourId, kSide);
+
+    // One toggle per signal, in that signal's trace colour.
+    for (int n = 0; n < WaveLensProcessor::kMaxSignals; ++n)
+    {
+        setupToggle (sigBtn[n], juce::String (n + 1), ids::showSig[n], sigAtt[n]);
+        sigBtn[n].setColour (juce::TextButton::buttonOnColourId, signalColour (n));
+        sigBtn[n].setColour (juce::TextButton::textColourOnId, juce::Colour (0xff04121a));
+    }
 
     resetBtn.setButtonText ("Reset");
     resetBtn.onClick = [this] { proc.requestReset(); };
@@ -483,7 +523,7 @@ void WaveLensEditor::updateEnabledStates()
     const auto& a = proc.apvts;
     const int capture = juce::roundToInt (a.getRawParameterValue (ids::capture)->load());
     const bool spectral = juce::roundToInt (a.getRawParameterValue (ids::view)->load()) == 1;
-    const bool scOn = a.getRawParameterValue (ids::scOn)->load() > 0.5f;
+    const int mask = proc.connectedMask.load();
 
     barsBox.setVisible (capture == 0);
     timeSlider.setVisible (capture != 0);
@@ -491,8 +531,12 @@ void WaveLensEditor::updateEnabledStates()
     for (auto* b : { &lowBtn, &midBtn, &highBtn })
         b->setEnabled (spectral);
 
-    scOnBtn.setEnabled (! spectral);
-    scLayoutBox.setEnabled (! spectral && scOn);
+    // A signal's toggle is available once an input is routed to it in the host.
+    // Signals 2-6 are only shown in the Wave view; Spectral looks at signal 1.
+    for (int n = 0; n < WaveLensProcessor::kMaxSignals; ++n)
+        sigBtn[n].setEnabled (! spectral && (mask & (1 << n)) != 0);
+
+    layoutBox.setEnabled (! spectral && (mask & ~1) != 0);
 }
 
 void WaveLensEditor::timerCallback()
@@ -556,8 +600,8 @@ void WaveLensEditor::resized()
     scope.setBounds (area);
 
     // Five groups share the panel width.
-    const float weights[] = { 1.0f, 1.15f, 1.15f, 1.5f, 1.0f };
-    const char* titles[] = { "View", "Time", "Signal", "Range", "Sidechain" };
+    const float weights[] = { 1.0f, 1.1f, 1.1f, 1.4f, 1.3f };
+    const char* titles[] = { "View", "Time", "Signal", "Range", "Signals" };
     float total = 0.0f;
     for (float w : weights) total += w;
 
@@ -616,7 +660,16 @@ void WaveLensEditor::resized()
     labelled (cells[3], 1, "High cut", hiSlider);
     listenBtn.setBounds (rowOf (cells[3], 2));
 
-    // Sidechain
-    scOnBtn.setBounds (rowOf (cells[4], 0));
-    labelled (cells[4], 1, "Layout", scLayoutBox);
+    // Signals: six numbered toggles, then the overlay / split choice.
+    {
+        auto r = rowOf (cells[4], 0);
+        const int n = WaveLensProcessor::kMaxSignals;
+        const int bw = (r.getWidth() - 3 * (n - 1)) / n;
+        for (int i = 0; i < n; ++i)
+        {
+            sigBtn[i].setBounds (r.removeFromLeft (bw));
+            r.removeFromLeft (3);
+        }
+    }
+    labelled (cells[4], 1, "Layout", layoutBox);
 }

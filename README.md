@@ -13,11 +13,21 @@ freeze/hold, metering), not a copy of any commercial plug-in.
 | **Input** | Peak (louder channel, polarity kept), L, R, M, S. |
 | **Gain** | -24 ... +24 dB display gain. Never changes the output or the meter. |
 | **Range / Listen** | Limit the visible frequency range (low cut / high cut). *Listen* auditions only that range through the output. With Listen off the audio is passed through untouched. |
-| **Sidechain** | Route a send to the plug-in's sidechain input, turn *Sidechain* on (Wave view): *Overlay* draws both signals on one axis, *Split* uses two lanes on a shared timeline. |
+| **Signals (up to 6)** | Signal 1 is the main input. Signals 2-6 are five extra input buses ("Signal 2" ... "Signal 6") that you route to in the DAW. Every routed signal is drawn in its own colour, overlaid on one shared axis (*Overlay*) or in one lane each (*Split*). Six numbered buttons show/hide each signal; a button is only enabled once an input is routed to it. All signals share the same input mode (Peak/L/R/M/S), range and gain. Wave view only. |
 | **Freeze / Hold / Reset** | Freeze stops the graph without touching audio. Hold keeps the previous pass as a dim trace. Reset clears the capture, the held pass and the meter holds. |
-| **Meter** | Click to cycle Peak / RMS / Crest. A white tick marks the retained maximum. |
+| **Meter** | Click to cycle Peak / RMS / Crest. A white tick marks the retained maximum. The meter, Spectral view and Listen always follow signal 1. |
 
 No latency is reported or added. The only case where the output changes is *Listen*.
+
+## Routing the extra signals
+
+The extra signals are ordinary sidechain-style input buses, so how you feed them depends on the host. The notes below are general guidance and have **not** been tested in each DAW:
+
+* **Reaper**: widen the track to 4/6/8/10/12 channels and use the plug-in pin connector; pins 3-4 feed Signal 2, 5-6 feed Signal 3, and so on. Use sends with "send to channels 3/4" etc. from the other tracks.
+* **Cubase / Nuendo, Studio One, Bitwig**: enable the extra input buses in the plug-in's sidechain/input menu and pick a source for each.
+* **Hosts that expose only one sidechain** (for example Ableton Live) can feed Signal 1 and Signal 2 only.
+
+Hosts differ a lot in how many extra plug-in inputs they expose, so check your DAW's documentation. If your DAW offers only a single sidechain, you can still compare two signals (Signal 1 + Signal 2).
 
 ## Building (Windows)
 

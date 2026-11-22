@@ -21,8 +21,8 @@ namespace ids
     inline constexpr const char* showLow   = "showLow";
     inline constexpr const char* showMid   = "showMid";
     inline constexpr const char* showHigh  = "showHigh";
-    inline constexpr const char* scOn      = "scOn";
-    inline constexpr const char* scLayout  = "scLayout";   // Overlay / Split
+    inline constexpr const char* layout    = "layout";     // Overlay / Split (multi-signal)
+    inline constexpr const char* showSig[6] = { "show1", "show2", "show3", "show4", "show5", "show6" };
     inline constexpr const char* freeze    = "freeze";
     inline constexpr const char* hold      = "hold";
 }
@@ -42,8 +42,11 @@ class WaveLensProcessor final : public juce::AudioProcessor
 {
 public:
     // Number of display columns, and the signals that are captured per column.
+    // Signal 1 is the main input; signals 2-6 come from five auxiliary input buses.
+    // Low/Mid/High are the three frequency layers of signal 1 (Spectral view).
     static constexpr int kCols = 1024;
-    enum Chan { Full = 0, Low, Mid, High, Side, kNumChan };
+    static constexpr int kMaxSignals = 6;
+    enum Chan { Sig1 = 0, Sig2, Sig3, Sig4, Sig5, Sig6, Low, Mid, High, kNumChan };
 
     WaveLensProcessor();
     ~WaveLensProcessor() override = default;
@@ -92,7 +95,7 @@ public:
     std::atomic<bool> hasData { false };
     std::atomic<int>  heldFrom { 0 }, heldTo { 0 };
     std::atomic<bool> heldValid { false };
-    std::atomic<bool> sidechainConnected { false };
+    std::atomic<int>  connectedMask { 1 };   // bit n set = signal n+1 has an input routed
 
     // Meter values (linear).
     std::atomic<float> peakNow { 0.0f }, rmsNow { 0.0f }, crestNow { 1.0f };
@@ -102,6 +105,7 @@ public:
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
+    static BusesProperties makeBuses();
 
     // Capture engine (audio thread only) --------------------------------------
     void resetCapture (bool clearHeld);
@@ -129,7 +133,7 @@ private:
     // DSP ---------------------------------------------------------------------
     double sr = 44100.0;
     juce::dsp::LinkwitzRileyFilter<float> xoLow, xoHigh;
-    juce::dsp::LinkwitzRileyFilter<float> rangeHpMain, rangeLpMain, rangeHpSide, rangeLpSide;
+    juce::dsp::LinkwitzRileyFilter<float> rangeHp[kMaxSignals], rangeLp[kMaxSignals];   // one pair per signal
     juce::dsp::LinkwitzRileyFilter<float> listenHp[2], listenLp[2];
     float  lastRangeLo = -1.0f, lastRangeHi = -1.0f;
     bool   lastRangeActive = false;
