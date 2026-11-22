@@ -87,6 +87,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
                                                         "Trigger mode", StringArray { "Audio", "MIDI", "Both" }, 0));
     layout.add (std::make_unique<AudioParameterFloat> (PID { ids::threshold, 1 }, "Trigger threshold",
                                                        NormalisableRange<float> (0.001f, 1.0f, 0.001f), 0.12f));
+    layout.add (std::make_unique<AudioParameterFloat> (PID { ids::preRollMs, 1 }, "PRE lead",
+                                                       NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f,
+                                                       AudioParameterFloatAttributes().withLabel ("ms")));
 
     for (int i = 0; i < kMaxSignals; ++i)
     {
@@ -98,6 +101,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerPitch (i), 1 }, "Layer " + suffix + " pitch",
                                                            NormalisableRange<float> (-24.0f, 24.0f, 0.01f), 0.0f,
                                                            AudioParameterFloatAttributes().withLabel ("st")));
+        layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerHighPass (i), 1 }, "Layer " + suffix + " high-pass",
+                                                           NormalisableRange<float> (20.0f, 1000.0f, 1.0f, 0.35f), 20.0f,
+                                                           AudioParameterFloatAttributes().withLabel ("Hz")));
+        layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerLowPass (i), 1 }, "Layer " + suffix + " low-pass",
+                                                           NormalisableRange<float> (1000.0f, 20000.0f, 1.0f, 0.35f), 20000.0f,
+                                                           AudioParameterFloatAttributes().withLabel ("Hz")));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerAttack (i), 1 }, "Layer " + suffix + " attack",
                                                            NormalisableRange<float> (0.1f, 2000.0f, 0.1f), 2.0f,
                                                            AudioParameterFloatAttributes().withLabel ("ms")));
@@ -164,12 +173,15 @@ WaveLensProcessor::WaveLensProcessor()
     pFreeze   = apvts.getRawParameterValue (ids::freeze);
     pTriggerMode = apvts.getRawParameterValue (ids::triggerMode);
     pThreshold = apvts.getRawParameterValue (ids::threshold);
+    pPreRollMs = apvts.getRawParameterValue (ids::preRollMs);
 
     for (int i = 0; i < kMaxSignals; ++i)
     {
         pLayerGain[(size_t) i] = apvts.getRawParameterValue (ids::layerGain (i));
         pLayerPan[(size_t) i] = apvts.getRawParameterValue (ids::layerPan (i));
         pLayerPitch[(size_t) i] = apvts.getRawParameterValue (ids::layerPitch (i));
+        pLayerHighPass[(size_t) i] = apvts.getRawParameterValue (ids::layerHighPass (i));
+        pLayerLowPass[(size_t) i] = apvts.getRawParameterValue (ids::layerLowPass (i));
         pLayerAttack[(size_t) i] = apvts.getRawParameterValue (ids::layerAttack (i));
         pLayerDecay[(size_t) i] = apvts.getRawParameterValue (ids::layerDecay (i));
         pLayerSustain[(size_t) i] = apvts.getRawParameterValue (ids::layerSustain (i));
@@ -207,7 +219,8 @@ void WaveLensProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     sr = sampleRate;
     layerEngine.prepareToPlay (sampleRate, samplesPerBlock);
     triggerBuffer.setSize (2, juce::jmax (1, samplesPerBlock), false, true, false);
-    setLatencySamples (juce::jmax (1, juce::roundToInt (sampleRate * LayeredSampleEngine::kPreRollMilliseconds * 0.001)));
+    // Fixed maximum lookahead keeps host PDC stable while PRE lead is adjusted.
+    setLatencySamples (juce::jmax (1, juce::roundToInt (sampleRate * LayeredSampleEngine::kMaximumPreRollMilliseconds * 0.001)));
 
     juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) juce::jmax (1, samplesPerBlock), 1 };
 
@@ -436,6 +449,8 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         params.gain = pLayerGain[(size_t) layer]->load (relaxed);
         params.pan = pLayerPan[(size_t) layer]->load (relaxed);
         params.pitchSemitones = pLayerPitch[(size_t) layer]->load (relaxed);
+        params.highPassHz = pLayerHighPass[(size_t) layer]->load (relaxed);
+        params.lowPassHz = pLayerLowPass[(size_t) layer]->load (relaxed);
         params.attackMs = pLayerAttack[(size_t) layer]->load (relaxed);
         params.decayMs = pLayerDecay[(size_t) layer]->load (relaxed);
         params.sustain = pLayerSustain[(size_t) layer]->load (relaxed);
@@ -449,6 +464,7 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     layerEngine.setTriggerMode (juce::roundToInt (pTriggerMode->load (relaxed)),
                                 pThreshold->load (relaxed));
+    layerEngine.setPreRollMilliseconds (pPreRollMs->load (relaxed));
     layerEngine.processBlock (triggerBuffer, mainOutput, layerOutputPointers, midi);
 
     const int mainChannels = mainOutput.getNumChannels();
