@@ -109,6 +109,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerRelease (i), 1 }, "Layer " + suffix + " release",
                                                            NormalisableRange<float> (0.1f, 10000.0f, 0.1f), 120.0f,
                                                            AudioParameterFloatAttributes().withLabel ("ms")));
+        const StringArray curveNames { "Linear", "Exponential", "Logarithmic", "S-Curve", "Bezier" };
+        layout.add (std::make_unique<AudioParameterChoice> (PID { ids::layerAttackCurve (i), 1 },
+                                                           "Layer " + suffix + " attack curve", curveNames, 1));
+        layout.add (std::make_unique<AudioParameterChoice> (PID { ids::layerDecayCurve (i), 1 },
+                                                           "Layer " + suffix + " decay curve", curveNames, 1));
+        layout.add (std::make_unique<AudioParameterChoice> (PID { ids::layerReleaseCurve (i), 1 },
+                                                           "Layer " + suffix + " release curve", curveNames, 1));
         layout.add (std::make_unique<AudioParameterBool> (PID { ids::layerMute (i), 1 }, "Layer " + suffix + " mute", false));
     }
 
@@ -167,6 +174,9 @@ WaveLensProcessor::WaveLensProcessor()
         pLayerDecay[(size_t) i] = apvts.getRawParameterValue (ids::layerDecay (i));
         pLayerSustain[(size_t) i] = apvts.getRawParameterValue (ids::layerSustain (i));
         pLayerRelease[(size_t) i] = apvts.getRawParameterValue (ids::layerRelease (i));
+        pLayerAttackCurve[(size_t) i] = apvts.getRawParameterValue (ids::layerAttackCurve (i));
+        pLayerDecayCurve[(size_t) i] = apvts.getRawParameterValue (ids::layerDecayCurve (i));
+        pLayerReleaseCurve[(size_t) i] = apvts.getRawParameterValue (ids::layerReleaseCurve (i));
         pLayerMute[(size_t) i] = apvts.getRawParameterValue (ids::layerMute (i));
     }
 }
@@ -430,6 +440,9 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         params.decayMs = pLayerDecay[(size_t) layer]->load (relaxed);
         params.sustain = pLayerSustain[(size_t) layer]->load (relaxed);
         params.releaseMs = pLayerRelease[(size_t) layer]->load (relaxed);
+        params.attackCurve = juce::roundToInt (pLayerAttackCurve[(size_t) layer]->load (relaxed));
+        params.decayCurve = juce::roundToInt (pLayerDecayCurve[(size_t) layer]->load (relaxed));
+        params.releaseCurve = juce::roundToInt (pLayerReleaseCurve[(size_t) layer]->load (relaxed));
         params.muted = pLayerMute[(size_t) layer]->load (relaxed) > 0.5f;
         layerEngine.setLayerParameters (layer, params);
     }
