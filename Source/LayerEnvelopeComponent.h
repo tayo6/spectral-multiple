@@ -2,13 +2,7 @@
 
 #include "PluginProcessor.h"
 
-/**
-    Compact, editable per-layer ADSR preview.
-
-    Drag A and D horizontally to change stage durations, S vertically to change
-    sustain level, and R horizontally to change the release duration. The three
-    curve selectors are independently automatable APVTS parameters.
-*/
+/** Per-layer sample waveform with a draggable AHDSR envelope overlaid on top. */
 class LayerEnvelopeComponent final : public juce::Component, private juce::Timer
 {
 public:
@@ -22,19 +16,17 @@ public:
     void mouseUp (const juce::MouseEvent&) override;
 
 private:
-    enum class Handle { None, Attack, Decay, Sustain, Release };
+    enum class Handle { None, Attack, Hold, Decay, Sustain, Release };
 
     struct Geometry
     {
         juce::Rectangle<float> plot;
-        juce::Point<float> attack;
-        juce::Point<float> decay;
-        juce::Point<float> sustain;
-        juce::Point<float> release;
+        juce::Point<float> attack, hold, decay, sustain, release;
+        float durationMs = 1000.0f;
     };
 
     void timerCallback() override { repaint(); }
-    Geometry getGeometry() const;
+    Geometry getGeometry (float durationMs) const;
     void applyDrag (juce::Point<float> position);
     void beginGesture (Handle);
     void endGesture();
@@ -46,6 +38,7 @@ private:
     const juce::Colour colour;
 
     std::atomic<float>* pAttack = nullptr;
+    std::atomic<float>* pHold = nullptr;
     std::atomic<float>* pDecay = nullptr;
     std::atomic<float>* pSustain = nullptr;
     std::atomic<float>* pRelease = nullptr;
