@@ -113,7 +113,7 @@ private:
     MeterView meter;
 
     juce::ComboBox viewBox, captureBox, barsBox, inputBox, layoutBox, triggerModeBox;
-    juce::Slider timeSlider, gainSlider, loSlider, hiSlider, thresholdSlider;
+    juce::Slider timeSlider, gainSlider, loSlider, hiSlider, thresholdSlider, preRollSlider;
     juce::TextButton listenBtn, freezeBtn, holdBtn, resetBtn;
     juce::TextButton sigBtn[WaveLensProcessor::kMaxSignals];
     juce::TextButton loadSampleBtn[WaveLensProcessor::kMaxSignals];
@@ -123,7 +123,7 @@ private:
     std::array<juce::String, WaveLensProcessor::kMaxSignals> displayedSampleNames;
 
     std::unique_ptr<ComboAtt>  viewAtt, captureAtt, barsAtt, inputAtt, layoutAtt, triggerModeAtt;
-    std::unique_ptr<SliderAtt> timeAtt, gainAtt, loAtt, hiAtt, thresholdAtt;
+    std::unique_ptr<SliderAtt> timeAtt, gainAtt, loAtt, hiAtt, thresholdAtt, preRollAtt;
     std::unique_ptr<ButtonAtt> listenAtt, freezeAtt, holdAtt;
     std::unique_ptr<ButtonAtt> sigAtt[WaveLensProcessor::kMaxSignals];
     std::unique_ptr<SliderAtt> layerGainAtt[WaveLensProcessor::kMaxSignals];
