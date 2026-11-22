@@ -16,12 +16,14 @@ LayeredSampleEngine::LayeredSampleEngine()
 void LayeredSampleEngine::prepareToPlay (double sampleRate, int maximumBlockSize)
 {
     currentSampleRate = juce::jmax (1.0, sampleRate);
-    preRollSamples = juce::jmax (1, juce::roundToInt (currentSampleRate * kPreRollMilliseconds * 0.001));
+    maximumDelaySamples = juce::jmax (1, juce::roundToInt (currentSampleRate * kMaximumPreRollMilliseconds * 0.001));
+    preRollSamples = juce::jlimit (0, maximumDelaySamples,
+                                   juce::roundToInt (currentSampleRate * kDefaultPreRollMilliseconds * 0.001));
     refractorySamples = juce::jmax (1, juce::roundToInt (currentSampleRate * 0.025));
     refractoryRemaining = 0;
     previousInputLevel = 0.0f;
 
-    const auto delaySize = (size_t) (preRollSamples + 1);
+    const auto delaySize = (size_t) (maximumDelaySamples + 1);
     delayLeft.assign (delaySize, 0.0f);
     delayRight.assign (delaySize, 0.0f);
     delayWritePosition = 0;
@@ -64,6 +66,21 @@ void LayeredSampleEngine::prepareToPlay (double sampleRate, int maximumBlockSize
             curveTables[(size_t) curve][(size_t) i] = juce::jlimit (0.0f, 1.0f, value);
         }
 
+    for (int layer = 0; layer < kNumLayers; ++layer)
+    {
+        juce::dsp::ProcessSpec filterSpec { currentSampleRate,
+                                            (juce::uint32) juce::jmax (1, maximumBlockSize), 2 };
+        layerHighPass[(size_t) layer].prepare (filterSpec);
+        layerHighPass[(size_t) layer].setType (juce::dsp::LinkwitzRileyFilterType::highpass);
+        layerHighPass[(size_t) layer].setCutoffFrequency (20.0f);
+        layerHighPass[(size_t) layer].reset();
+
+        layerLowPass[(size_t) layer].prepare (filterSpec);
+        layerLowPass[(size_t) layer].setType (juce::dsp::LinkwitzRileyFilterType::lowpass);
+        layerLowPass[(size_t) layer].setCutoffFrequency ((float) juce::jmin (20000.0, currentSampleRate * 0.45));
+        layerLowPass[(size_t) layer].reset();
+    }
+
     for (auto& buffer : layerBuffers)
     {
         buffer.setSize (2, juce::jmax (1, maximumBlockSize), false, true, false);
@@ -80,6 +97,13 @@ void LayeredSampleEngine::setTriggerMode (int mode, float newThreshold) noexcept
 {
     triggerMode = juce::jlimit (0, 2, mode);
     threshold = juce::jlimit (0.001f, 1.0f, newThreshold);
+}
+
+void LayeredSampleEngine::setPreRollMilliseconds (float milliseconds) noexcept
+{
+    const float clamped = juce::jlimit (0.0f, (float) kMaximumPreRollMilliseconds, milliseconds);
+    preRollSamples = juce::jlimit (0, maximumDelaySamples,
+                                   juce::roundToInt (currentSampleRate * clamped * 0.001));
 }
 
 bool LayeredSampleEngine::loadSampleFromFile (int layer, const juce::File& file, juce::String& error)
@@ -185,6 +209,12 @@ void LayeredSampleEngine::setLayerParameters (int layer, const LayerParameters& 
     target.gain = juce::jlimit (0.0f, 2.0f, p.gain);
     target.pan = juce::jlimit (-1.0f, 1.0f, p.pan);
     target.pitchSemitones = juce::jlimit (-24.0f, 24.0f, p.pitchSemitones);
+    target.highPassHz = juce::jlimit (20.0f, 1000.0f, p.highPassHz);
+    target.lowPassHz = juce::jlimit (1000.0f, (float) juce::jmax (1000.0, currentSampleRate * 0.45), p.lowPassHz);
+    target.highPassHz = juce::jmin (target.highPassHz, target.lowPassHz * 0.8f);
+    target.lowPassHz = juce::jmax (target.lowPassHz, target.highPassHz * 1.25f);
+    layerHighPass[(size_t) layer].setCutoffFrequency (target.highPassHz);
+    layerLowPass[(size_t) layer].setCutoffFrequency (juce::jmin (target.lowPassHz, (float) (currentSampleRate * 0.45)));
     target.attackMs = juce::jlimit (0.1f, 2000.0f, p.attackMs);
     target.decayMs = juce::jlimit (0.1f, 5000.0f, p.decayMs);
     target.sustain = juce::jlimit (0.0f, 1.0f, p.sustain);
@@ -210,7 +240,11 @@ void LayeredSampleEngine::startLayer (int layer) noexcept
     auto& voice = voices[(size_t) layer];
     voice.sample = sample;
     voice.position = 0.0;
-    voice.delayRemaining = layer < kPreLayers ? 0 : preRollSamples;
+    // The host sees a constant 100 ms lookahead. PRE sounds are placed
+    // (100 ms - selected lead) before the delayed transient; MAIN sounds
+    // and the dry input both arrive at the reported 100 ms latency.
+    voice.delayRemaining = layer < kPreLayers ? maximumDelaySamples - preRollSamples
+                                               : maximumDelaySamples;
     voice.ageSamples = 0;
     voice.releaseStartLevel = 1.0f;
     voice.inRelease = false;
@@ -283,8 +317,12 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
 
     const float rawL = audio.getSample (0, index0)
                        + (audio.getSample (0, index1) - audio.getSample (0, index0)) * fraction;
-    const float rawR = audio.getSample (1, index0)
+    float rawR = audio.getSample (1, index0)
                        + (audio.getSample (1, index1) - audio.getSample (1, index0)) * fraction;
+    float rawLFiltered = layerHighPass[(size_t) layer].processSample (0, rawL);
+    float rawRFiltered = layerHighPass[(size_t) layer].processSample (1, rawR);
+    rawLFiltered = layerLowPass[(size_t) layer].processSample (0, rawLFiltered);
+    rawRFiltered = layerLowPass[(size_t) layer].processSample (1, rawRFiltered);
 
     const float totalOutputSamples = (float) length / (float) juce::jmax (0.0001, speed);
     const float remainingSamples = (float) ((double) length - voice.position)
@@ -316,8 +354,8 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
     const float rightPan = p.pan < 0.0f ? 1.0f + p.pan : 1.0f;
     const float gain = p.gain * envelope;
 
-    left = rawL * gain * leftPan;
-    right = rawR * gain * rightPan;
+    left = rawLFiltered * gain * leftPan;
+    right = rawRFiltered * gain * rightPan;
 
     voice.position += speed;
     ++voice.ageSamples;
@@ -397,7 +435,7 @@ void LayeredSampleEngine::processBlock (const juce::AudioBuffer<float>& triggerI
 
         delayLeft[(size_t) delayWritePosition] = inputL;
         delayRight[(size_t) delayWritePosition] = inputR;
-        const int readPosition = (delayWritePosition + (int) delayLeft.size() - preRollSamples)
+        const int readPosition = (delayWritePosition + (int) delayLeft.size() - maximumDelaySamples)
                                  % (int) delayLeft.size();
         const float dryL = delayLeft[(size_t) readPosition];
         const float dryR = delayRight[(size_t) readPosition];
