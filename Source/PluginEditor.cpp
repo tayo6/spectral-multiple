@@ -468,6 +468,8 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     setupSlider (hiSlider,   ids::rangeHi, hiAtt,   [] (double v) { return formatHz (v); });
     setupSlider (thresholdSlider, ids::threshold, thresholdAtt,
                  [] (double v) { return juce::String (v * 100.0, 0) + "%"; });
+    setupSlider (preRollSlider, ids::preRollMs, preRollAtt,
+                 [] (double v) { return formatMs (v); });
 
     // Typing a value like "2k" or "250" should work in the Hz boxes.
     auto hzFromText = [] (const juce::String& t)
@@ -536,8 +538,8 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     }
 
     setResizable (true, true);
-    setResizeLimits (980, 740, 1920, 1200);
-    setSize (1100, 760);
+    setResizeLimits (980, 820, 1920, 1400);
+    setSize (1100, 850);
 
     updateEnabledStates();
     startTimerHz (10);
@@ -650,7 +652,7 @@ void WaveLensEditor::resized()
     freezeBtn.setBounds (header.removeFromRight (70));
     area.removeFromTop (6);
 
-    constexpr int layerPanelH = 204;
+    constexpr int layerPanelH = 290;
     auto layerPanel = area.removeFromBottom (layerPanelH);
     area.removeFromBottom (8);
 
@@ -733,6 +735,7 @@ void WaveLensEditor::resized()
         barsBox.setBounds (r);
         timeSlider.setBounds (r);
     }
+    labelled (cells[0], 2, "PRE lead", preRollSlider);
 
     labelled (cells[1], 0, "Input mode", inputBox);
     labelled (cells[1], 1, "Display gain", gainSlider);
