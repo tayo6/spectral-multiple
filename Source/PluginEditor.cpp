@@ -4,12 +4,10 @@ namespace
 {
     constexpr auto relaxed = std::memory_order_relaxed;
 
-    const juce::Colour kBackground { 0xff0b0d10 };
-    const juce::Colour kPanel      { 0xff14181d };
-    const juce::Colour kPanelEdge  { 0xff232a32 };
-    const juce::Colour kText       { 0xff9aa5b1 };
-    const juce::Colour kTextBright { 0xffe6ebf0 };
-    const juce::Colour kAccent     { 0xff4fd1ff };
+    const juce::Colour kBackground { 0xff777c80 };
+    const juce::Colour kPanel { 0xffa4a7a9 }, kPanelEdge { 0xff62676a };
+    const juce::Colour kText { 0xff282b2d }, kTextBright { 0xff17191a };
+    const juce::Colour kAccent { 0xffffb83d }, kCanvas { 0xff282828 }, kCanvasText { 0xffe0e3e5 };
     const juce::Colour kMeterHot   { 0xffff6b5e };
     const juce::Colour kMeterCool  { 0xff7be07a };
 
@@ -72,6 +70,7 @@ ScopeView::ScopeView (WaveLensProcessor& p)
     : proc (p)
 {
     auto& a = proc.apvts;
+    pView = a.getRawParameterValue (ids::view);
     pCapture  = a.getRawParameterValue (ids::capture);
     pBars     = a.getRawParameterValue (ids::bars);
     pTimeMs   = a.getRawParameterValue (ids::timeMs);
@@ -227,11 +226,20 @@ void ScopeView::drawLane (juce::Graphics& g, juce::Rectangle<float> lane, const 
     g.restoreState();
 }
 
+void ScopeView::drawSpectrum (juce::Graphics& g, juce::Rectangle<float> lane, const std::vector<Trace>& traces, bool showHeld)
+{
+    auto plot = lane.reduced (38.0f, 18.0f); plot.removeFromBottom (20.0f);
+    for (float db : { -96.0f, -72.0f, -48.0f, -24.0f, 0.0f }) { const float y = plot.getBottom() - (db + 96.0f) / 96.0f * plot.getHeight(); g.setColour (juce::Colours::white.withAlpha (0.1f)); g.drawHorizontalLine (juce::roundToInt(y), plot.getX(), plot.getRight()); g.setColour (kCanvasText); g.setFont (10.0f); g.drawText (juce::String((int)db), 2, (int)y-7, 32, 14, juce::Justification::centredRight); }
+    const double lr = std::log (1000.0); for (double hz : {20.0,50.0,100.0,200.0,500.0,1000.0,2000.0,5000.0,10000.0,20000.0}) { const float x=plot.getX()+(float)(std::log(hz/20.0)/lr)*plot.getWidth(); g.setColour(juce::Colours::white.withAlpha(0.08f)); g.drawVerticalLine(juce::roundToInt(x),plot.getY(),plot.getBottom()); g.setColour(kCanvasText); g.setFont(10.0f); g.drawText(hz>=1000.0?juce::String(hz/1000.0,hz>=10000.0?0:1)+"k":juce::String((int)hz),(int)x-20,(int)plot.getBottom()+2,40,14,juce::Justification::centred); }
+    auto draw=[&](const Trace& t,bool held){juce::Path p; for(int b=0;b<WaveLensProcessor::kSpectrumBins;++b){float db=(held?proc.heldSpectrumDb:proc.spectrumDb)[(size_t)t.ch][(size_t)b].load(relaxed); float n=juce::jlimit(0.0f,1.0f,(db+96.0f)/96.0f); float x=plot.getX()+(float)b/(float)(WaveLensProcessor::kSpectrumBins-1)*plot.getWidth(); float y=plot.getBottom()-n*plot.getHeight(); if(b==0)p.startNewSubPath(x,y);else p.lineTo(x,y);} g.setColour(t.colour.withAlpha(held?0.35f:0.98f));g.strokePath(p,juce::PathStrokeType(held?1.0f:1.5f));};
+    if(showHeld)for(auto it=traces.rbegin();it!=traces.rend();++it)draw(*it,true); for(auto it=traces.rbegin();it!=traces.rend();++it)draw(*it,false);
+}
+
 void ScopeView::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
-    g.fillAll (kBackground);
-    g.setColour (kPanel);
+    g.fillAll (kCanvas);
+    g.setColour (kCanvas);
     g.fillRoundedRectangle (bounds.reduced (0.5f), 6.0f);
     g.setColour (kPanelEdge);
     g.drawRoundedRectangle (bounds.reduced (0.5f), 6.0f, 1.0f);
@@ -260,6 +268,7 @@ void ScopeView::paint (juce::Graphics& g)
     auto area = bounds.reduced (6.0f);
     area.removeFromBottom (16.0f);          // room for the footer text
 
+    const bool spectrum = juce::roundToInt (pView->load()) == 1;
     if (split)
     {
         const float gap = 4.0f;
@@ -269,7 +278,8 @@ void ScopeView::paint (juce::Graphics& g)
         {
             auto lane = area.removeFromTop (laneH);
             area.removeFromTop (gap);
-            drawLane (g, lane, { { n, signalColour (n) } }, s, gain, showHeld, "SIGNAL " + juce::String (n + 1));
+            if (spectrum) drawSpectrum (g, lane, { { n, signalColour (n) } }, showHeld);
+            else drawLane (g, lane, { { n, signalColour (n) } }, s, gain, showHeld, "SIGNAL " + juce::String (n + 1));
         }
     }
     else
@@ -278,7 +288,8 @@ void ScopeView::paint (juce::Graphics& g)
         for (int n : active)
             traces.push_back ({ n, signalColour (n) });
 
-        drawLane (g, area, traces, s, gain, showHeld, {});
+        if (spectrum) drawSpectrum (g, area, traces, showHeld);
+        else drawLane (g, area, traces, s, gain, showHeld, {});
 
         // Colour key, so the overlapping traces can be told apart.
         if (traces.size() > 1)
@@ -414,6 +425,7 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     addAndMakeVisible (scope);
     addAndMakeVisible (meter);
 
+    setupCombo (viewBox,     ids::view,     viewAtt);
     setupCombo (captureBox,  ids::capture,  captureAtt);
     setupCombo (barsBox,     ids::bars,     barsAtt);
     setupCombo (inputBox,    ids::input,    inputAtt);
@@ -564,7 +576,7 @@ void WaveLensEditor::resized()
     area.removeFromTop (6);
 
     // Control panel
-    constexpr int panelH = 134;
+    constexpr int panelH = 146;
     auto panel = area.removeFromBottom (panelH);
     area.removeFromBottom (8);
 
@@ -636,4 +648,5 @@ void WaveLensEditor::resized()
         }
     }
     labelled (cells[3], 1, "Layout", layoutBox);
+    labelled (cells[3], 2, "View", viewBox);
 }
