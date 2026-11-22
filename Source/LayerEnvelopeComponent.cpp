@@ -1,5 +1,7 @@
 #include "LayerEnvelopeComponent.h"
 
+#include <cmath>
+
 namespace
 {
     constexpr float kSustainHoldMs = 350.0f;
@@ -28,7 +30,6 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     pDecayCurve = state.getRawParameterValue (ids::layerDecayCurve (layer));
     pReleaseCurve = state.getRawParameterValue (ids::layerReleaseCurve (layer));
 
-    const juce::StringArray curveNames { "Linear", "Exponential", "Logarithmic", "S-Curve", "Bezier" };
     const juce::StringArray shortNames { "Lin", "Exp", "Log", "S", "Bez" };
 
     auto prepareCurveBox = [&] (juce::ComboBox& box, const juce::String& tooltip)
@@ -220,7 +221,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
 void LayerEnvelopeComponent::resized()
 {
     auto row = getLocalBounds().reduced (6);
-    row.removeFromTop (getLocalBounds().getHeight() - 22);
+    row.removeFromTop (row.getHeight() - 18);
     row.removeFromBottom (1);
 
     constexpr int labelWidth = 8;
@@ -341,6 +342,7 @@ void LayerEnvelopeComponent::mouseDown (const juce::MouseEvent& event)
     if (event.mods.isPopupMenu())
         return;
 
+    endGesture();
     const auto geometry = getGeometry();
     const auto point = event.position;
     const juce::Point<float> handles[] = {
