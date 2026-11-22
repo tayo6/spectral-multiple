@@ -1,6 +1,7 @@
 #pragma once
 
 #include <juce_audio_utils/juce_audio_utils.h>
+#include <juce_dsp/juce_dsp.h>
 #include <array>
 #include <atomic>
 #include <memory>
@@ -21,13 +22,16 @@ class LayeredSampleEngine final
 public:
     static constexpr int kNumLayers = 6;
     static constexpr int kPreLayers = 3;
-    static constexpr double kPreRollMilliseconds = 50.0;
+    static constexpr double kMaximumPreRollMilliseconds = 100.0;
+    static constexpr double kDefaultPreRollMilliseconds = 50.0;
 
     struct LayerParameters
     {
         float gain = 1.0f;
         float pan = 0.0f;
         float pitchSemitones = 0.0f;
+        float highPassHz = 20.0f;
+        float lowPassHz = 20000.0f;
         float attackMs = 2.0f;
         float decayMs = 60.0f;
         float sustain = 1.0f;
@@ -43,6 +47,7 @@ public:
 
     void prepareToPlay (double sampleRate, int maximumBlockSize);
     void setTriggerMode (int mode, float threshold) noexcept;
+    void setPreRollMilliseconds (float milliseconds) noexcept;
 
     bool loadSampleFromFile (int layer, const juce::File& file, juce::String& error);
     void clearSample (int layer);
@@ -91,11 +96,14 @@ private:
     std::array<LayerParameters, kNumLayers> parameters {};
     std::array<Voice, kNumLayers> voices {};
     std::array<juce::AudioBuffer<float>, kNumLayers> layerBuffers;
+    std::array<juce::dsp::LinkwitzRileyFilter<float>, kNumLayers> layerHighPass;
+    std::array<juce::dsp::LinkwitzRileyFilter<float>, kNumLayers> layerLowPass;
     std::array<std::array<float, 257>, 5> curveTables {};
 
     std::vector<float> delayLeft, delayRight;
     int delayWritePosition = 0;
     int preRollSamples = 0;
+    int maximumDelaySamples = 0;
     int refractorySamples = 0;
     int refractoryRemaining = 0;
 
