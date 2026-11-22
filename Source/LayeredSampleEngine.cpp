@@ -10,6 +10,7 @@ LayeredSampleEngine::LayeredSampleEngine()
     {
         currentSamples[(size_t) i].store (nullptr, std::memory_order_relaxed);
         clearRequests[(size_t) i].store (false, std::memory_order_relaxed);
+        previewRequests[(size_t) i].store (false, std::memory_order_relaxed);
     }
 }
 
@@ -28,7 +29,7 @@ void LayeredSampleEngine::prepareToPlay (double sampleRate, int maximumBlockSize
     delayRight.assign (delaySize, 0.0f);
     delayWritePosition = 0;
 
-    for (int curve = 0; curve < 5; ++curve)
+    for (int curve = 0; curve < 7; ++curve)
         for (int i = 0; i <= 256; ++i)
         {
             const float t = (float) i / 256.0f;
@@ -37,10 +38,12 @@ void LayeredSampleEngine::prepareToPlay (double sampleRate, int maximumBlockSize
             switch (curve)
             {
                 case 0: value = t; break; // Linear
-                case 1: value = (std::exp (5.0f * t) - 1.0f) / (std::exp (5.0f) - 1.0f); break;
-                case 2: value = std::log1p (9.0f * t) / std::log (10.0f); break;
-                case 3: value = t * t * (3.0f - 2.0f * t); break;
-                case 4:
+                case 1: value = t * t; break; // Convex / slow start
+                case 2: value = 1.0f - (1.0f - t) * (1.0f - t); break; // Concave / fast start
+                case 3: value = t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f); break; // S curve
+                case 4: value = (std::exp (5.0f * t) - 1.0f) / (std::exp (5.0f) - 1.0f); break;
+                case 5: value = std::log1p (9.0f * t) / std::log (10.0f); break;
+                case 6:
                 {
                     // Cubic Bezier from (0,0) to (1,1), control points (0.22,0.02) and (0.42,0.98).
                     float u = t;
@@ -90,6 +93,8 @@ void LayeredSampleEngine::prepareToPlay (double sampleRate, int maximumBlockSize
     for (auto& voice : voices)
         voice = {};
     for (auto& request : clearRequests)
+        request.store (false, std::memory_order_relaxed);
+    for (auto& request : previewRequests)
         request.store (false, std::memory_order_relaxed);
 }
 
@@ -163,6 +168,24 @@ bool LayeredSampleEngine::loadSampleFromFile (int layer, const juce::File& file,
         return false;
     }
 
+    data->preview.durationMs = (double) sampleCount * 1000.0 / juce::jmax (1.0, reader->sampleRate);
+    data->preview.loaded = true;
+    for (int point = 0; point < kPreviewPoints; ++point)
+    {
+        const int first = (int) ((juce::int64) point * sampleCount / kPreviewPoints);
+        const int last = juce::jmax (first + 1, (int) ((juce::int64) (point + 1) * sampleCount / kPreviewPoints));
+        float minimum = 1.0f, maximum = -1.0f;
+        for (int sample = first; sample < juce::jmin (sampleCount, last); ++sample)
+            for (int channel = 0; channel < 2; ++channel)
+            {
+                const float value = data->audio.getSample (channel, sample);
+                minimum = juce::jmin (minimum, value);
+                maximum = juce::jmax (maximum, value);
+            }
+        data->preview.minimum[(size_t) point] = minimum;
+        data->preview.maximum[(size_t) point] = maximum;
+    }
+
     auto* raw = data.get();
 
     // Never free an old buffer while the audio thread might still be reading it.
@@ -190,6 +213,24 @@ juce::String LayeredSampleEngine::getSampleName (int layer) const
     return juce::isPositiveAndBelow (layer, kNumLayers) ? sampleNames[(size_t) layer] : juce::String();
 }
 
+LayeredSampleEngine::WaveformPreview LayeredSampleEngine::getWaveformPreview (int layer) const noexcept
+{
+    WaveformPreview preview;
+    if (! juce::isPositiveAndBelow (layer, kNumLayers))
+        return preview;
+
+    if (auto* sample = currentSamples[(size_t) layer].load (std::memory_order_acquire))
+        return sample->preview;
+
+    return preview;
+}
+
+void LayeredSampleEngine::requestPreview (int layer) noexcept
+{
+    if (juce::isPositiveAndBelow (layer, kNumLayers))
+        previewRequests[(size_t) layer].store (true, std::memory_order_release);
+}
+
 int LayeredSampleEngine::getLoadedMask() const noexcept
 {
     int mask = 0;
@@ -209,6 +250,7 @@ void LayeredSampleEngine::setLayerParameters (int layer, const LayerParameters& 
     target.gain = juce::jlimit (0.0f, 2.0f, p.gain);
     target.pan = juce::jlimit (-1.0f, 1.0f, p.pan);
     target.pitchSemitones = juce::jlimit (-24.0f, 24.0f, p.pitchSemitones);
+    target.delayShiftMs = juce::jlimit (-100.0f, 100.0f, p.delayShiftMs);
     target.highPassHz = juce::jlimit (20.0f, 1000.0f, p.highPassHz);
     target.lowPassHz = juce::jlimit (1000.0f, (float) juce::jmax (1000.0, currentSampleRate * 0.45), p.lowPassHz);
     target.highPassHz = juce::jmin (target.highPassHz, target.lowPassHz * 0.8f);
@@ -216,12 +258,13 @@ void LayeredSampleEngine::setLayerParameters (int layer, const LayerParameters& 
     layerHighPass[(size_t) layer].setCutoffFrequency (target.highPassHz);
     layerLowPass[(size_t) layer].setCutoffFrequency (juce::jmin (target.lowPassHz, (float) (currentSampleRate * 0.45)));
     target.attackMs = juce::jlimit (0.1f, 2000.0f, p.attackMs);
+    target.holdMs = juce::jlimit (0.0f, 2000.0f, p.holdMs);
     target.decayMs = juce::jlimit (0.1f, 5000.0f, p.decayMs);
     target.sustain = juce::jlimit (0.0f, 1.0f, p.sustain);
     target.releaseMs = juce::jlimit (0.1f, 10000.0f, p.releaseMs);
-    target.attackCurve = juce::jlimit (0, 4, p.attackCurve);
-    target.decayCurve = juce::jlimit (0, 4, p.decayCurve);
-    target.releaseCurve = juce::jlimit (0, 4, p.releaseCurve);
+    target.attackCurve = juce::jlimit (0, 6, p.attackCurve);
+    target.decayCurve = juce::jlimit (0, 6, p.decayCurve);
+    target.releaseCurve = juce::jlimit (0, 6, p.releaseCurve);
     target.muted = p.muted;
 }
 
@@ -231,7 +274,7 @@ void LayeredSampleEngine::triggerAllLayers() noexcept
         startLayer (i);
 }
 
-void LayeredSampleEngine::startLayer (int layer) noexcept
+void LayeredSampleEngine::startLayer (int layer, bool ignoreTimingShift) noexcept
 {
     auto* sample = currentSamples[(size_t) layer].load (std::memory_order_acquire);
     if (sample == nullptr || parameters[(size_t) layer].muted)
@@ -240,11 +283,11 @@ void LayeredSampleEngine::startLayer (int layer) noexcept
     auto& voice = voices[(size_t) layer];
     voice.sample = sample;
     voice.position = 0.0;
-    // The host sees a constant 100 ms lookahead. PRE sounds are placed
-    // (100 ms - selected lead) before the delayed transient; MAIN sounds
-    // and the dry input both arrive at the reported 100 ms latency.
-    voice.delayRemaining = layer < kPreLayers ? maximumDelaySamples - preRollSamples
-                                               : maximumDelaySamples;
+    // The host sees a fixed 100 ms lookahead. Each layer can move independently
+    // around the delayed dry transient: negative values advance it, positive values delay it.
+    const int shiftSamples = ignoreTimingShift ? 0
+        : juce::roundToInt (parameters[(size_t) layer].delayShiftMs * (float) currentSampleRate * 0.001f);
+    voice.delayRemaining = juce::jlimit (0, maximumDelaySamples * 2, maximumDelaySamples + shiftSamples);
     voice.ageSamples = 0;
     voice.releaseStartLevel = 1.0f;
     voice.inRelease = false;
@@ -254,7 +297,7 @@ void LayeredSampleEngine::startLayer (int layer) noexcept
 float LayeredSampleEngine::applyCurve (float progress, int curve) const noexcept
 {
     const float p = juce::jlimit (0.0f, 1.0f, progress);
-    const int index = juce::jlimit (0, 4, curve);
+    const int index = juce::jlimit (0, 6, curve);
     const float tablePosition = p * 256.0f;
     const int lower = juce::jlimit (0, 255, (int) tablePosition);
     const float fraction = tablePosition - (float) lower;
@@ -272,7 +315,11 @@ float LayeredSampleEngine::envelopeLevelAtAge (const LayerParameters& p,
     if ((float) age < attackSamples)
         return applyCurve ((float) age / attackSamples, p.attackCurve);
 
-    const float decayProgress = ((float) age - attackSamples) / decaySamples;
+    const float holdSamples = p.holdMs * 0.001f * (float) currentSampleRate;
+    if ((float) age < attackSamples + holdSamples)
+        return 1.0f;
+
+    const float decayProgress = ((float) age - attackSamples - holdSamples) / decaySamples;
     if (decayProgress < 1.0f)
         return 1.0f + (p.sustain - 1.0f) * applyCurve (decayProgress, p.decayCurve);
 
@@ -380,8 +427,12 @@ void LayeredSampleEngine::processBlock (const juce::AudioBuffer<float>& triggerI
         return;
 
     for (int layer = 0; layer < kNumLayers; ++layer)
+    {
         if (clearRequests[(size_t) layer].exchange (false, std::memory_order_acq_rel))
             voices[(size_t) layer] = {};
+        if (previewRequests[(size_t) layer].exchange (false, std::memory_order_acq_rel))
+            startLayer (layer, true);
+    }
 
     for (auto& buffer : layerBuffers)
     {
