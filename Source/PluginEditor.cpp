@@ -577,7 +577,11 @@ void WaveLensEditor::updateEnabledStates()
     for (int n = 0; n < WaveLensProcessor::kMaxSignals; ++n)
         sigBtn[n].setEnabled ((mask & (1 << n)) != 0);
 
-    layoutBox.setEnabled ((mask & ~1) != 0);
+    int loadedLayerCount = 0;
+    for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
+        if ((mask & (1 << layer)) != 0)
+            ++loadedLayerCount;
+    layoutBox.setEnabled (loadedLayerCount > 1);
 
     for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
     {
