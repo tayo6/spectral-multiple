@@ -25,9 +25,12 @@ namespace ids
     inline constexpr const char* hold      = "hold";
     inline constexpr const char* triggerMode = "triggerMode";
     inline constexpr const char* threshold   = "threshold";
+    inline constexpr const char* preRollMs   = "preRollMs";
     inline juce::String layerGain (int n)    { return "layerGain" + juce::String (n + 1); }
     inline juce::String layerPan (int n)     { return "layerPan" + juce::String (n + 1); }
     inline juce::String layerPitch (int n)   { return "layerPitch" + juce::String (n + 1); }
+    inline juce::String layerHighPass (int n) { return "layerHighPass" + juce::String (n + 1); }
+    inline juce::String layerLowPass (int n) { return "layerLowPass" + juce::String (n + 1); }
     inline juce::String layerAttack (int n)  { return "layerAttack" + juce::String (n + 1); }
     inline juce::String layerDecay (int n)   { return "layerDecay" + juce::String (n + 1); }
     inline juce::String layerSustain (int n) { return "layerSustain" + juce::String (n + 1); }
@@ -179,9 +182,12 @@ private:
     std::atomic<float>* pFreeze = nullptr;
     std::atomic<float>* pTriggerMode = nullptr;
     std::atomic<float>* pThreshold = nullptr;
+    std::atomic<float>* pPreRollMs = nullptr;
     std::array<std::atomic<float>*, kMaxSignals> pLayerGain {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerPan {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerPitch {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerHighPass {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerLowPass {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerAttack {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerDecay {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerSustain {};
