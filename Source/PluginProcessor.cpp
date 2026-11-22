@@ -84,9 +84,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
                                                           "Show signal " + String (i + 1), true));
 
     layout.add (std::make_unique<AudioParameterChoice> (PID { ids::triggerMode, 1 },
-                                                        "Trigger mode", StringArray { "Audio", "MIDI", "Both" }, 0));
+                                                        "Trigger mode", StringArray { "Audio", "MIDI", "Both" }, 2));
     layout.add (std::make_unique<AudioParameterFloat> (PID { ids::threshold, 1 }, "Trigger threshold",
-                                                       NormalisableRange<float> (0.001f, 1.0f, 0.001f), 0.12f));
+                                                       NormalisableRange<float> (0.001f, 1.0f, 0.001f), 0.03f));
     layout.add (std::make_unique<AudioParameterFloat> (PID { ids::preRollMs, 1 }, "PRE lead",
                                                        NormalisableRange<float> (0.0f, 100.0f, 0.1f), 50.0f,
                                                        AudioParameterFloatAttributes().withLabel ("ms")));
@@ -101,6 +101,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerPitch (i), 1 }, "Layer " + suffix + " pitch",
                                                            NormalisableRange<float> (-24.0f, 24.0f, 0.01f), 0.0f,
                                                            AudioParameterFloatAttributes().withLabel ("st")));
+        layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerDelay (i), 1 }, "Layer " + suffix + " timing shift",
+                                                           NormalisableRange<float> (-100.0f, 100.0f, 0.1f), i < 3 ? -50.0f : 0.0f,
+                                                           AudioParameterFloatAttributes().withLabel ("ms")));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerHighPass (i), 1 }, "Layer " + suffix + " high-pass",
                                                            NormalisableRange<float> (20.0f, 1000.0f, 1.0f, 0.35f), 20.0f,
                                                            AudioParameterFloatAttributes().withLabel ("Hz")));
@@ -110,6 +113,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerAttack (i), 1 }, "Layer " + suffix + " attack",
                                                            NormalisableRange<float> (0.1f, 2000.0f, 0.1f), 2.0f,
                                                            AudioParameterFloatAttributes().withLabel ("ms")));
+        layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerHold (i), 1 }, "Layer " + suffix + " hold",
+                                                           NormalisableRange<float> (0.0f, 2000.0f, 0.1f), 20.0f,
+                                                           AudioParameterFloatAttributes().withLabel ("ms")));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerDecay (i), 1 }, "Layer " + suffix + " decay",
                                                            NormalisableRange<float> (0.1f, 5000.0f, 0.1f), 60.0f,
                                                            AudioParameterFloatAttributes().withLabel ("ms")));
@@ -118,13 +124,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerRelease (i), 1 }, "Layer " + suffix + " release",
                                                            NormalisableRange<float> (0.1f, 10000.0f, 0.1f), 120.0f,
                                                            AudioParameterFloatAttributes().withLabel ("ms")));
-        const StringArray curveNames { "Linear", "Exponential", "Logarithmic", "S-Curve", "Bezier" };
+        const StringArray curveNames { "Linear", "Convex", "Concave", "S-Curve", "Exponential", "Logarithmic", "Bezier" };
         layout.add (std::make_unique<AudioParameterChoice> (PID { ids::layerAttackCurve (i), 1 },
-                                                           "Layer " + suffix + " attack curve", curveNames, 1));
+                                                           "Layer " + suffix + " attack curve", curveNames, 4));
         layout.add (std::make_unique<AudioParameterChoice> (PID { ids::layerDecayCurve (i), 1 },
-                                                           "Layer " + suffix + " decay curve", curveNames, 1));
+                                                           "Layer " + suffix + " decay curve", curveNames, 4));
         layout.add (std::make_unique<AudioParameterChoice> (PID { ids::layerReleaseCurve (i), 1 },
-                                                           "Layer " + suffix + " release curve", curveNames, 1));
+                                                           "Layer " + suffix + " release curve", curveNames, 4));
         layout.add (std::make_unique<AudioParameterBool> (PID { ids::layerMute (i), 1 }, "Layer " + suffix + " mute", false));
     }
 
@@ -180,10 +186,12 @@ WaveLensProcessor::WaveLensProcessor()
         pLayerGain[(size_t) i] = apvts.getRawParameterValue (ids::layerGain (i));
         pLayerPan[(size_t) i] = apvts.getRawParameterValue (ids::layerPan (i));
         pLayerPitch[(size_t) i] = apvts.getRawParameterValue (ids::layerPitch (i));
+        pLayerDelay[(size_t) i] = apvts.getRawParameterValue (ids::layerDelay (i));
         pLayerHighPass[(size_t) i] = apvts.getRawParameterValue (ids::layerHighPass (i));
         pLayerLowPass[(size_t) i] = apvts.getRawParameterValue (ids::layerLowPass (i));
         pLayerAttack[(size_t) i] = apvts.getRawParameterValue (ids::layerAttack (i));
         pLayerDecay[(size_t) i] = apvts.getRawParameterValue (ids::layerDecay (i));
+        pLayerHold[(size_t) i] = apvts.getRawParameterValue (ids::layerHold (i));
         pLayerSustain[(size_t) i] = apvts.getRawParameterValue (ids::layerSustain (i));
         pLayerRelease[(size_t) i] = apvts.getRawParameterValue (ids::layerRelease (i));
         pLayerAttackCurve[(size_t) i] = apvts.getRawParameterValue (ids::layerAttackCurve (i));
@@ -449,9 +457,11 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         params.gain = pLayerGain[(size_t) layer]->load (relaxed);
         params.pan = pLayerPan[(size_t) layer]->load (relaxed);
         params.pitchSemitones = pLayerPitch[(size_t) layer]->load (relaxed);
+        params.delayShiftMs = pLayerDelay[(size_t) layer]->load (relaxed);
         params.highPassHz = pLayerHighPass[(size_t) layer]->load (relaxed);
         params.lowPassHz = pLayerLowPass[(size_t) layer]->load (relaxed);
         params.attackMs = pLayerAttack[(size_t) layer]->load (relaxed);
+        params.holdMs = pLayerHold[(size_t) layer]->load (relaxed);
         params.decayMs = pLayerDecay[(size_t) layer]->load (relaxed);
         params.sustain = pLayerSustain[(size_t) layer]->load (relaxed);
         params.releaseMs = pLayerRelease[(size_t) layer]->load (relaxed);
@@ -464,7 +474,6 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     layerEngine.setTriggerMode (juce::roundToInt (pTriggerMode->load (relaxed)),
                                 pThreshold->load (relaxed));
-    layerEngine.setPreRollMilliseconds (pPreRollMs->load (relaxed));
     layerEngine.processBlock (triggerBuffer, mainOutput, layerOutputPointers, midi);
 
     const int mainChannels = mainOutput.getNumChannels();
@@ -699,6 +708,16 @@ void WaveLensProcessor::clearSample (int layer)
 juce::String WaveLensProcessor::getSampleName (int layer) const
 {
     return layerEngine.getSampleName (layer);
+}
+
+LayeredSampleEngine::WaveformPreview WaveLensProcessor::getWaveformPreview (int layer) const noexcept
+{
+    return layerEngine.getWaveformPreview (layer);
+}
+
+void WaveLensProcessor::requestPreview (int layer) noexcept
+{
+    layerEngine.requestPreview (layer);
 }
 
 //==============================================================================
