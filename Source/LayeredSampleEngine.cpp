@@ -6,8 +6,11 @@ LayeredSampleEngine::LayeredSampleEngine()
 {
     formatManager.registerBasicFormats();
 
-    for (auto& sample : currentSamples)
-        sample.store (nullptr, std::memory_order_relaxed);
+    for (int i = 0; i < kNumLayers; ++i)
+    {
+        currentSamples[(size_t) i].store (nullptr, std::memory_order_relaxed);
+        clearRequests[(size_t) i].store (false, std::memory_order_relaxed);
+    }
 }
 
 void LayeredSampleEngine::prepareToPlay (double sampleRate, int maximumBlockSize)
@@ -31,6 +34,8 @@ void LayeredSampleEngine::prepareToPlay (double sampleRate, int maximumBlockSize
 
     for (auto& voice : voices)
         voice = {};
+    for (auto& request : clearRequests)
+        request.store (false, std::memory_order_relaxed);
 }
 
 void LayeredSampleEngine::setTriggerMode (int mode, float newThreshold) noexcept
@@ -114,8 +119,8 @@ void LayeredSampleEngine::clearSample (int layer)
         return;
 
     currentSamples[(size_t) layer].store (nullptr, std::memory_order_release);
+    clearRequests[(size_t) layer].store (true, std::memory_order_release);
     sampleNames[(size_t) layer].clear();
-    voices[(size_t) layer] = {};
 }
 
 juce::String LayeredSampleEngine::getSampleName (int layer) const
@@ -251,6 +256,10 @@ void LayeredSampleEngine::processBlock (const juce::AudioBuffer<float>& triggerI
     if (numSamples <= 0 || inputChannels <= 0 || outputChannels <= 0
         || delayLeft.empty() || delayRight.empty())
         return;
+
+    for (int layer = 0; layer < kNumLayers; ++layer)
+        if (clearRequests[(size_t) layer].exchange (false, std::memory_order_acq_rel))
+            voices[(size_t) layer] = {};
 
     for (auto& buffer : layerBuffers)
     {
