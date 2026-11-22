@@ -316,7 +316,7 @@ void ScopeView::paint (juce::Graphics& g)
     g.drawText (windowLabel(), footer, juce::Justification::centredLeft);
 
     if ((mask & ~1) == 0)
-        g.drawText ("Route more inputs to this plug-in (Signal 2-6) to compare signals",
+        g.drawText ("Load samples into the PRE and MAIN slots below to view their waveforms and spectra",
                     footer, juce::Justification::centred);
     else
         g.drawText (juce::String (active.size()) + (active.size() == 1 ? " signal" : " signals"),
@@ -430,6 +430,7 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     setupCombo (barsBox,     ids::bars,     barsAtt);
     setupCombo (inputBox,    ids::input,    inputAtt);
     setupCombo (layoutBox,   ids::layout,   layoutAtt);
+    setupCombo (triggerModeBox, ids::triggerMode, triggerModeAtt);
 
     setupToggle (listenBtn, "Listen",    ids::listen,   listenAtt);
     setupToggle (freezeBtn, "Freeze",    ids::freeze,   freezeAtt);
@@ -464,6 +465,8 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     setupSlider (gainSlider, ids::gain,    gainAtt, [] (double v) { return juce::String (v, 1) + " dB"; });
     setupSlider (loSlider,   ids::rangeLo, loAtt,   [] (double v) { return formatHz (v); });
     setupSlider (hiSlider,   ids::rangeHi, hiAtt,   [] (double v) { return formatHz (v); });
+    setupSlider (thresholdSlider, ids::threshold, thresholdAtt,
+                 [] (double v) { return juce::String (v * 100.0, 0) + "%"; });
 
     // Typing a value like "2k" or "250" should work in the Hz boxes.
     auto hzFromText = [] (const juce::String& t)
@@ -682,7 +685,7 @@ void WaveLensEditor::resized()
     // Compact global controls.
     constexpr int numGroups = 4;
     const float weights[numGroups] = { 1.1f, 1.1f, 1.4f, 1.4f };
-    const char* titles[numGroups] = { "Time", "Signal", "Range", "Layers" };
+    const char* titles[numGroups] = { "Time", "Trigger", "Range", "Layers" };
     float total = 0.0f;
     for (float w : weights) total += w;
 
@@ -721,8 +724,10 @@ void WaveLensEditor::resized()
         timeSlider.setBounds (r);
     }
 
-    labelled (cells[1], 0, "Input", inputBox);
-    labelled (cells[1], 1, "Gain", gainSlider);
+    labelled (cells[1], 0, "View mode", inputBox);
+    labelled (cells[1], 1, "Display gain", gainSlider);
+    labelled (cells[1], 2, "Source", triggerModeBox);
+    labelled (cells[1], 3, "Threshold", thresholdSlider);
 
     labelled (cells[2], 0, "Low cut", loSlider);
     labelled (cells[2], 1, "High cut", hiSlider);
