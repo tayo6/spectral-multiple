@@ -4,10 +4,10 @@ namespace
 {
     constexpr auto relaxed = std::memory_order_relaxed;
 
-    const juce::Colour kBackground { 0xff777c80 };
-    const juce::Colour kPanel { 0xffa4a7a9 }, kPanelEdge { 0xff62676a };
-    const juce::Colour kText { 0xff282b2d }, kTextBright { 0xff17191a };
-    const juce::Colour kAccent { 0xffffb83d }, kCanvas { 0xff282828 }, kCanvasText { 0xffe0e3e5 };
+    const juce::Colour kBackground { 0xff202428 };
+    const juce::Colour kPanel { 0xff292f35 }, kPanelEdge { 0xff424b54 };
+    const juce::Colour kText { 0xffaeb8c0 }, kTextBright { 0xffedf2f5 };
+    const juce::Colour kAccent { 0xffffb04a }, kCanvas { 0xff151a1f }, kCanvasText { 0xffe0e3e5 };
     const juce::Colour kMeterHot   { 0xffff6b5e };
     const juce::Colour kMeterCool  { 0xff7be07a };
 
@@ -37,7 +37,7 @@ WaveLensLookAndFeel::WaveLensLookAndFeel()
 {
     setColour (juce::ResizableWindow::backgroundColourId, kBackground);
 
-    setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff1b2128));
+    setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff1b2229));
     setColour (juce::ComboBox::textColourId, kTextBright);
     setColour (juce::ComboBox::outlineColourId, kPanelEdge);
     setColour (juce::ComboBox::arrowColourId, kText);
@@ -48,7 +48,7 @@ WaveLensLookAndFeel::WaveLensLookAndFeel()
     setColour (juce::PopupMenu::highlightedTextColourId, juce::Colours::white);
 
     setColour (juce::Slider::trackColourId, kAccent);
-    setColour (juce::Slider::backgroundColourId, juce::Colour (0xff232a32));
+    setColour (juce::Slider::backgroundColourId, juce::Colour (0xff303942));
     setColour (juce::Slider::thumbColourId, kTextBright);
     setColour (juce::Slider::textBoxTextColourId, kTextBright);
     setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour (0xff1b2128));
@@ -438,7 +438,7 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     // One toggle per signal, in that signal's trace colour.
     for (int n = 0; n < WaveLensProcessor::kMaxSignals; ++n)
     {
-        setupToggle (sigBtn[n], juce::String (n + 1), ids::showSig[n], sigAtt[n]);
+        setupToggle (sigBtn[n], n < 3 ? ("P" + juce::String (n + 1)) : ("M" + juce::String (n - 2)), ids::showSig[n], sigAtt[n]);
         sigBtn[n].setColour (juce::TextButton::buttonOnColourId, signalColour (n));
         sigBtn[n].setColour (juce::TextButton::textColourOnId, juce::Colour (0xff04121a));
     }
@@ -476,9 +476,61 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     loSlider.valueFromTextFunction = hzFromText;
     hiSlider.valueFromTextFunction = hzFromText;
 
+    // Six sample slots: three amber PRE layers, followed by three cyan MAIN layers.
+    for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
+    {
+        const bool isPre = layer < 3;
+        const juce::String slot = (isPre ? "PRE " : "MAIN ") + juce::String (isPre ? layer + 1 : layer - 2);
+        layerHeader[layer].setText (slot + "  /  OUT " + juce::String (layer + 1),
+                                    juce::dontSendNotification);
+        layerHeader[layer].setFont (juce::Font (10.5f, juce::Font::bold));
+        layerHeader[layer].setColour (juce::Label::textColourId, signalColour (layer));
+        addAndMakeVisible (layerHeader[layer]);
+
+        loadSampleBtn[layer].setButtonText ("Load sample...");
+        loadSampleBtn[layer].setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1b2229));
+        loadSampleBtn[layer].setColour (juce::TextButton::buttonOnColourId, signalColour (layer).withAlpha (0.85f));
+        loadSampleBtn[layer].setColour (juce::TextButton::textColourOffId, juce::Colour (0xffe7edf2));
+        addAndMakeVisible (loadSampleBtn[layer]);
+
+        loadSampleBtn[layer].onClick = [this, layer]
+        {
+            auto chooser = std::make_shared<juce::FileChooser> (
+                "Load sample for " + layerHeader[layer].getText(),
+                juce::File(),
+                "*.wav;*.aif;*.aiff;*.flac;*.ogg");
+
+            chooser->launchAsync (juce::FileBrowserComponent::openMode
+                                  | juce::FileBrowserComponent::canSelectFiles,
+                [this, layer, chooser] (const juce::FileChooser& fc)
+                {
+                    const auto file = fc.getResult();
+                    if (file.existsAsFile())
+                    {
+                        juce::String error;
+                        if (! proc.loadSampleFile (layer, file, error))
+                            juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon,
+                                                                    "Sample load failed", error);
+                    }
+                    updateEnabledStates();
+                });
+        };
+
+        layerGainSlider[layer].setSliderStyle (juce::Slider::LinearHorizontal);
+        layerGainSlider[layer].setTextBoxStyle (juce::Slider::TextBoxRight, false, 42, 16);
+        layerGainSlider[layer].setColour (juce::Slider::trackColourId, signalColour (layer));
+        addAndMakeVisible (layerGainSlider[layer]);
+        layerGainAtt[layer] = std::make_unique<SliderAtt> (proc.apvts, ids::layerGain (layer), layerGainSlider[layer]);
+        layerGainSlider[layer].textFromValueFunction = [] (double value)
+        {
+            return juce::String (value * 100.0, 0) + "%";
+        };
+        layerGainSlider[layer].updateText();
+    }
+
     setResizable (true, true);
-    setResizeLimits (860, 520, 1920, 1200);
-    setSize (980, 620);
+    setResizeLimits (900, 620, 1920, 1200);
+    setSize (1060, 700);
 
     updateEnabledStates();
     startTimerHz (10);
@@ -522,6 +574,18 @@ void WaveLensEditor::updateEnabledStates()
         sigBtn[n].setEnabled ((mask & (1 << n)) != 0);
 
     layoutBox.setEnabled ((mask & ~1) != 0);
+
+    for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
+    {
+        const auto sampleName = proc.getSampleName (layer);
+        if (sampleName != displayedSampleNames[(size_t) layer])
+        {
+            displayedSampleNames[(size_t) layer] = sampleName;
+            loadSampleBtn[layer].setButtonText (sampleName.isEmpty()
+                                                    ? "Load sample..."
+                                                    : sampleName.substring (0, 22));
+        }
+    }
 }
 
 void WaveLensEditor::timerCallback()
@@ -539,7 +603,7 @@ void WaveLensEditor::paint (juce::Graphics& g)
 
     g.setColour (kText);
     g.setFont (juce::Font (12.0f));
-    g.drawText ("oscilloscope", 120, 12, 120, 22, juce::Justification::centredLeft);
+    g.drawText ("six-layer transient sampler", 120, 12, 220, 22, juce::Justification::centredLeft);
 
     for (auto& grp : groups)
     {
@@ -548,7 +612,8 @@ void WaveLensEditor::paint (juce::Graphics& g)
         g.setColour (kPanelEdge);
         g.drawRoundedRectangle (grp.area.toFloat().reduced (0.5f), 6.0f, 1.0f);
 
-        g.setColour (kAccent);
+        g.setColour (grp.title.startsWith ("PRE") ? signalColour (0)
+                                                   : (grp.title.startsWith ("MAIN") ? signalColour (3) : kAccent));
         g.setFont (juce::Font (10.5f, juce::Font::bold));
         g.drawText (grp.title.toUpperCase(), grp.area.withHeight (20).withTrimmedLeft (10), juce::Justification::centredLeft);
     }
@@ -566,7 +631,6 @@ void WaveLensEditor::resized()
 
     auto area = getLocalBounds().reduced (12, 8);
 
-    // Header buttons
     auto header = area.removeFromTop (30);
     resetBtn.setBounds  (header.removeFromRight (70));
     header.removeFromRight (6);
@@ -575,19 +639,50 @@ void WaveLensEditor::resized()
     freezeBtn.setBounds (header.removeFromRight (70));
     area.removeFromTop (6);
 
-    // Control panel
-    constexpr int panelH = 146;
-    auto panel = area.removeFromBottom (panelH);
+    constexpr int layerPanelH = 88;
+    auto layerPanel = area.removeFromBottom (layerPanelH);
+    area.removeFromBottom (8);
+
+    constexpr int controlPanelH = 146;
+    auto panel = area.removeFromBottom (controlPanelH);
     area.removeFromBottom (8);
 
     meter.setBounds (area.removeFromRight (84));
     area.removeFromRight (8);
     scope.setBounds (area);
 
-    // Four groups share the panel width.
+    // Sample banks: three PRE layers and three MAIN layers.
+    auto bankArea = layerPanel.reduced (2, 0);
+    const int bankGap = 8;
+    const int bankWidth = (bankArea.getWidth() - bankGap) / 2;
+    auto preBank = bankArea.removeFromLeft (bankWidth);
+    bankArea.removeFromLeft (bankGap);
+    auto mainBank = bankArea;
+
+    groups.push_back ({ "PRE LAYERS", preBank });
+    groups.push_back ({ "MAIN LAYERS", mainBank });
+
+    for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
+    {
+        auto bank = layer < 3 ? preBank : mainBank;
+        const int localIndex = layer < 3 ? layer : layer - 3;
+        const int cellWidth = bank.getWidth() / 3;
+        const int cellX = bank.getX() + localIndex * cellWidth;
+        auto cell = juce::Rectangle<int> (cellX, bank.getY() + 20,
+                                          localIndex == 2 ? bank.getRight() - cellX : cellWidth,
+                                          bank.getHeight() - 22).reduced (3, 0);
+
+        layerHeader[layer].setBounds (cell.removeFromTop (14));
+        cell.removeFromTop (2);
+        loadSampleBtn[layer].setBounds (cell.removeFromTop (24));
+        cell.removeFromTop (2);
+        layerGainSlider[layer].setBounds (cell.removeFromTop (24));
+    }
+
+    // Compact global controls.
     constexpr int numGroups = 4;
     const float weights[numGroups] = { 1.1f, 1.1f, 1.4f, 1.4f };
-    const char* titles[numGroups] = { "Time", "Signal", "Range", "Signals" };
+    const char* titles[numGroups] = { "Time", "Signal", "Range", "Layers" };
     float total = 0.0f;
     for (float w : weights) total += w;
 
@@ -618,7 +713,6 @@ void WaveLensEditor::resized()
         c.setBounds (r);
     };
 
-    // Time
     labelled (cells[0], 0, "Capture", captureBox);
     {
         auto r = rowOf (cells[0], 1);
@@ -627,16 +721,13 @@ void WaveLensEditor::resized()
         timeSlider.setBounds (r);
     }
 
-    // Signal
     labelled (cells[1], 0, "Input", inputBox);
     labelled (cells[1], 1, "Gain", gainSlider);
 
-    // Range
     labelled (cells[2], 0, "Low cut", loSlider);
     labelled (cells[2], 1, "High cut", hiSlider);
     listenBtn.setBounds (rowOf (cells[2], 2));
 
-    // Signals: six numbered toggles, then the overlay / split choice.
     {
         auto r = rowOf (cells[3], 0);
         const int n = WaveLensProcessor::kMaxSignals;
