@@ -80,7 +80,7 @@ This is an active development branch, not a finished commercial plug-in.
 
 - Sample formats are provided by JUCE's registered basic audio formats (WAV, AIFF and supported FLAC/Ogg formats).
 - Samples are loaded into memory and sample paths are saved with plug-in state.
-- Each layer currently has one playback voice; a new transient trigger restarts that layer's active voice.
+- Each layer supports up to four simultaneous playback voices. New hits overlap existing tails; when all four voices are active, round-robin voice stealing keeps playback allocation-free.
 - The per-slot waveform is a precomputed peak overview of the loaded source file. The upper scope monitors rendered layer output.
 - Layer controls and envelope parameters are exposed for DAW automation.
 - MIDI note-on currently triggers all loaded layers; per-layer MIDI note mapping is not implemented yet.
