@@ -844,6 +844,7 @@ void WaveLensEditor::updateViewVisibility()
             envelopeComponents[(size_t) layer]->setVisible (selected);
     }
 
+    resized();
     repaint();
 }
 
