@@ -848,7 +848,7 @@ void LayerEnvelopeComponent::applyDrag (juce::Point<float> position)
 
 void LayerEnvelopeComponent::showPointMenu (int stage)
 {
-    stage = juce::jlimit (AttackStage, ReleaseStage, stage);
+    stage = juce::jlimit ((int) AttackStage, (int) ReleaseStage, stage);
     selectedStage = stage;
 
     static const char* modeNames[] = {
