@@ -64,6 +64,141 @@ WaveLensLookAndFeel::WaveLensLookAndFeel()
 }
 
 //==============================================================================
+// LayerOverlayView
+//==============================================================================
+LayerOverlayView::LayerOverlayView (WaveLensProcessor& p)
+    : processor (p)
+{
+    setOpaque (true);
+    startTimerHz (15);
+}
+
+void LayerOverlayView::paint (juce::Graphics& g)
+{
+    auto bounds = getLocalBounds().toFloat();
+    g.fillAll (kCanvas);
+    g.setColour (kPanelEdge);
+    g.drawRoundedRectangle (bounds.reduced (0.5f), 6.0f, 1.0f);
+
+    auto header = bounds.reduced (18.0f, 12.0f).removeFromTop (24.0f);
+    g.setColour (kTextBright);
+    g.setFont (juce::Font (13.0f, juce::Font::bold));
+    g.drawText ("MASTER  /  ALL SOURCE LAYERS", header.removeFromLeft (260.0f),
+                juce::Justification::centredLeft);
+
+    auto plot = bounds.reduced (22.0f, 14.0f);
+    plot.removeFromTop (38.0f);
+    plot.removeFromBottom (32.0f);
+
+    if (plot.getWidth() < 40.0f || plot.getHeight() < 40.0f)
+        return;
+
+    const float centre = plot.getCentreY();
+    const float halfHeight = plot.getHeight() * 0.44f;
+
+    g.saveState();
+    g.reduceClipRegion (plot.toNearestInt());
+
+    g.setColour (juce::Colours::white.withAlpha (0.045f));
+    for (int i = 1; i < 8; ++i)
+    {
+        const float x = plot.getX() + plot.getWidth() * (float) i / 8.0f;
+        g.drawVerticalLine (juce::roundToInt (x), plot.getY(), plot.getBottom());
+    }
+    for (int i = 1; i < 4; ++i)
+    {
+        const float y = plot.getY() + plot.getHeight() * (float) i / 4.0f;
+        g.drawHorizontalLine (juce::roundToInt (y), plot.getX(), plot.getRight());
+    }
+    g.setColour (juce::Colours::white.withAlpha (0.18f));
+    g.drawHorizontalLine (juce::roundToInt (centre), plot.getX(), plot.getRight());
+
+    int loadedCount = 0;
+    for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
+    {
+        const auto preview = processor.getWaveformPreview (layer);
+        if (! preview.loaded)
+            continue;
+
+        ++loadedCount;
+        juce::Path area, upper, lower;
+
+        for (int point = 0; point < LayeredSampleEngine::kPreviewPoints; ++point)
+        {
+            const float x = plot.getX()
+                + ((float) point / (float) (LayeredSampleEngine::kPreviewPoints - 1)) * plot.getWidth();
+            const float top = centre - preview.maximum[(size_t) point] * halfHeight;
+            const float bottom = centre - preview.minimum[(size_t) point] * halfHeight;
+
+            if (point == 0)
+            {
+                area.startNewSubPath (x, top);
+                upper.startNewSubPath (x, top);
+                lower.startNewSubPath (x, bottom);
+            }
+            else
+            {
+                area.lineTo (x, top);
+                upper.lineTo (x, top);
+                lower.lineTo (x, bottom);
+            }
+        }
+
+        for (int point = LayeredSampleEngine::kPreviewPoints - 1; point >= 0; --point)
+        {
+            const float x = plot.getX()
+                + ((float) point / (float) (LayeredSampleEngine::kPreviewPoints - 1)) * plot.getWidth();
+            const float bottom = centre - preview.minimum[(size_t) point] * halfHeight;
+            area.lineTo (x, bottom);
+        }
+        area.closeSubPath();
+
+        const auto colour = signalColour (layer);
+        g.setColour (colour.withAlpha (0.10f));
+        g.fillPath (area);
+        g.setColour (colour.withAlpha (0.95f));
+        g.strokePath (upper, juce::PathStrokeType (1.7f));
+        g.setColour (colour.withAlpha (0.42f));
+        g.strokePath (lower, juce::PathStrokeType (0.9f));
+    }
+
+    g.restoreState();
+
+    auto legend = bounds.reduced (18.0f, 8.0f).removeFromBottom (20.0f);
+    float x = legend.getX();
+    for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
+    {
+        const auto preview = processor.getWaveformPreview (layer);
+        const float itemWidth = 106.0f;
+        auto item = juce::Rectangle<float> (x, legend.getY(), itemWidth, legend.getHeight());
+        g.setColour (signalColour (layer));
+        g.fillRoundedRectangle (item.removeFromLeft (8.0f).withSizeKeepingCentre (7.0f, 7.0f), 3.0f);
+        g.setColour (preview.loaded ? kTextBright : kText.withAlpha (0.45f));
+        g.setFont (juce::Font (10.0f, juce::Font::bold));
+        const auto label = layer < 3 ? "PRE " + juce::String (layer + 1)
+                                     : "MAIN " + juce::String (layer - 2);
+        g.drawText (label, item.withTrimmedLeft (4.0f), juce::Justification::centredLeft);
+        x += itemWidth;
+    }
+
+    if (loadedCount == 0)
+    {
+        g.setColour (kText);
+        g.setFont (juce::Font (15.0f));
+        g.drawText ("Load samples from the left rack to build your six-layer sound",
+                    plot.toNearestInt(), juce::Justification::centred);
+    }
+    else
+    {
+        g.setColour (kText);
+        g.setFont (juce::Font (10.5f));
+        g.drawText (juce::String (loadedCount) + " / 6 source layers loaded",
+                    header.withY (header.getY() + 2.0f).withX (header.getRight() - 150.0f).withWidth (150.0f),
+                    juce::Justification::centredRight);
+    }
+}
+
+//==============================================================================
 // ScopeView
 //==============================================================================
 ScopeView::ScopeView (WaveLensProcessor& p)
@@ -419,11 +554,12 @@ void MeterView::paint (juce::Graphics& g)
 // Editor
 //==============================================================================
 WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
-    : AudioProcessorEditor (&p), proc (p), scope (p), meter (p)
+    : AudioProcessorEditor (&p), proc (p), scope (p), overlay (p), meter (p)
 {
     setLookAndFeel (&lnf);
 
     addAndMakeVisible (scope);
+    addAndMakeVisible (overlay);
     addAndMakeVisible (meter);
 
     setupCombo (viewBox,     ids::view,     viewAtt);
@@ -436,6 +572,35 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     setupToggle (listenBtn, "Listen",    ids::listen,   listenAtt);
     setupToggle (freezeBtn, "Freeze",    ids::freeze,   freezeAtt);
     setupToggle (holdBtn,   "Hold",      ids::hold,     holdAtt);
+
+    masterBtn.setButtonText ("M");
+    masterBtn.setTooltip ("Master view: overlay all six loaded source waveforms");
+    masterBtn.setClickingTogglesState (false);
+    masterBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1b2229));
+    masterBtn.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    masterBtn.setColour (juce::TextButton::textColourOffId, kTextBright);
+    masterBtn.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff10151a));
+    addAndMakeVisible (masterBtn);
+    masterBtn.onClick = [this]
+    {
+        selectedLayer = -1;
+        monitorMode = false;
+        updateViewVisibility();
+    };
+
+    monitorBtn.setButtonText ("MONITOR / FFT");
+    monitorBtn.setTooltip ("Open the live waveform and multi-signal spectrum monitor");
+    monitorBtn.setClickingTogglesState (false);
+    monitorBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1b2229));
+    monitorBtn.setColour (juce::TextButton::buttonOnColourId, kAccent.withAlpha (0.85f));
+    monitorBtn.setColour (juce::TextButton::textColourOffId, kTextBright);
+    monitorBtn.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff10151a));
+    addAndMakeVisible (monitorBtn);
+    monitorBtn.onClick = [this]
+    {
+        monitorMode = true;
+        updateViewVisibility();
+    };
 
     // One toggle per signal, in that signal's trace colour.
     for (int n = 0; n < WaveLensProcessor::kMaxSignals; ++n)
@@ -503,6 +668,21 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
         const juce::String slot = (isPre ? "PRE " : "MAIN ") + juce::String (isPre ? layer + 1 : layer - 2);
         layerHeader[layer].setText (slot + "  /  OUT " + juce::String (layer + 1),
                                     juce::dontSendNotification);
+
+        layerSelectBtn[layer].setButtonText (slot);
+        layerSelectBtn[layer].setClickingTogglesState (false);
+        layerSelectBtn[layer].setTooltip ("Select " + slot + " sample and its envelope controls");
+        layerSelectBtn[layer].setColour (juce::TextButton::buttonColourId, juce::Colour (0xff20272e));
+        layerSelectBtn[layer].setColour (juce::TextButton::buttonOnColourId, signalColour (layer).withAlpha (0.88f));
+        layerSelectBtn[layer].setColour (juce::TextButton::textColourOffId, signalColour (layer));
+        layerSelectBtn[layer].setColour (juce::TextButton::textColourOnId, juce::Colour (0xff10151a));
+        addAndMakeVisible (layerSelectBtn[layer]);
+        layerSelectBtn[layer].onClick = [this, layer]
+        {
+            selectedLayer = layer;
+            monitorMode = false;
+            updateViewVisibility();
+        };
         layerHeader[layer].setFont (juce::Font (10.5f, juce::Font::bold));
         layerHeader[layer].setColour (juce::Label::textColourId, signalColour (layer));
         addAndMakeVisible (layerHeader[layer]);
@@ -572,10 +752,11 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     }
 
     setResizable (true, true);
-    setResizeLimits (900, 590, 1600, 1100);
-    setSize (1040, 650);
+    setResizeLimits (1000, 620, 1800, 1200);
+    setSize (1180, 720);
 
     updateEnabledStates();
+    updateViewVisibility();
     startTimerHz (10);
 }
 
@@ -635,6 +816,37 @@ void WaveLensEditor::updateEnabledStates()
     }
 }
 
+void WaveLensEditor::updateViewVisibility()
+{
+    const bool showMaster = selectedLayer < 0 && ! monitorMode;
+    const bool showLayer = selectedLayer >= 0 && ! monitorMode;
+
+    masterBtn.setToggleState (showMaster, juce::dontSendNotification);
+    monitorBtn.setToggleState (monitorMode, juce::dontSendNotification);
+
+    overlay.setVisible (showMaster);
+    scope.setVisible (monitorMode);
+    meter.setVisible (monitorMode);
+
+    viewBox.setVisible (monitorMode);
+    layoutBox.setVisible (monitorMode);
+    for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
+    {
+        sigBtn[layer].setVisible (monitorMode);
+        const bool selected = showLayer && selectedLayer == layer;
+        layerSelectBtn[layer].setToggleState (selected, juce::dontSendNotification);
+        layerHeader[layer].setVisible (selected);
+        loadSampleBtn[layer].setVisible (selected);
+        auditionBtn[layer].setVisible (selected);
+        layerGainSlider[layer].setVisible (selected);
+        layerDelaySlider[layer].setVisible (selected);
+        if (envelopeComponents[(size_t) layer] != nullptr)
+            envelopeComponents[(size_t) layer]->setVisible (selected);
+    }
+
+    repaint();
+}
+
 void WaveLensEditor::timerCallback()
 {
     updateEnabledStates();
@@ -646,67 +858,179 @@ void WaveLensEditor::paint (juce::Graphics& g)
 
     g.setColour (kTextBright);
     g.setFont (juce::Font (20.0f, juce::Font::bold));
-    g.drawText ("WaveLens", 16, 8, 160, 28, juce::Justification::centredLeft);
-
-    g.setColour (kText);
-    g.setFont (juce::Font (12.0f));
-    g.drawText ("six-layer transient sampler", 120, 12, 220, 22, juce::Justification::centredLeft);
-
-    for (auto& grp : groups)
-    {
-        g.setColour (kPanel);
-        g.fillRoundedRectangle (grp.area.toFloat(), 6.0f);
-        g.setColour (kPanelEdge);
-        g.drawRoundedRectangle (grp.area.toFloat().reduced (0.5f), 6.0f, 1.0f);
-
-        g.setColour (grp.title.startsWith ("PRE") ? signalColour (0)
-                                                   : (grp.title.startsWith ("MAIN") ? signalColour (3) : kAccent));
-        g.setFont (juce::Font (10.5f, juce::Font::bold));
-        g.drawText (grp.title.toUpperCase(), grp.area.withHeight (20).withTrimmedLeft (10), juce::Justification::centredLeft);
-    }
+    g.drawText ("WaveLens", 14, 7, 150, 28, juce::Justification::centredLeft);
 
     g.setColour (kText);
     g.setFont (juce::Font (11.5f));
-    for (auto& c : captions)
-        g.drawText (c.text, c.area, juce::Justification::centredLeft);
+    g.drawText ("SIX-LAYER TRANSIENT SAMPLER", 164, 11, 260, 20,
+                juce::Justification::centredLeft);
+
+    g.setColour (kPanel);
+    g.fillRoundedRectangle (rackArea.toFloat(), 7.0f);
+    g.setColour (kPanelEdge);
+    g.drawRoundedRectangle (rackArea.toFloat().reduced (0.5f), 7.0f, 1.0f);
+
+    g.setColour (kPanel);
+    g.fillRoundedRectangle (workspaceArea.toFloat(), 7.0f);
+    g.setColour (kPanelEdge);
+    g.drawRoundedRectangle (workspaceArea.toFloat().reduced (0.5f), 7.0f, 1.0f);
+
+    g.setColour (kPanel.withBrightness (1.05f));
+    g.fillRoundedRectangle (workspaceToolbarArea.toFloat().reduced (1.0f), 5.0f);
+
+    g.setColour (kText);
+    g.setFont (juce::Font (9.5f, juce::Font::bold));
+    g.drawText ("PRE-SAMPLE", rackArea.getX() + 10, layerSelectBtn[0].getY() - 17,
+                rackArea.getWidth() - 20, 14, juce::Justification::centredLeft);
+    g.drawText ("MAIN-SAMPLE", rackArea.getX() + 10, layerSelectBtn[3].getY() - 17,
+                rackArea.getWidth() - 20, 14, juce::Justification::centredLeft);
+
+    if (monitorMode)
+    {
+        g.setColour (kText);
+        g.setFont (juce::Font (9.0f, juce::Font::bold));
+        g.drawText ("DISPLAY", viewBox.getX(), workspaceToolbarArea.getY() + 4,
+                    viewBox.getWidth(), 12, juce::Justification::centredLeft);
+        g.drawText ("LAYOUT", layoutBox.getX(), workspaceToolbarArea.getY() + 4,
+                    layoutBox.getWidth(), 12, juce::Justification::centredLeft);
+        if (sigBtn[0].isVisible())
+            g.drawText ("VISIBLE TRACES", sigBtn[0].getX(), workspaceToolbarArea.getY() + 4,
+                        sigBtn[5].getRight() - sigBtn[0].getX(), 12,
+                        juce::Justification::centredLeft);
+    }
+    else if (selectedLayer >= 0)
+    {
+        const int layer = juce::jlimit (0, WaveLensProcessor::kMaxSignals - 1, selectedLayer);
+        g.setColour (signalColour (layer));
+        g.setFont (juce::Font (9.5f, juce::Font::bold));
+        g.drawText ("SAMPLE", loadSampleBtn[layer].getX(), workspaceToolbarArea.getY() + 5,
+                    loadSampleBtn[layer].getWidth(), 12, juce::Justification::centredLeft);
+        g.drawText ("LEVEL", layerGainSlider[layer].getX(), workspaceToolbarArea.getY() + 5,
+                    layerGainSlider[layer].getWidth(), 12, juce::Justification::centredLeft);
+        g.drawText ("TIMING SHIFT", layerDelaySlider[layer].getX(), workspaceToolbarArea.getY() + 5,
+                    layerDelaySlider[layer].getWidth(), 12, juce::Justification::centredLeft);
+    }
+    else
+    {
+        g.setColour (kText);
+        g.setFont (juce::Font (10.0f, juce::Font::bold));
+        g.drawText ("MASTER WAVEFORM OVERLAY  /  ALL LOADED SAMPLES",
+                    workspaceToolbarArea.reduced (12, 0), juce::Justification::centredLeft);
+    }
 }
 
 void WaveLensEditor::resized()
 {
-    captions.clear();
-    groups.clear();
+    auto area = getLocalBounds().reduced (12, 7);
 
-    auto area = getLocalBounds().reduced (10, 7);
-
-    auto header = area.removeFromTop (28);
-    resetBtn.setBounds (header.removeFromRight (62));
+    auto header = area.removeFromTop (32);
+    resetBtn.setBounds (header.removeFromRight (62).withHeight (24).withY (header.getY() + 3));
     header.removeFromRight (5);
-    holdBtn.setBounds (header.removeFromRight (62));
+    holdBtn.setBounds (header.removeFromRight (62).withHeight (24).withY (header.getY() + 3));
     header.removeFromRight (5);
-    freezeBtn.setBounds (header.removeFromRight (62));
-    area.removeFromTop (5);
+    freezeBtn.setBounds (header.removeFromRight (62).withHeight (24).withY (header.getY() + 3));
 
-    // One compact layer toolbar replaces the former Time, Trigger and Range panels.
-    auto toolbar = area.removeFromTop (58);
-    groups.push_back ({ "LAYERS", toolbar });
-    auto toolbarControls = toolbar.reduced (9, 0);
-    toolbarControls.removeFromTop (20);
+    area.removeFromTop (7);
+    rackArea = area.removeFromLeft (158);
+    area.removeFromLeft (9);
+    workspaceArea = area;
 
-    auto rightControls = toolbarControls.removeFromRight (238);
-    captions.push_back ({ "View", rightControls.removeFromLeft (30).withY (rightControls.getY() + 2).withHeight (22) });
-    viewBox.setBounds (rightControls.removeFromLeft (92).withHeight (23));
-    rightControls.removeFromLeft (7);
-    captions.push_back ({ "Layout", rightControls.removeFromLeft (34).withY (rightControls.getY() + 2).withHeight (22) });
-    layoutBox.setBounds (rightControls.removeFromLeft (75).withHeight (23));
+    auto rack = rackArea.reduced (8, 8);
+    masterBtn.setBounds (rack.removeFromTop (38));
+    rack.removeFromTop (31);
 
-    toolbarControls.removeFromRight (12);
-    const int toggleGap = 4;
-    const int toggleWidth = juce::jmin (43, (toolbarControls.getWidth() - toggleGap * 5) / 6);
-    for (int i = 0; i < WaveLensProcessor::kMaxSignals; ++i)
+    // The PRE bank is the first three rows in the rack.
+    rack.removeFromTop (16); // heading space
+    constexpr int rowHeight = 34;
+    constexpr int rowGap = 5;
+    for (int layer = 0; layer < 3; ++layer)
     {
-        sigBtn[i].setBounds (toolbarControls.removeFromLeft (toggleWidth).withHeight (23));
-        toolbarControls.removeFromLeft (toggleGap);
+        layerSelectBtn[layer].setBounds (rack.removeFromTop (rowHeight));
+        rack.removeFromTop (rowGap);
     }
+
+    rack.removeFromTop (9);
+    rack.removeFromTop (16); // MAIN heading space
+    for (int layer = 3; layer < WaveLensProcessor::kMaxSignals; ++layer)
+    {
+        layerSelectBtn[layer].setBounds (rack.removeFromTop (rowHeight));
+        rack.removeFromTop (rowGap);
+    }
+    monitorBtn.setBounds (rack.removeFromBottom (35));
+
+    auto workspace = workspaceArea.reduced (8, 8);
+    workspaceToolbarArea = workspace.removeFromTop (62);
+    workspace.removeFromTop (8);
+    canvasArea = workspace;
+
+    if (monitorMode)
+    {
+        auto monitorArea = canvasArea.reduced (2);
+        meter.setBounds (monitorArea.removeFromRight (68));
+        monitorArea.removeFromRight (7);
+        scope.setBounds (monitorArea);
+    }
+    else
+    {
+        scope.setBounds (canvasArea.reduced (2));
+        meter.setBounds ({});
+    }
+
+    overlay.setBounds (canvasArea.reduced (2));
+    for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
+        envelopeComponents[(size_t) layer]->setBounds (canvasArea.reduced (2));
+
+    if (monitorMode)
+    {
+        auto controls = workspaceToolbarArea.reduced (10, 0);
+        controls.removeFromTop (18);
+        viewBox.setBounds (controls.removeFromLeft (110).withHeight (25));
+        controls.removeFromLeft (8);
+        layoutBox.setBounds (controls.removeFromLeft (100).withHeight (25));
+        controls.removeFromLeft (18);
+        const int gap = 5;
+        const int toggleWidth = juce::jlimit (34, 48,
+            (controls.getWidth() - gap * 5) / 6);
+        for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
+        {
+            sigBtn[layer].setBounds (controls.removeFromLeft (toggleWidth).withHeight (25));
+            if (layer != WaveLensProcessor::kMaxSignals - 1)
+                controls.removeFromLeft (gap);
+        }
+    }
+    else if (selectedLayer >= 0)
+    {
+        const int layer = juce::jlimit (0, WaveLensProcessor::kMaxSignals - 1, selectedLayer);
+        auto controls = workspaceToolbarArea.reduced (10, 0);
+        controls.removeFromTop (19);
+
+        layerHeader[layer].setBounds (controls.removeFromLeft (105).withHeight (25));
+        controls.removeFromLeft (8);
+
+        auto sampleArea = controls.removeFromLeft (235);
+        auditionBtn[layer].setBounds (sampleArea.removeFromRight (28).withHeight (25));
+        sampleArea.removeFromRight (4);
+        loadSampleBtn[layer].setBounds (sampleArea.withHeight (25));
+        controls.removeFromLeft (12);
+
+        auto levelArea = controls.removeFromLeft (190);
+        layerGainSlider[layer].setBounds (levelArea.withHeight (24));
+        controls.removeFromLeft (10);
+
+        auto timingArea = controls.removeFromLeft (190);
+        layerDelaySlider[layer].setBounds (timingArea.withHeight (24));
+    }
+    else
+    {
+        // Master mode shows the six source waveforms in one shared canvas.
+        viewBox.setBounds ({});
+        layoutBox.setBounds ({});
+        for (auto& button : sigBtn)
+            button.setBounds ({});
+    }
+}
+
+}
 
     area.removeFromTop (7);
     const int layerPanelH = juce::jlimit (270, 322, juce::roundToInt (getHeight() * 0.47f));
