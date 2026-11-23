@@ -40,6 +40,10 @@ namespace ids
     inline juce::String layerAttackCurve (int n) { return "layerAttackCurve" + juce::String (n + 1); }
     inline juce::String layerDecayCurve (int n) { return "layerDecayCurve" + juce::String (n + 1); }
     inline juce::String layerReleaseCurve (int n) { return "layerReleaseCurve" + juce::String (n + 1); }
+    inline juce::String layerAttackTension (int n) { return "layerAttackTension" + juce::String (n + 1); }
+    inline juce::String layerDecayTension (int n) { return "layerDecayTension" + juce::String (n + 1); }
+    inline juce::String layerReleaseTension (int n) { return "layerReleaseTension" + juce::String (n + 1); }
+    inline juce::String layerEnvelopeEnabled (int n) { return "layerEnvelopeEnabled" + juce::String (n + 1); }
     inline juce::String layerMute (int n)    { return "layerMute" + juce::String (n + 1); }
 }
 
@@ -201,6 +205,10 @@ private:
     std::array<std::atomic<float>*, kMaxSignals> pLayerAttackCurve {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerDecayCurve {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerReleaseCurve {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerAttackTension {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerDecayTension {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerReleaseTension {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerEnvelopeEnabled {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerMute {};
 
     // Six immutable sample layers and a separate copy of the trigger input.
