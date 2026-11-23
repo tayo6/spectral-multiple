@@ -940,7 +940,7 @@ void WaveLensEditor::resized()
     rack.removeFromTop (31);
 
     // The PRE bank is the first three rows in the rack.
-    rack.removeFromTop (16); // heading space
+    rack.removeFromTop (16);
     constexpr int rowHeight = 34;
     constexpr int rowGap = 5;
     for (int layer = 0; layer < 3; ++layer)
@@ -950,7 +950,7 @@ void WaveLensEditor::resized()
     }
 
     rack.removeFromTop (9);
-    rack.removeFromTop (16); // MAIN heading space
+    rack.removeFromTop (16);
     for (int layer = 3; layer < WaveLensProcessor::kMaxSignals; ++layer)
     {
         layerSelectBtn[layer].setBounds (rack.removeFromTop (rowHeight));
@@ -973,7 +973,7 @@ void WaveLensEditor::resized()
     else
     {
         scope.setBounds (canvasArea.reduced (2));
-        meter.setBounds ({});
+        meter.setBounds (juce::Rectangle<int>());
     }
 
     overlay.setBounds (canvasArea.reduced (2));
@@ -1022,62 +1022,9 @@ void WaveLensEditor::resized()
     }
     else
     {
-        // Master mode shows the six source waveforms in one shared canvas.
-        viewBox.setBounds ({});
-        layoutBox.setBounds ({});
+        viewBox.setBounds (juce::Rectangle<int>());
+        layoutBox.setBounds (juce::Rectangle<int>());
         for (auto& button : sigBtn)
-            button.setBounds ({});
-    }
-}
-
-}
-
-    area.removeFromTop (7);
-    const int layerPanelH = juce::jlimit (270, 322, juce::roundToInt (getHeight() * 0.47f));
-    auto layerPanel = area.removeFromBottom (layerPanelH);
-    area.removeFromBottom (7);
-
-    meter.setBounds (area.removeFromRight (66));
-    area.removeFromRight (7);
-    scope.setBounds (area);
-
-    // Three PRE cards and three MAIN cards. Each card now contains its own waveform,
-    // envelope, level, timing shift, audition and sound-shaping controls.
-    auto bankArea = layerPanel.reduced (2, 0);
-    const int bankGap = 8;
-    const int bankWidth = (bankArea.getWidth() - bankGap) / 2;
-    auto preBank = bankArea.removeFromLeft (bankWidth);
-    bankArea.removeFromLeft (bankGap);
-    auto mainBank = bankArea;
-
-    groups.push_back ({ "PRE LAYERS", preBank });
-    groups.push_back ({ "MAIN LAYERS", mainBank });
-
-    for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
-    {
-        auto bank = layer < 3 ? preBank : mainBank;
-        const int localIndex = layer < 3 ? layer : layer - 3;
-        const int cellWidth = bank.getWidth() / 3;
-        const int cellX = bank.getX() + localIndex * cellWidth;
-        auto cell = juce::Rectangle<int> (cellX, bank.getY() + 20,
-                                          localIndex == 2 ? bank.getRight() - cellX : cellWidth,
-                                          bank.getHeight() - 22).reduced (3, 0);
-
-        layerHeader[layer].setBounds (cell.removeFromTop (14));
-        cell.removeFromTop (2);
-
-        auto loadRow = cell.removeFromTop (22);
-        auditionBtn[layer].setBounds (loadRow.removeFromRight (23));
-        loadRow.removeFromRight (3);
-        loadSampleBtn[layer].setBounds (loadRow);
-
-        cell.removeFromTop (2);
-        auto parameterRow = cell.removeFromTop (23);
-        const int half = parameterRow.getWidth() / 2;
-        layerGainSlider[layer].setBounds (parameterRow.removeFromLeft (half));
-        layerDelaySlider[layer].setBounds (parameterRow);
-
-        cell.removeFromTop (3);
-        envelopeComponents[(size_t) layer]->setBounds (cell);
+            button.setBounds (juce::Rectangle<int>());
     }
 }
