@@ -124,13 +124,25 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerRelease (i), 1 }, "Layer " + suffix + " release",
                                                            NormalisableRange<float> (0.1f, 10000.0f, 0.1f), 120.0f,
                                                            AudioParameterFloatAttributes().withLabel ("ms")));
-        const StringArray curveNames { "Linear", "Convex", "Concave", "S-Curve", "Exponential", "Logarithmic", "Bezier" };
+        const StringArray curveNames { "Linear", "Convex", "Concave", "S-Curve", "Exponential", "Logarithmic", "Bezier",
+                                       "Hold", "Smooth", "Single curve", "Half sine", "Stairs", "Smooth stairs", "Pulse", "Wave" };
         layout.add (std::make_unique<AudioParameterChoice> (PID { ids::layerAttackCurve (i), 1 },
                                                            "Layer " + suffix + " attack curve", curveNames, 4));
         layout.add (std::make_unique<AudioParameterChoice> (PID { ids::layerDecayCurve (i), 1 },
                                                            "Layer " + suffix + " decay curve", curveNames, 4));
         layout.add (std::make_unique<AudioParameterChoice> (PID { ids::layerReleaseCurve (i), 1 },
                                                            "Layer " + suffix + " release curve", curveNames, 4));
+        layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerAttackTension (i), 1 },
+                                                           "Layer " + suffix + " attack curve tension",
+                                                           NormalisableRange<float> (-1.0f, 1.0f, 0.001f), 0.0f));
+        layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerDecayTension (i), 1 },
+                                                           "Layer " + suffix + " decay curve tension",
+                                                           NormalisableRange<float> (-1.0f, 1.0f, 0.001f), 0.0f));
+        layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerReleaseTension (i), 1 },
+                                                           "Layer " + suffix + " release curve tension",
+                                                           NormalisableRange<float> (-1.0f, 1.0f, 0.001f), 0.0f));
+        layout.add (std::make_unique<AudioParameterBool> (PID { ids::layerEnvelopeEnabled (i), 1 },
+                                                          "Layer " + suffix + " envelope enabled", true));
         layout.add (std::make_unique<AudioParameterBool> (PID { ids::layerMute (i), 1 }, "Layer " + suffix + " mute", false));
     }
 
@@ -197,6 +209,10 @@ WaveLensProcessor::WaveLensProcessor()
         pLayerAttackCurve[(size_t) i] = apvts.getRawParameterValue (ids::layerAttackCurve (i));
         pLayerDecayCurve[(size_t) i] = apvts.getRawParameterValue (ids::layerDecayCurve (i));
         pLayerReleaseCurve[(size_t) i] = apvts.getRawParameterValue (ids::layerReleaseCurve (i));
+        pLayerAttackTension[(size_t) i] = apvts.getRawParameterValue (ids::layerAttackTension (i));
+        pLayerDecayTension[(size_t) i] = apvts.getRawParameterValue (ids::layerDecayTension (i));
+        pLayerReleaseTension[(size_t) i] = apvts.getRawParameterValue (ids::layerReleaseTension (i));
+        pLayerEnvelopeEnabled[(size_t) i] = apvts.getRawParameterValue (ids::layerEnvelopeEnabled (i));
         pLayerMute[(size_t) i] = apvts.getRawParameterValue (ids::layerMute (i));
     }
 }
@@ -468,6 +484,10 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         params.attackCurve = juce::roundToInt (pLayerAttackCurve[(size_t) layer]->load (relaxed));
         params.decayCurve = juce::roundToInt (pLayerDecayCurve[(size_t) layer]->load (relaxed));
         params.releaseCurve = juce::roundToInt (pLayerReleaseCurve[(size_t) layer]->load (relaxed));
+        params.attackTension = pLayerAttackTension[(size_t) layer]->load (relaxed);
+        params.decayTension = pLayerDecayTension[(size_t) layer]->load (relaxed);
+        params.releaseTension = pLayerReleaseTension[(size_t) layer]->load (relaxed);
+        params.envelopeEnabled = pLayerEnvelopeEnabled[(size_t) layer]->load (relaxed) > 0.5f;
         params.muted = pLayerMute[(size_t) layer]->load (relaxed) > 0.5f;
         layerEngine.setLayerParameters (layer, params);
     }
