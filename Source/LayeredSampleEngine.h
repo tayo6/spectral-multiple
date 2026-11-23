@@ -107,7 +107,7 @@ private:
     void startLayer (int layer, bool ignoreTimingShift = false) noexcept;
     float renderLayerSample (int layer, float& left, float& right) noexcept;
     float envelopeLevelAtAge (const LayerParameters& p, int age) const noexcept;
-    float applyCurve (float progress, int curve) const noexcept;
+    float applyCurve (float progress, int curve, float tension) const noexcept;
 
     juce::AudioFormatManager formatManager;
     std::array<std::atomic<SampleData*>, kNumLayers> currentSamples {};
