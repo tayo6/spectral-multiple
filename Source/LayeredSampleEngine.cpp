@@ -90,8 +90,10 @@ void LayeredSampleEngine::prepareToPlay (double sampleRate, int maximumBlockSize
         buffer.clear();
     }
 
-    for (auto& voice : voices)
-        voice = {};
+    for (auto& layerVoices : voices)
+        for (auto& voice : layerVoices)
+            voice = {};
+    nextVoiceToSteal.fill (0);
     for (auto& request : clearRequests)
         request.store (false, std::memory_order_relaxed);
     for (auto& request : previewRequests)
@@ -276,11 +278,34 @@ void LayeredSampleEngine::triggerAllLayers() noexcept
 
 void LayeredSampleEngine::startLayer (int layer, bool ignoreTimingShift) noexcept
 {
+    if (! juce::isPositiveAndBelow (layer, kNumLayers))
+        return;
+
     auto* sample = currentSamples[(size_t) layer].load (std::memory_order_acquire);
     if (sample == nullptr || parameters[(size_t) layer].muted)
         return;
 
-    auto& voice = voices[(size_t) layer];
+    auto& layerVoices = voices[(size_t) layer];
+
+    // Prefer a free voice. If all four are active, steal slots round-robin so a
+    // new hit does not automatically cut off the immediately preceding hit.
+    int selectedVoice = -1;
+    for (int offset = 0; offset < kVoicesPerLayer; ++offset)
+    {
+        const int candidate = (nextVoiceToSteal[(size_t) layer] + offset) % kVoicesPerLayer;
+        if (! layerVoices[(size_t) candidate].active)
+        {
+            selectedVoice = candidate;
+            break;
+        }
+    }
+
+    if (selectedVoice < 0)
+        selectedVoice = nextVoiceToSteal[(size_t) layer];
+
+    nextVoiceToSteal[(size_t) layer] = (selectedVoice + 1) % kVoicesPerLayer;
+
+    auto& voice = layerVoices[(size_t) selectedVoice];
     voice.sample = sample;
     voice.position = 0.0;
     // The host sees a fixed 100 ms lookahead. Each layer can move independently
@@ -329,86 +354,99 @@ float LayeredSampleEngine::envelopeLevelAtAge (const LayerParameters& p,
 float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& right) noexcept
 {
     left = right = 0.0f;
-    auto& voice = voices[(size_t) layer];
-
-    if (! voice.active || voice.sample == nullptr)
+    if (! juce::isPositiveAndBelow (layer, kNumLayers))
         return 0.0f;
-
-    if (voice.delayRemaining > 0)
-    {
-        --voice.delayRemaining;
-        return 0.0f;
-    }
 
     const auto& p = parameters[(size_t) layer];
+    auto& layerVoices = voices[(size_t) layer];
+
     if (p.muted)
     {
-        voice.active = false;
-        return 0.0f;
+        for (auto& voice : layerVoices)
+            voice.active = false;
     }
-
-    const auto& audio = voice.sample->audio;
-    const int length = audio.getNumSamples();
-
-    if (length <= 0 || voice.position >= (double) length)
+    else
     {
-        voice.active = false;
-        return 0.0f;
-    }
+        const float leftPan = p.pan > 0.0f ? 1.0f - p.pan : 1.0f;
+        const float rightPan = p.pan < 0.0f ? 1.0f + p.pan : 1.0f;
 
-    const double speed = (voice.sample->sourceSampleRate / currentSampleRate)
-                         * std::pow (2.0, (double) p.pitchSemitones / 12.0);
-    const int index0 = juce::jlimit (0, length - 1, (int) voice.position);
-    const int index1 = juce::jmin (length - 1, index0 + 1);
-    const float fraction = (float) (voice.position - (double) index0);
-
-    const float rawL = audio.getSample (0, index0)
-                       + (audio.getSample (0, index1) - audio.getSample (0, index0)) * fraction;
-    float rawR = audio.getSample (1, index0)
-                       + (audio.getSample (1, index1) - audio.getSample (1, index0)) * fraction;
-    float rawLFiltered = layerHighPass[(size_t) layer].processSample (0, rawL);
-    float rawRFiltered = layerHighPass[(size_t) layer].processSample (1, rawR);
-    rawLFiltered = layerLowPass[(size_t) layer].processSample (0, rawLFiltered);
-    rawRFiltered = layerLowPass[(size_t) layer].processSample (1, rawRFiltered);
-
-    const float totalOutputSamples = (float) length / (float) juce::jmax (0.0001, speed);
-    const float remainingSamples = (float) ((double) length - voice.position)
-                                   / (float) juce::jmax (0.0001, speed);
-    const float requestedReleaseSamples = juce::jmax (1.0f, p.releaseMs * 0.001f * (float) currentSampleRate);
-    // Very short one-shots cannot contain a full release segment. Reserve at most
-    // the final half of the file for release so the attack portion is not muted.
-    const float releaseSamples = juce::jmin (requestedReleaseSamples,
-                                              juce::jmax (1.0f, totalOutputSamples * 0.5f));
-
-    float envelope = envelopeLevelAtAge (p, voice.ageSamples);
-
-    // In one-shot mode, RELEASE is placed over the sample's final releaseMs.
-    // This keeps each file self-contained and makes release audible for audio triggers too.
-    if (remainingSamples <= releaseSamples)
-    {
-        if (! voice.inRelease)
+        // Mix active voices for this slot first, then run its filters once on the
+        // combined signal. This preserves independent filtering per layer.
+        for (auto& voice : layerVoices)
         {
-            voice.releaseStartLevel = envelope;
-            voice.inRelease = true;
-        }
+            if (! voice.active || voice.sample == nullptr)
+            {
+                voice.active = false;
+                continue;
+            }
 
-        const float releaseProgress = 1.0f - remainingSamples / releaseSamples;
-        envelope = voice.releaseStartLevel
-                   * (1.0f - applyCurve (releaseProgress, p.releaseCurve));
+            if (voice.delayRemaining > 0)
+            {
+                --voice.delayRemaining;
+                continue;
+            }
+
+            const auto& audio = voice.sample->audio;
+            const int length = audio.getNumSamples();
+
+            if (length <= 0 || voice.position >= (double) length)
+            {
+                voice.active = false;
+                continue;
+            }
+
+            const double speed = (voice.sample->sourceSampleRate / currentSampleRate)
+                                 * std::pow (2.0, (double) p.pitchSemitones / 12.0);
+            const int index0 = juce::jlimit (0, length - 1, (int) voice.position);
+            const int index1 = juce::jmin (length - 1, index0 + 1);
+            const float fraction = (float) (voice.position - (double) index0);
+
+            const float rawL = audio.getSample (0, index0)
+                               + (audio.getSample (0, index1) - audio.getSample (0, index0)) * fraction;
+            const float rawR = audio.getSample (1, index0)
+                               + (audio.getSample (1, index1) - audio.getSample (1, index0)) * fraction;
+
+            const float totalOutputSamples = (float) length / (float) juce::jmax (0.0001, speed);
+            const float remainingSamples = (float) ((double) length - voice.position)
+                                           / (float) juce::jmax (0.0001, speed);
+            const float requestedReleaseSamples = juce::jmax (1.0f, p.releaseMs * 0.001f * (float) currentSampleRate);
+            // Very short one-shots cannot contain a full release segment. Reserve at most
+            // the final half of the file for release so the attack portion is not muted.
+            const float releaseSamples = juce::jmin (requestedReleaseSamples,
+                                                      juce::jmax (1.0f, totalOutputSamples * 0.5f));
+
+            float envelope = envelopeLevelAtAge (p, voice.ageSamples);
+
+            // In one-shot mode, RELEASE is placed over the sample's final releaseMs.
+            if (remainingSamples <= releaseSamples)
+            {
+                if (! voice.inRelease)
+                {
+                    voice.releaseStartLevel = envelope;
+                    voice.inRelease = true;
+                }
+
+                const float releaseProgress = 1.0f - remainingSamples / releaseSamples;
+                envelope = voice.releaseStartLevel
+                           * (1.0f - applyCurve (releaseProgress, p.releaseCurve));
+            }
+
+            const float gain = p.gain * envelope;
+            left += rawL * gain * leftPan;
+            right += rawR * gain * rightPan;
+
+            voice.position += speed;
+            ++voice.ageSamples;
+
+            if (voice.position >= (double) length)
+                voice.active = false;
+        }
     }
 
-    const float leftPan = p.pan > 0.0f ? 1.0f - p.pan : 1.0f;
-    const float rightPan = p.pan < 0.0f ? 1.0f + p.pan : 1.0f;
-    const float gain = p.gain * envelope;
-
-    left = rawLFiltered * gain * leftPan;
-    right = rawRFiltered * gain * rightPan;
-
-    voice.position += speed;
-    ++voice.ageSamples;
-
-    if (voice.position >= (double) length)
-        voice.active = false;
+    left = layerLowPass[(size_t) layer].processSample (
+        0, layerHighPass[(size_t) layer].processSample (0, left));
+    right = layerLowPass[(size_t) layer].processSample (
+        1, layerHighPass[(size_t) layer].processSample (1, right));
 
     return (left + right) * 0.5f;
 }
@@ -429,7 +467,11 @@ void LayeredSampleEngine::processBlock (const juce::AudioBuffer<float>& triggerI
     for (int layer = 0; layer < kNumLayers; ++layer)
     {
         if (clearRequests[(size_t) layer].exchange (false, std::memory_order_acq_rel))
-            voices[(size_t) layer] = {};
+        {
+            for (auto& voice : voices[(size_t) layer])
+                voice = {};
+            nextVoiceToSteal[(size_t) layer] = 0;
+        }
         if (previewRequests[(size_t) layer].exchange (false, std::memory_order_acq_rel))
             startLayer (layer, true);
     }
