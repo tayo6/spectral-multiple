@@ -1,20 +1,35 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include "LayerEnvelopeComponent.h"
 
 /** Trace colour of signal n (0-based). Chosen to stay apart on a dark background. */
 inline juce::Colour signalColour (int n)
 {
-    static const juce::uint32 table[] = { 0xff4fd1ff,   // 1 cyan
-                                          0xffffb04a,   // 2 orange
-                                          0xffff6bd6,   // 3 pink
-                                          0xff7be07a,   // 4 green
-                                          0xffb48cff,   // 5 violet
-                                          0xffff6b5e }; // 6 red
+    static const juce::uint32 table[] = { 0xffffb04a,   // Pre 1: amber
+                                          0xffffc36b,   // Pre 2: light amber
+                                          0xffff8c38,   // Pre 3: deep orange
+                                          0xff4fd1ff,   // Main 1: cyan
+                                          0xff78deff,   // Main 2: light cyan
+                                          0xff22b7e6 }; // Main 3: deep cyan
     return juce::Colour (table[juce::jlimit (0, 5, n)]);
 }
 
 //==============================================================================
+/** Master view: overlays the six loaded source-sample waveforms. */
+class LayerOverlayView final : public juce::Component, private juce::Timer
+{
+public:
+    explicit LayerOverlayView (WaveLensProcessor&);
+    ~LayerOverlayView() override { stopTimer(); }
+    void paint (juce::Graphics&) override;
+
+private:
+    void timerCallback() override { repaint(); }
+    WaveLensProcessor& processor;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LayerOverlayView)
+};
+
 /** The oscilloscope display. */
 class ScopeView final : public juce::Component, private juce::Timer
 {
@@ -35,6 +50,7 @@ private:
 
     struct Trace { int ch; juce::Colour colour; };
 
+    void drawSpectrum (juce::Graphics&, juce::Rectangle<float>, const std::vector<Trace>&, bool);
     void drawLane (juce::Graphics&, juce::Rectangle<float> lane, const std::vector<Trace>&,
                    const Snapshot&, float gain, bool showHeld, const juce::String& title);
     void drawTrace (juce::Graphics&, juce::Rectangle<float> lane, int ch, juce::Colour,
@@ -42,6 +58,7 @@ private:
     juce::String windowLabel() const;
 
     WaveLensProcessor& proc;
+    std::atomic<float>* pView;
     std::atomic<float>* pCapture;
     std::atomic<float>* pBars;
     std::atomic<float>* pTimeMs;
@@ -94,6 +111,7 @@ public:
 private:
     void timerCallback() override;
     void updateEnabledStates();
+    void updateViewVisibility();
 
     using SliderAtt = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ComboAtt  = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
@@ -107,22 +125,32 @@ private:
     WaveLensLookAndFeel lnf;
 
     ScopeView scope;
+    LayerOverlayView overlay;
     MeterView meter;
 
-    juce::ComboBox captureBox, barsBox, inputBox, layoutBox;
-    juce::Slider timeSlider, gainSlider, loSlider, hiSlider;
+    juce::ComboBox viewBox, captureBox, barsBox, inputBox, layoutBox, triggerModeBox;
+    juce::Slider timeSlider, gainSlider, loSlider, hiSlider, thresholdSlider, preRollSlider;
     juce::TextButton listenBtn, freezeBtn, holdBtn, resetBtn;
+    juce::TextButton masterBtn, monitorBtn;
+    juce::TextButton layerSelectBtn[WaveLensProcessor::kMaxSignals];
     juce::TextButton sigBtn[WaveLensProcessor::kMaxSignals];
+    juce::TextButton loadSampleBtn[WaveLensProcessor::kMaxSignals];
+    juce::TextButton auditionBtn[WaveLensProcessor::kMaxSignals];
+    juce::Slider layerGainSlider[WaveLensProcessor::kMaxSignals];
+    juce::Slider layerDelaySlider[WaveLensProcessor::kMaxSignals];
+    juce::Label layerHeader[WaveLensProcessor::kMaxSignals];
+    std::array<std::unique_ptr<LayerEnvelopeComponent>, WaveLensProcessor::kMaxSignals> envelopeComponents;
+    std::array<juce::String, WaveLensProcessor::kMaxSignals> displayedSampleNames;
+    int selectedLayer = -1; // -1 = Master overlay
+    bool monitorMode = false;
+    juce::Rectangle<int> rackArea, workspaceArea, workspaceToolbarArea, canvasArea;
 
-    std::unique_ptr<ComboAtt>  captureAtt, barsAtt, inputAtt, layoutAtt;
-    std::unique_ptr<SliderAtt> timeAtt, gainAtt, loAtt, hiAtt;
+    std::unique_ptr<ComboAtt>  viewAtt, captureAtt, barsAtt, inputAtt, layoutAtt, triggerModeAtt;
+    std::unique_ptr<SliderAtt> timeAtt, gainAtt, loAtt, hiAtt, thresholdAtt, preRollAtt;
     std::unique_ptr<ButtonAtt> listenAtt, freezeAtt, holdAtt;
     std::unique_ptr<ButtonAtt> sigAtt[WaveLensProcessor::kMaxSignals];
-
-    struct Caption { juce::String text; juce::Rectangle<int> area; };
-    std::vector<Caption> captions;
-    struct Group { juce::String title; juce::Rectangle<int> area; };
-    std::vector<Group> groups;
+    std::unique_ptr<SliderAtt> layerGainAtt[WaveLensProcessor::kMaxSignals];
+    std::unique_ptr<SliderAtt> layerDelayAtt[WaveLensProcessor::kMaxSignals];
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaveLensEditor)
 };

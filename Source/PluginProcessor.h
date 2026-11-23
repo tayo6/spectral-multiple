@@ -2,12 +2,14 @@
 
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_dsp/juce_dsp.h>
+#include "LayeredSampleEngine.h"
 
 #include <array>
 #include <atomic>
 
 namespace ids
 {
+    inline constexpr const char* view      = "view";
     inline constexpr const char* capture   = "capture";    // Tempo / Live / Scroll
     inline constexpr const char* bars      = "bars";       // tempo window
     inline constexpr const char* timeMs    = "timeMs";     // free window
@@ -21,6 +23,24 @@ namespace ids
     inline constexpr const char* showSig[6] = { "show1", "show2", "show3", "show4", "show5", "show6" };
     inline constexpr const char* freeze    = "freeze";
     inline constexpr const char* hold      = "hold";
+    inline constexpr const char* triggerMode = "triggerMode";
+    inline constexpr const char* threshold   = "threshold";
+    inline constexpr const char* preRollMs   = "preRollMs";
+    inline juce::String layerGain (int n)    { return "layerGain" + juce::String (n + 1); }
+    inline juce::String layerPan (int n)     { return "layerPan" + juce::String (n + 1); }
+    inline juce::String layerPitch (int n)   { return "layerPitch" + juce::String (n + 1); }
+    inline juce::String layerDelay (int n)   { return "layerDelay" + juce::String (n + 1); }
+    inline juce::String layerHighPass (int n) { return "layerHighPass" + juce::String (n + 1); }
+    inline juce::String layerLowPass (int n) { return "layerLowPass" + juce::String (n + 1); }
+    inline juce::String layerAttack (int n)  { return "layerAttack" + juce::String (n + 1); }
+    inline juce::String layerDecay (int n)   { return "layerDecay" + juce::String (n + 1); }
+    inline juce::String layerHold (int n)    { return "layerHold" + juce::String (n + 1); }
+    inline juce::String layerSustain (int n) { return "layerSustain" + juce::String (n + 1); }
+    inline juce::String layerRelease (int n) { return "layerRelease" + juce::String (n + 1); }
+    inline juce::String layerAttackCurve (int n) { return "layerAttackCurve" + juce::String (n + 1); }
+    inline juce::String layerDecayCurve (int n) { return "layerDecayCurve" + juce::String (n + 1); }
+    inline juce::String layerReleaseCurve (int n) { return "layerReleaseCurve" + juce::String (n + 1); }
+    inline juce::String layerMute (int n)    { return "layerMute" + juce::String (n + 1); }
 }
 
 enum class CaptureMode { Tempo = 0, Live, Scroll };
@@ -37,10 +57,10 @@ inline double barsFromIndex (int index)
 class WaveLensProcessor final : public juce::AudioProcessor
 {
 public:
-    // Number of display columns, and the signals that are captured per column.
-    // Signal 1 is the main input; signals 2-6 come from five auxiliary input buses.
+    // Number of display columns and the six sample layers captured per column.
     static constexpr int kCols = 1024;
     static constexpr int kMaxSignals = 6;
+    static constexpr int kFFTOrder = 12, kFFTSize = 1 << kFFTOrder, kSpectrumBins = 512, kSpectrumHop = 1024;
     enum Chan { Sig1 = 0, Sig2, Sig3, Sig4, Sig5, Sig6, kNumChan };
 
     WaveLensProcessor();
@@ -57,7 +77,7 @@ public:
     bool hasEditor() const override { return true; }
 
     const juce::String getName() const override { return "WaveLens"; }
-    bool acceptsMidi() const override  { return false; }
+    bool acceptsMidi() const override  { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
@@ -74,6 +94,11 @@ public:
     //==========================================================================
     /** Asks the audio thread to clear the capture, the held pass and the meter holds. */
     void requestReset() noexcept { resetRequest.store (true); }
+    bool loadSampleFile (int layer, const juce::File& file, juce::String& error);
+    void clearSample (int layer);
+    juce::String getSampleName (int layer) const;
+    LayeredSampleEngine::WaveformPreview getWaveformPreview (int layer) const noexcept;
+    void requestPreview (int layer) noexcept;
 
     juce::AudioProcessorValueTreeState apvts;
 
@@ -83,6 +108,7 @@ public:
     using AF = std::atomic<float>;
     std::array<AF, kCols * kNumChan> colMin, colMax;     // current pass
     std::array<AF, kCols * kNumChan> heldMin, heldMax;   // previous pass
+    std::array<std::array<AF, kSpectrumBins>, kMaxSignals> spectrumDb, heldSpectrumDb;
 
     std::atomic<int>  head { 0 };          // column being written
     std::atomic<int>  passStartCol { 0 };  // first valid column of the current pass
@@ -90,7 +116,7 @@ public:
     std::atomic<bool> hasData { false };
     std::atomic<int>  heldFrom { 0 }, heldTo { 0 };
     std::atomic<bool> heldValid { false };
-    std::atomic<int>  connectedMask { 1 };   // bit n set = signal n+1 has an input routed
+    std::atomic<int>  connectedMask { 0 };   // bit n set = sample layer n+1 is loaded
 
     // Meter values (linear).
     std::atomic<float> peakNow { 0.0f }, rmsNow { 0.0f }, crestNow { 1.0f };
@@ -110,6 +136,8 @@ private:
     void initColumn (int col, const float* v) noexcept;
     void updateColumn (int col, const float* v) noexcept;
     void pushSample (const float* v) noexcept;
+    void pushSpectrumSamples (const float* v) noexcept;
+    void processSpectrumFrame() noexcept;
 
     CaptureMode mode = CaptureMode::Tempo;
     double colF = 0.0;          // fractional column position
@@ -129,6 +157,15 @@ private:
     double sr = 44100.0;
     juce::dsp::LinkwitzRileyFilter<float> rangeHp[kMaxSignals], rangeLp[kMaxSignals];   // one pair per signal
     juce::dsp::LinkwitzRileyFilter<float> listenHp[2], listenLp[2];
+    juce::dsp::FFT spectrumFft { kFFTOrder };
+    std::array<float, kFFTSize> fftWindow {};
+    std::array<std::array<float, kFFTSize>, kMaxSignals> fftRing {};
+    std::array<std::array<float, kFFTSize * 2>, kMaxSignals> fftScratch {};
+    std::array<int, kMaxSignals> fftWritePos {};
+    std::array<int, kSpectrumBins> spectrumBinLo {};
+    std::array<float, kSpectrumBins> spectrumBinMix {};
+    int fftSamplesSinceUpdate = 0, fftSamplesCollected = 0;
+    float fftWindowSum = 1.0f;
     float  lastRangeLo = -1.0f, lastRangeHi = -1.0f;
     bool   lastRangeActive = false;
 
@@ -138,6 +175,7 @@ private:
     std::atomic<bool> resetRequest { false };
 
     // Cached parameter pointers.
+    std::atomic<float>* pView = nullptr;
     std::atomic<float>* pCapture = nullptr;
     std::atomic<float>* pBars = nullptr;
     std::atomic<float>* pTimeMs = nullptr;
@@ -146,6 +184,29 @@ private:
     std::atomic<float>* pRangeHi = nullptr;
     std::atomic<float>* pListen = nullptr;
     std::atomic<float>* pFreeze = nullptr;
+    std::atomic<float>* pTriggerMode = nullptr;
+    std::atomic<float>* pThreshold = nullptr;
+    std::atomic<float>* pPreRollMs = nullptr;
+    std::array<std::atomic<float>*, kMaxSignals> pLayerGain {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerPan {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerPitch {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerDelay {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerHighPass {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerLowPass {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerAttack {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerDecay {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerHold {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerSustain {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerRelease {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerAttackCurve {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerDecayCurve {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerReleaseCurve {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerMute {};
+
+    // Six immutable sample layers and a separate copy of the trigger input.
+    LayeredSampleEngine layerEngine;
+    juce::AudioBuffer<float> triggerBuffer;
+    std::array<juce::String, kMaxSignals> samplePaths;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaveLensProcessor)
 };

@@ -29,12 +29,13 @@ endif()
 
 juce_add_plugin(WaveLens
     COMPANY_NAME                "WaveLens Audio"
+    BUNDLE_ID                   "audio.wavlensaudio.wavlens"
     PLUGIN_MANUFACTURER_CODE    Wlau
     PLUGIN_CODE                 Wlns
     FORMATS                     VST3
     PRODUCT_NAME                "WaveLens"
     IS_SYNTH                    FALSE
-    NEEDS_MIDI_INPUT            FALSE
+    NEEDS_MIDI_INPUT            TRUE
     NEEDS_MIDI_OUTPUT           FALSE
     VST3_CATEGORIES             Fx Analyzer
     COPY_PLUGIN_AFTER_BUILD     FALSE)
@@ -43,7 +44,11 @@ target_sources(WaveLens PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginProcessor.h
     Source/PluginEditor.cpp
-    Source/PluginEditor.h)
+    Source/PluginEditor.h
+    Source/LayeredSampleEngine.cpp
+    Source/LayeredSampleEngine.h
+    Source/LayerEnvelopeComponent.cpp
+    Source/LayerEnvelopeComponent.h)
 
 target_compile_definitions(WaveLens PUBLIC
     JUCE_WEB_BROWSER=0
