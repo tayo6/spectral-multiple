@@ -141,8 +141,7 @@ void WaveLensLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& b
     g.setFont (juce::Font (11.5f, juce::Font::bold));
     g.drawFittedText (title, bounds.removeFromTop (18), juce::Justification::centredLeft, 1);
 
-    auto detailArea = button.getLocalBounds().reduced (9, 6);
-    detailArea.removeFromTop (30);
+    auto detailArea = button.getLocalBounds().reduced (9, 6).removeFromBottom (13);
     detailArea = detailArea.withTrimmedRight (8);
 
     const bool loaded = detail.isNotEmpty() && detail != "EMPTY SLOT";
@@ -1024,6 +1023,48 @@ void WaveLensEditor::paint (juce::Graphics& g)
         g.setFont (juce::Font (10.0f, juce::Font::bold));
         g.drawText ("MASTER WAVEFORM OVERLAY  /  ALL LOADED SAMPLES",
                     workspaceToolbarArea.reduced (12, 0), juce::Justification::centredLeft);
+    }
+}
+
+void WaveLensEditor::paintOverChildren (juce::Graphics& g)
+{
+    // A compact source waveform makes each rack cell read like a sample pad,
+    // while the full-size waveform and envelope remain in the editor workspace.
+    constexpr int displayBars = 40;
+
+    for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
+    {
+        const auto& pad = layerSelectBtn[layer];
+        if (! pad.isVisible())
+            continue;
+
+        const auto preview = proc.getWaveformPreview (layer);
+        if (! preview.loaded)
+            continue;
+
+        auto plot = pad.getBounds().toFloat().reduced (8.0f, 0.0f);
+        plot.removeFromTop (23.0f);
+        plot.removeFromBottom (22.0f);
+        if (plot.getWidth() < 16.0f || plot.getHeight() < 8.0f)
+            continue;
+
+        const float centre = plot.getCentreY();
+        const float amplitude = plot.getHeight() * 0.46f;
+        const float barWidth = plot.getWidth() / (float) displayBars;
+
+        g.setColour (signalColour (layer).withAlpha (0.20f));
+        g.drawHorizontalLine (juce::roundToInt (centre), plot.getX(), plot.getRight());
+
+        g.setColour (signalColour (layer).withAlpha (0.88f));
+        for (int bar = 0; bar < displayBars; ++bar)
+        {
+            const int index = bar * (LayeredSampleEngine::kPreviewPoints - 1)
+                              / (displayBars - 1);
+            const float x = plot.getX() + ((float) bar + 0.5f) * barWidth;
+            const float top = centre - preview.maximum[(size_t) index] * amplitude;
+            const float bottom = centre - preview.minimum[(size_t) index] * amplitude;
+            g.drawLine (x, top, x, bottom, 1.35f);
+        }
     }
 }
 
