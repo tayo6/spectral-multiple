@@ -450,7 +450,7 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
             float envelope = envelopeLevelAtAge (p, voice.ageSamples);
 
             // In one-shot mode, RELEASE is placed over the sample's final releaseMs.
-            if (remainingSamples <= releaseSamples)
+            if (p.envelopeEnabled && remainingSamples <= releaseSamples)
             {
                 if (! voice.inRelease)
                 {
