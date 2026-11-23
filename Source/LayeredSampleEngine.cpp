@@ -312,7 +312,12 @@ void LayeredSampleEngine::startLayer (int layer, bool ignoreTimingShift) noexcep
     // around the delayed dry transient: negative values advance it, positive values delay it.
     const int shiftSamples = ignoreTimingShift ? 0
         : juce::roundToInt (parameters[(size_t) layer].delayShiftMs * (float) currentSampleRate * 0.001f);
-    voice.delayRemaining = juce::jlimit (0, maximumDelaySamples * 2, maximumDelaySamples + shiftSamples);
+
+    // Manual audition bypasses both the 100 ms trigger lookahead and layer timing
+    // shift. Normal audio/MIDI triggers retain the fixed latency-compensated start.
+    voice.delayRemaining = ignoreTimingShift
+        ? 0
+        : juce::jlimit (0, maximumDelaySamples * 2, maximumDelaySamples + shiftSamples);
     voice.ageSamples = 0;
     voice.releaseStartLevel = 1.0f;
     voice.inRelease = false;
