@@ -53,6 +53,10 @@ public:
         int attackCurve = 4;
         int decayCurve = 4;
         int releaseCurve = 4;
+        float attackTension = 0.0f;
+        float decayTension = 0.0f;
+        float releaseTension = 0.0f;
+        bool envelopeEnabled = true;
         bool muted = false;
     };
 
@@ -117,7 +121,7 @@ private:
     std::array<juce::AudioBuffer<float>, kNumLayers> layerBuffers;
     std::array<juce::dsp::LinkwitzRileyFilter<float>, kNumLayers> layerHighPass;
     std::array<juce::dsp::LinkwitzRileyFilter<float>, kNumLayers> layerLowPass;
-    std::array<std::array<float, 257>, 7> curveTables {};
+    std::array<std::array<float, 257>, 15> curveTables {};
 
     std::vector<float> delayLeft, delayRight;
     int delayWritePosition = 0;
