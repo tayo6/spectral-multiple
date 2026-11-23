@@ -63,6 +63,98 @@ WaveLensLookAndFeel::WaveLensLookAndFeel()
     setColour (juce::Label::textColourId, kText);
 }
 
+void WaveLensLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,
+                                                const juce::Colour& backgroundColour,
+                                                bool isMouseOverButton, bool isButtonDown)
+{
+    const auto componentId = button.getComponentID();
+
+    if (componentId == "rack-master")
+    {
+        auto bounds = button.getLocalBounds().toFloat().reduced (1.0f);
+        const bool active = button.getToggleState();
+        const auto fill = active ? kAccent : juce::Colour (0xff20272e);
+        g.setColour (isButtonDown ? fill.brighter (0.12f) : fill);
+        g.fillRoundedRectangle (bounds, 6.0f);
+        g.setColour (active ? kAccent : kPanelEdge);
+        g.drawRoundedRectangle (bounds, 6.0f, active ? 1.6f : 1.0f);
+        return;
+    }
+
+    if (componentId != "rack-pad")
+    {
+        LookAndFeel_V4::drawButtonBackground (g, button, backgroundColour,
+                                              isMouseOverButton, isButtonDown);
+        return;
+    }
+
+    const auto accent = button.findColour (juce::TextButton::textColourOffId);
+    const bool selected = button.getToggleState();
+    auto bounds = button.getLocalBounds().toFloat().reduced (1.0f);
+    auto fill = selected ? accent.withAlpha (0.19f) : juce::Colour (0xff20272e);
+
+    if (! button.isEnabled())
+        fill = juce::Colour (0xff1a2026);
+    else if (isButtonDown)
+        fill = fill.brighter (0.14f);
+    else if (isMouseOverButton)
+        fill = fill.brighter (0.07f);
+
+    g.setColour (fill);
+    g.fillRoundedRectangle (bounds, 6.0f);
+    g.setColour (accent.withAlpha (selected ? 0.95f : 0.42f));
+    g.drawRoundedRectangle (bounds, 6.0f, selected ? 1.8f : 1.0f);
+
+    auto marker = bounds.removeFromLeft (3.0f).reduced (0.0f, 8.0f);
+    g.setColour (accent.withAlpha (selected ? 1.0f : 0.72f));
+    g.fillRoundedRectangle (marker, 1.5f);
+}
+
+void WaveLensLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button,
+                                          bool isMouseOverButton, bool isButtonDown)
+{
+    const auto componentId = button.getComponentID();
+
+    if (componentId == "rack-master")
+    {
+        g.setColour (button.getToggleState() ? juce::Colour (0xff10151a) : kTextBright);
+        g.setFont (juce::Font (12.0f, juce::Font::bold));
+        g.drawFittedText (button.getButtonText(), button.getLocalBounds().reduced (2),
+                          juce::Justification::centred, 1);
+        return;
+    }
+
+    if (componentId != "rack-pad")
+    {
+        LookAndFeel_V4::drawButtonText (g, button, isMouseOverButton, isButtonDown);
+        return;
+    }
+
+    const auto text = button.getButtonText();
+    const int separator = text.indexOfChar ('\\n');
+    const auto title = separator >= 0 ? text.substring (0, separator) : text;
+    const auto detail = separator >= 0 ? text.substring (separator + 1) : juce::String();
+    const auto bounds = button.getLocalBounds().reduced (9, 6);
+    const auto accent = button.findColour (juce::TextButton::textColourOffId);
+
+    g.setColour (button.isEnabled() ? kTextBright : kText.withAlpha (0.42f));
+    g.setFont (juce::Font (11.5f, juce::Font::bold));
+    g.drawFittedText (title, bounds.removeFromTop (18), juce::Justification::centredLeft, 1);
+
+    auto detailArea = button.getLocalBounds().reduced (9, 6);
+    detailArea.removeFromTop (30);
+    detailArea = detailArea.withTrimmedRight (8);
+
+    const bool loaded = detail.isNotEmpty() && detail != "EMPTY SLOT";
+    g.setColour (loaded ? kText : kText.withAlpha (0.55f));
+    g.setFont (juce::Font (8.5f));
+    g.drawFittedText (detail, detailArea, juce::Justification::centredLeft, 1);
+
+    auto dot = juce::Rectangle<float> ((float) button.getWidth() - 13.0f, 8.0f, 5.0f, 5.0f);
+    g.setColour (loaded ? kMeterCool : accent.withAlpha (0.62f));
+    g.fillEllipse (dot);
+}
+
 //==============================================================================
 // LayerOverlayView
 //==============================================================================
@@ -574,6 +666,7 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     setupToggle (holdBtn,   "Hold",      ids::hold,     holdAtt);
 
     masterBtn.setButtonText ("M");
+    masterBtn.setComponentID ("rack-master");
     masterBtn.setTooltip ("Master view: overlay all six loaded source waveforms");
     masterBtn.setClickingTogglesState (false);
     masterBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1b2229));
@@ -669,7 +762,8 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
         layerHeader[layer].setText (slot + "  /  OUT " + juce::String (layer + 1),
                                     juce::dontSendNotification);
 
-        layerSelectBtn[layer].setButtonText (slot);
+        layerSelectBtn[layer].setButtonText (slot + "\\nEMPTY SLOT");
+        layerSelectBtn[layer].setComponentID ("rack-pad");
         layerSelectBtn[layer].setClickingTogglesState (false);
         layerSelectBtn[layer].setTooltip ("Select " + slot + " sample and its envelope controls");
         layerSelectBtn[layer].setColour (juce::TextButton::buttonColourId, juce::Colour (0xff20272e));
@@ -812,6 +906,12 @@ void WaveLensEditor::updateEnabledStates()
             loadSampleBtn[layer].setButtonText (sampleName.isEmpty()
                                                     ? "Load sample..."
                                                     : sampleName.substring (0, 22));
+
+            const auto slot = layer < 3 ? "PRE " + juce::String (layer + 1)
+                                        : "MAIN " + juce::String (layer - 2);
+            const auto padName = sampleName.isEmpty() ? juce::String ("EMPTY SLOT")
+                                                       : sampleName.substring (0, 15).toUpperCase();
+            layerSelectBtn[layer].setButtonText (slot + "\\n" + padName);
         }
     }
 }
@@ -879,12 +979,19 @@ void WaveLensEditor::paint (juce::Graphics& g)
     g.setColour (kPanel.withBrightness (1.05f));
     g.fillRoundedRectangle (workspaceToolbarArea.toFloat().reduced (1.0f), 5.0f);
 
-    g.setColour (kText);
+    g.setColour (kTextBright);
+    g.setFont (juce::Font (12.0f, juce::Font::bold));
+    g.drawText ("DRUM RACK", rackArea.getX() + 12, rackArea.getY() + 8,
+                rackArea.getWidth() - 58, 20, juce::Justification::centredLeft);
+
+    g.setColour (signalColour (0));
     g.setFont (juce::Font (9.5f, juce::Font::bold));
-    g.drawText ("PRE-SAMPLE", rackArea.getX() + 10, layerSelectBtn[0].getY() - 17,
-                rackArea.getWidth() - 20, 14, juce::Justification::centredLeft);
-    g.drawText ("MAIN-SAMPLE", rackArea.getX() + 10, layerSelectBtn[3].getY() - 17,
-                rackArea.getWidth() - 20, 14, juce::Justification::centredLeft);
+    g.drawText ("PRE-SAMPLE BANK", rackArea.getX() + 12, layerSelectBtn[0].getY() - 18,
+                rackArea.getWidth() - 24, 14, juce::Justification::centredLeft);
+
+    g.setColour (signalColour (3));
+    g.drawText ("MAIN-SAMPLE BANK", rackArea.getX() + 12, layerSelectBtn[3].getY() - 18,
+                rackArea.getWidth() - 24, 14, juce::Justification::centredLeft);
 
     if (monitorMode)
     {
@@ -932,32 +1039,42 @@ void WaveLensEditor::resized()
     freezeBtn.setBounds (header.removeFromRight (62).withHeight (24).withY (header.getY() + 3));
 
     area.removeFromTop (7);
-    rackArea = area.removeFromLeft (158);
-    area.removeFromLeft (9);
+    rackArea = area.removeFromLeft (236);
+    area.removeFromLeft (10);
     workspaceArea = area;
 
-    auto rack = rackArea.reduced (8, 8);
-    masterBtn.setBounds (rack.removeFromTop (38));
-    rack.removeFromTop (31);
+    auto rack = rackArea.reduced (10, 9);
+    auto rackHeader = rack.removeFromTop (30);
+    masterBtn.setBounds (rackHeader.removeFromRight (34).withHeight (28)
+                                      .withY (rackHeader.getY() + 1));
 
-    // The PRE bank is the first three rows in the rack.
+    rack.removeFromTop (12);
     rack.removeFromTop (16);
-    constexpr int rowHeight = 34;
-    constexpr int rowGap = 5;
-    for (int layer = 0; layer < 3; ++layer)
+    rack.removeFromTop (5);
+
+    constexpr int padGap = 6;
+    constexpr int padHeight = 76;
+    const int padWidth = (rack.getWidth() - padGap * 2) / 3;
+    auto preRow = rack.removeFromTop (padHeight);
+    for (int column = 0; column < 3; ++column)
     {
-        layerSelectBtn[layer].setBounds (rack.removeFromTop (rowHeight));
-        rack.removeFromTop (rowGap);
+        const int x = rack.getX() + column * (padWidth + padGap);
+        const int width = column == 2 ? rack.getRight() - x : padWidth;
+        layerSelectBtn[column].setBounds (x, preRow.getY(), width, preRow.getHeight());
     }
 
-    rack.removeFromTop (9);
+    rack.removeFromTop (15);
     rack.removeFromTop (16);
-    for (int layer = 3; layer < WaveLensProcessor::kMaxSignals; ++layer)
+    rack.removeFromTop (5);
+    auto mainRow = rack.removeFromTop (padHeight);
+    for (int column = 0; column < 3; ++column)
     {
-        layerSelectBtn[layer].setBounds (rack.removeFromTop (rowHeight));
-        rack.removeFromTop (rowGap);
+        const int x = rack.getX() + column * (padWidth + padGap);
+        const int width = column == 2 ? rack.getRight() - x : padWidth;
+        layerSelectBtn[column + 3].setBounds (x, mainRow.getY(), width, mainRow.getHeight());
     }
-    monitorBtn.setBounds (rack.removeFromBottom (35));
+
+    monitorBtn.setBounds (rack.removeFromBottom (36));
 
     auto workspace = workspaceArea.reduced (8, 8);
     workspaceToolbarArea = workspace.removeFromTop (62);
@@ -1005,21 +1122,26 @@ void WaveLensEditor::resized()
         auto controls = workspaceToolbarArea.reduced (10, 0);
         controls.removeFromTop (19);
 
-        layerHeader[layer].setBounds (controls.removeFromLeft (105).withHeight (25));
-        controls.removeFromLeft (8);
+        const int available = controls.getWidth();
+        const int headerWidth = juce::jlimit (88, 108, (int) (available * 0.14f));
+        const int sampleWidth = juce::jlimit (170, 225, (int) (available * 0.29f));
+        const int levelWidth = juce::jlimit (145, 180, (int) (available * 0.22f));
+        constexpr int gap = 8;
 
-        auto sampleArea = controls.removeFromLeft (235);
+        layerHeader[layer].setBounds (controls.removeFromLeft (headerWidth).withHeight (25));
+        controls.removeFromLeft (gap);
+
+        auto sampleArea = controls.removeFromLeft (sampleWidth);
         auditionBtn[layer].setBounds (sampleArea.removeFromRight (28).withHeight (25));
         sampleArea.removeFromRight (4);
         loadSampleBtn[layer].setBounds (sampleArea.withHeight (25));
-        controls.removeFromLeft (12);
+        controls.removeFromLeft (gap);
 
-        auto levelArea = controls.removeFromLeft (190);
+        auto levelArea = controls.removeFromLeft (levelWidth);
         layerGainSlider[layer].setBounds (levelArea.withHeight (24));
-        controls.removeFromLeft (10);
+        controls.removeFromLeft (gap);
 
-        auto timingArea = controls.removeFromLeft (190);
-        layerDelaySlider[layer].setBounds (timingArea.withHeight (24));
+        layerDelaySlider[layer].setBounds (controls.withHeight (24));
     }
     else
     {
