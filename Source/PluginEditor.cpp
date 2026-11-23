@@ -131,10 +131,10 @@ void WaveLensLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& b
     }
 
     const auto text = button.getButtonText();
-    const int separator = text.indexOfChar ('\\n');
+    const int separator = text.indexOfChar ('\n');
     const auto title = separator >= 0 ? text.substring (0, separator) : text;
     const auto detail = separator >= 0 ? text.substring (separator + 1) : juce::String();
-    const auto bounds = button.getLocalBounds().reduced (9, 6);
+    auto bounds = button.getLocalBounds().reduced (9, 6);
     const auto accent = button.findColour (juce::TextButton::textColourOffId);
 
     g.setColour (button.isEnabled() ? kTextBright : kText.withAlpha (0.42f));
