@@ -16,6 +16,20 @@ inline juce::Colour signalColour (int n)
 }
 
 //==============================================================================
+/** Master view: overlays the six loaded source-sample waveforms. */
+class LayerOverlayView final : public juce::Component, private juce::Timer
+{
+public:
+    explicit LayerOverlayView (WaveLensProcessor&);
+    ~LayerOverlayView() override { stopTimer(); }
+    void paint (juce::Graphics&) override;
+
+private:
+    void timerCallback() override { repaint(); }
+    WaveLensProcessor& processor;
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LayerOverlayView)
+};
+
 /** The oscilloscope display. */
 class ScopeView final : public juce::Component, private juce::Timer
 {
@@ -97,6 +111,7 @@ public:
 private:
     void timerCallback() override;
     void updateEnabledStates();
+    void updateViewVisibility();
 
     using SliderAtt = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ComboAtt  = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
@@ -110,11 +125,14 @@ private:
     WaveLensLookAndFeel lnf;
 
     ScopeView scope;
+    LayerOverlayView overlay;
     MeterView meter;
 
     juce::ComboBox viewBox, captureBox, barsBox, inputBox, layoutBox, triggerModeBox;
     juce::Slider timeSlider, gainSlider, loSlider, hiSlider, thresholdSlider, preRollSlider;
     juce::TextButton listenBtn, freezeBtn, holdBtn, resetBtn;
+    juce::TextButton masterBtn, monitorBtn;
+    juce::TextButton layerSelectBtn[WaveLensProcessor::kMaxSignals];
     juce::TextButton sigBtn[WaveLensProcessor::kMaxSignals];
     juce::TextButton loadSampleBtn[WaveLensProcessor::kMaxSignals];
     juce::TextButton auditionBtn[WaveLensProcessor::kMaxSignals];
@@ -123,6 +141,9 @@ private:
     juce::Label layerHeader[WaveLensProcessor::kMaxSignals];
     std::array<std::unique_ptr<LayerEnvelopeComponent>, WaveLensProcessor::kMaxSignals> envelopeComponents;
     std::array<juce::String, WaveLensProcessor::kMaxSignals> displayedSampleNames;
+    int selectedLayer = -1; // -1 = Master overlay
+    bool monitorMode = false;
+    juce::Rectangle<int> rackArea, workspaceArea, workspaceToolbarArea, canvasArea;
 
     std::unique_ptr<ComboAtt>  viewAtt, captureAtt, barsAtt, inputAtt, layoutAtt, triggerModeAtt;
     std::unique_ptr<SliderAtt> timeAtt, gainAtt, loAtt, hiAtt, thresholdAtt, preRollAtt;
@@ -130,11 +151,6 @@ private:
     std::unique_ptr<ButtonAtt> sigAtt[WaveLensProcessor::kMaxSignals];
     std::unique_ptr<SliderAtt> layerGainAtt[WaveLensProcessor::kMaxSignals];
     std::unique_ptr<SliderAtt> layerDelayAtt[WaveLensProcessor::kMaxSignals];
-
-    struct Caption { juce::String text; juce::Rectangle<int> area; };
-    std::vector<Caption> captions;
-    struct Group { juce::String title; juce::Rectangle<int> area; };
-    std::vector<Group> groups;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaveLensEditor)
 };
