@@ -96,6 +96,11 @@ class WaveLensLookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
     WaveLensLookAndFeel();
+
+    void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour&,
+                               bool isMouseOverButton, bool isButtonDown) override;
+    void drawButtonText (juce::Graphics&, juce::TextButton&,
+                         bool isMouseOverButton, bool isButtonDown) override;
 };
 
 //==============================================================================
