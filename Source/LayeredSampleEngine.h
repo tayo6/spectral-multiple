@@ -23,6 +23,8 @@ class LayeredSampleEngine final
 public:
     static constexpr int kNumLayers = 6;
     static constexpr int kPreLayers = 3;
+    // Fixed polyphony per slot: repeated hits can overlap without audio-thread allocation.
+    static constexpr int kVoicesPerLayer = 4;
     static constexpr double kMaximumPreRollMilliseconds = 100.0;
     static constexpr double kDefaultPreRollMilliseconds = 50.0;
     static constexpr int kPreviewPoints = 256;
@@ -110,7 +112,8 @@ private:
     std::array<std::vector<std::unique_ptr<SampleData>>, kNumLayers> ownedSamples;
     std::array<juce::String, kNumLayers> sampleNames;
     std::array<LayerParameters, kNumLayers> parameters {};
-    std::array<Voice, kNumLayers> voices {};
+    std::array<std::array<Voice, kVoicesPerLayer>, kNumLayers> voices {};
+    std::array<int, kNumLayers> nextVoiceToSteal {};
     std::array<juce::AudioBuffer<float>, kNumLayers> layerBuffers;
     std::array<juce::dsp::LinkwitzRileyFilter<float>, kNumLayers> layerHighPass;
     std::array<juce::dsp::LinkwitzRileyFilter<float>, kNumLayers> layerLowPass;
