@@ -29,7 +29,7 @@ void LayeredSampleEngine::prepareToPlay (double sampleRate, int maximumBlockSize
     delayRight.assign (delaySize, 0.0f);
     delayWritePosition = 0;
 
-    for (int curve = 0; curve < 7; ++curve)
+    for (int curve = 0; curve < 15; ++curve)
         for (int i = 0; i <= 256; ++i)
         {
             const float t = (float) i / 256.0f;
@@ -44,8 +44,9 @@ void LayeredSampleEngine::prepareToPlay (double sampleRate, int maximumBlockSize
                 case 4: value = (std::exp (5.0f * t) - 1.0f) / (std::exp (5.0f) - 1.0f); break;
                 case 5: value = std::log1p (9.0f * t) / std::log (10.0f); break;
                 case 6:
+                case 9:
                 {
-                    // Cubic Bezier from (0,0) to (1,1), control points (0.22,0.02) and (0.42,0.98).
+                    // Cubic Bezier / single-curve mode, with a raised central tangent.
                     float u = t;
                     for (int iteration = 0; iteration < 6; ++iteration)
                     {
@@ -63,6 +64,21 @@ void LayeredSampleEngine::prepareToPlay (double sampleRate, int maximumBlockSize
                             + 3.0f * oneMinus * u * u * 0.98f + u * u * u;
                     break;
                 }
+                case 7: value = (t >= 0.999f ? 1.0f : 0.0f); break; // Hold
+                case 8: value = t * t * (3.0f - 2.0f * t); break; // Smooth
+                case 10: value = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * t); break; // Half sine
+                case 11: value = (t >= 0.999f ? 1.0f : std::floor (t * 4.0f) / 4.0f); break; // Stairs
+                case 12:
+                {
+                    const float steps = 4.0f;
+                    const float stepped = juce::jmin (1.0f, std::floor (t * steps) / steps);
+                    const float local = std::fmod (t * steps, 1.0f);
+                    value = juce::jmin (1.0f, stepped + (local * local * (3.0f - 2.0f * local)) / steps);
+                    if (t >= 0.999f) value = 1.0f;
+                    break;
+                }
+                case 13: value = (t < 0.82f ? 0.0f : (t - 0.82f) / 0.18f); break; // Pulse
+                case 14: value = juce::jlimit (0.0f, 1.0f, t + 0.13f * std::sin (juce::MathConstants<float>::twoPi * t)); break; // Wave
                 default: break;
             }
 
@@ -264,9 +280,13 @@ void LayeredSampleEngine::setLayerParameters (int layer, const LayerParameters& 
     target.decayMs = juce::jlimit (0.1f, 5000.0f, p.decayMs);
     target.sustain = juce::jlimit (0.0f, 1.0f, p.sustain);
     target.releaseMs = juce::jlimit (0.1f, 10000.0f, p.releaseMs);
-    target.attackCurve = juce::jlimit (0, 6, p.attackCurve);
-    target.decayCurve = juce::jlimit (0, 6, p.decayCurve);
-    target.releaseCurve = juce::jlimit (0, 6, p.releaseCurve);
+    target.attackCurve = juce::jlimit (0, 14, p.attackCurve);
+    target.decayCurve = juce::jlimit (0, 14, p.decayCurve);
+    target.releaseCurve = juce::jlimit (0, 14, p.releaseCurve);
+    target.attackTension = juce::jlimit (-1.0f, 1.0f, p.attackTension);
+    target.decayTension = juce::jlimit (-1.0f, 1.0f, p.decayTension);
+    target.releaseTension = juce::jlimit (-1.0f, 1.0f, p.releaseTension);
+    target.envelopeEnabled = p.envelopeEnabled;
     target.muted = p.muted;
 }
 
@@ -324,26 +344,33 @@ void LayeredSampleEngine::startLayer (int layer, bool ignoreTimingShift) noexcep
     voice.active = true;
 }
 
-float LayeredSampleEngine::applyCurve (float progress, int curve) const noexcept
+float LayeredSampleEngine::applyCurve (float progress, int curve, float tension) const noexcept
 {
     const float p = juce::jlimit (0.0f, 1.0f, progress);
-    const int index = juce::jlimit (0, 6, curve);
+    const int index = juce::jlimit (0, 14, curve);
     const float tablePosition = p * 256.0f;
     const int lower = juce::jlimit (0, 255, (int) tablePosition);
     const float fraction = tablePosition - (float) lower;
     const auto& table = curveTables[(size_t) index];
-    return table[(size_t) lower]
-           + (table[(size_t) (lower + 1)] - table[(size_t) lower]) * fraction;
+    const float base = table[(size_t) lower]
+                       + (table[(size_t) (lower + 1)] - table[(size_t) lower]) * fraction;
+    if (index == 7 || index == 11 || index == 12 || index == 13 || index == 14 || std::abs (tension) < 0.0005f)
+        return juce::jlimit (0.0f, 1.0f, base);
+    const float exponent = std::pow (2.0f, -2.0f * juce::jlimit (-1.0f, 1.0f, tension));
+    return std::pow (juce::jlimit (0.000001f, 1.0f, base), exponent);
 }
 
 float LayeredSampleEngine::envelopeLevelAtAge (const LayerParameters& p,
                                                 int age) const noexcept
 {
+    if (! p.envelopeEnabled)
+        return 1.0f;
+
     const float attackSamples = juce::jmax (1.0f, p.attackMs * 0.001f * (float) currentSampleRate);
     const float decaySamples = juce::jmax (1.0f, p.decayMs * 0.001f * (float) currentSampleRate);
 
     if ((float) age < attackSamples)
-        return applyCurve ((float) age / attackSamples, p.attackCurve);
+        return applyCurve ((float) age / attackSamples, p.attackCurve, p.attackTension);
 
     const float holdSamples = p.holdMs * 0.001f * (float) currentSampleRate;
     if ((float) age < attackSamples + holdSamples)
@@ -351,7 +378,7 @@ float LayeredSampleEngine::envelopeLevelAtAge (const LayerParameters& p,
 
     const float decayProgress = ((float) age - attackSamples - holdSamples) / decaySamples;
     if (decayProgress < 1.0f)
-        return 1.0f + (p.sustain - 1.0f) * applyCurve (decayProgress, p.decayCurve);
+        return 1.0f + (p.sustain - 1.0f) * applyCurve (decayProgress, p.decayCurve, p.decayTension);
 
     return p.sustain;
 }
@@ -433,7 +460,7 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
 
                 const float releaseProgress = 1.0f - remainingSamples / releaseSamples;
                 envelope = voice.releaseStartLevel
-                           * (1.0f - applyCurve (releaseProgress, p.releaseCurve));
+                           * (1.0f - applyCurve (releaseProgress, p.releaseCurve, p.releaseTension));
             }
 
             const float gain = p.gain * envelope;
