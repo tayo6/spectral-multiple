@@ -2,6 +2,17 @@
 
 WaveLens is a JUCE 7.0.12 VST3 audio effect for layering three PRE samples with three MAIN samples. Its dark, compact interface takes visual inspiration from Ableton-style devices, with amber PRE layers and cyan MAIN layers.
 
+## Ableton-inspired rack workflow
+
+The editor uses a compact left-hand layer rack and a large central sample workspace:
+
+- The **M** button opens the Master source-waveform view. All loaded PRE and MAIN source waveforms are overlaid in their own amber/orange and cyan/blue colours.
+- Selecting **PRE 1–3** or **MAIN 1–3** opens that layer's larger waveform editor. Its editable AHDSR envelope is drawn directly over the source waveform, with the layer's sound-shaping controls alongside it.
+- **MONITOR / FFT** switches to the live multi-signal monitor. The monitor retains the Waveform/Spectrum selector, Overlay/Split layout, per-layer trace visibility, Freeze and Hold controls.
+- The rack keeps the three pre-sample layers visually separate from the three main-sample layers.
+
+The interface takes visual cues from Ableton-style dark devices and rack organisation, while using its own layout and graphics.
+
 ## Six independent sample layers
 
 | Slots | Role | Default timing shift |
