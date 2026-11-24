@@ -1,132 +1,31 @@
-# WaveLens — Six-Layer Transient Sampler
+# WaveLens — Six-Layer Transient Sampler (Web Edition)
 
-WaveLens is a JUCE 7.0.12 VST3 audio effect for layering three PRE samples with three MAIN samples. Its dark, compact interface takes visual inspiration from Ableton-style devices, with amber PRE layers and cyan MAIN layers.
+WaveLens is a Web Audio API & React application ported from the JUCE six-layer transient sampler plug-in, designed for layering three PRE samples with three MAIN samples in a dark, compact Ableton-inspired rack interface.
 
-## Ableton-inspired rack workflow
+## Features
 
-The editor uses a compact left-hand layer rack and a large central sample workspace:
+- **Six Independent Sample Layers (`PRE 1–3` & `MAIN 1–3`)**:
+  - Load audio files (`WAV`, `AIFF`, `FLAC`, `OGG`, `MP3`) via file picker or drag-and-drop onto any rack slot.
+  - Default timing shifts: `-50 ms` for `PRE 1–3` (amber) and `0 ms` for `MAIN 1–3` (cyan), adjustable from `-100 ms` to `+100 ms` around a fixed `100 ms` lookahead.
+  - Per-layer Gain (`0%–200%`), Pan, Pitch (`-24` to `+24` semitones), 4th-order Linkwitz-Riley HPF (`20 Hz–1 kHz`) and LPF (`1 kHz–20 kHz`), Mute, and independent Audition (`>`).
+  - 4-voice polyphony per layer with round-robin voice stealing in a real-time `AudioWorkletProcessor`.
+- **Draggable AHDSR Envelope Over Waveform**:
+  - Interactive `A`, `H`, `D`, `S`, and `R` handles drawn directly over each layer's peak waveform overview.
+  - Seven selectable curve shapes for Attack, Decay, and Release: `Linear`, `Convex`, `Concave`, `S-Curve`, `Exponential`, `Logarithmic`, and `Bezier`.
+- **Master Overlay View (`M`)**:
+  - Overlays all six loaded source waveforms in their amber/cyan trace colours.
+- **Live Monitor & FFT Spectrum (`MONITOR / FFT`)**:
+  - Real-time `Waveform` and `4096`-point Hann-windowed `Spectrum` (`20 Hz–20 kHz`) views with `Overlay` and `Split` layouts.
+  - Per-layer trace visibility toggles (`P1–P3`, `M1–M3`), `Freeze`, `Hold`, and `Reset` controls.
+  - Interactive `PEAK` / `RMS` / `CREST` meter (click to cycle mode).
+- **Triggering**:
+  - Manual **Trigger** button / `Spacebar` shortcut, Web MIDI Note-On input, and optional **Audio In** microphone threshold triggering (`3%` threshold, `25 ms` retrigger guard).
 
-- The **M** button opens the Master source-waveform view. All loaded PRE and MAIN source waveforms are overlaid in their own amber/orange and cyan/blue colours.
-- Selecting **PRE 1–3** or **MAIN 1–3** opens that layer's larger waveform editor. Its editable AHDSR envelope is drawn directly over the source waveform, with the layer's sound-shaping controls alongside it.
-- **MONITOR / FFT** switches to the live multi-signal monitor. The monitor retains the Waveform/Spectrum selector, Overlay/Split layout, per-layer trace visibility, Freeze and Hold controls.
-- The rack keeps the three pre-sample layers visually separate from the three main-sample layers.
+## Development
 
-The interface takes visual cues from Ableton-style dark devices and rack organisation, while using its own layout and graphics.
-
-## Six independent sample layers
-
-| Slots | Role | Default timing shift |
-|---|---|---:|
-| PRE 1–3 | Pre-transient / Snapback layers | -50 ms |
-| MAIN 1–3 | Main transient layers | 0 ms |
-
-Each slot has its own sample loader, audition button, waveform, gain, timing shift, envelope, pan, pitch, high-pass, low-pass and mute control. The six layers can be played together and are exposed as individual stereo output buses.
-
-The sample waveform is calculated from the actual loaded audio file and displayed inside the same panel as its editable envelope. Use the per-layer **>** button to audition one sample independently of the transient detector. The host must be processing audio for the preview request to be rendered.
-
-## Per-layer timing
-
-Every layer has an independent timing-shift parameter from **-100 ms to +100 ms**.
-
-- Negative values advance that sample before the delayed dry transient.
-- 0 ms aligns the sample with the delayed dry transient.
-- Positive values place that sample after the delayed dry transient.
-
-The plug-in reports a fixed 100 ms lookahead latency to the host. This gives the full timing-shift range without changing reported plug-in latency as the controls are adjusted.
-
-## AHDSR envelope over the sample waveform
-
-Each layer has draggable **Attack, Hold, Decay, Sustain and Release** stages, drawn directly over its sample waveform.
-
-Attack, Decay and Release each have seven independent curve choices:
-
-- Linear
-- Convex
-- Concave
-- S-Curve
-- Exponential
-- Logarithmic
-- Bezier
-
-Hold maintains the peak level after Attack. Sustain controls the held level after Decay; it is a level/plateau, rather than a separate curved time segment. Envelope times and curves are available as DAW automation parameters.
-
-For one-shot playback, Release is fitted to the final portion of the sample so the envelope can fade the audio before the file ends. On short samples, the release is limited to at most half the file duration so it does not erase the attack.
-
-## Triggering
-
-The former global Time, Trigger and Range panels have been removed from the interface. Triggering continues internally:
-
-- Audio level threshold crossing.
-- MIDI note-on.
-- Both sources enabled by default.
-
-The default threshold is 3%, and a 25 ms retrigger guard reduces repeated triggers from a single transient. These trigger settings remain parameters internally but are not shown in the compact interface.
-
-## Individual DAW outputs
-
-| VST3 output bus | Signal |
-|---|---|
-| Master | Delayed dry input + all sample layers |
-| Pre 1 | PRE sample 1 only |
-| Pre 2 | PRE sample 2 only |
-| Pre 3 | PRE sample 3 only |
-| Main 1 | MAIN sample 1 only |
-| Main 2 | MAIN sample 2 only |
-| Main 3 | MAIN sample 3 only |
-
-The six layer outputs are optional stereo buses. Enable them in the DAW's plug-in routing/pin configuration, then route each one to its own mixer track. Host support and the exact bus-activation workflow vary, so the six stem routes still need testing in the target DAW.
-
-## Master display
-
-The upper scope remains available for the combined layer waveform / spectrum monitoring. It supports:
-
-- Waveform and FFT spectrum views.
-- Overlay and split layouts.
-- Independent visibility toggles for the six sample layers.
-- Freeze, Hold and Reset.
-
-## Current implementation notes
-
-This is an active development branch, not a finished commercial plug-in.
-
-- Sample formats are provided by JUCE's registered basic audio formats (WAV, AIFF and supported FLAC/Ogg formats).
-- Samples are loaded into memory and sample paths are saved with plug-in state.
-- Each layer supports up to four simultaneous playback voices. New hits overlap existing tails; when all four voices are active, round-robin voice stealing keeps playback allocation-free.
-- The per-slot waveform is a precomputed peak overview of the loaded source file. The upper scope monitors rendered layer output.
-- Layer controls and envelope parameters are exposed for DAW automation.
-- MIDI note-on currently triggers all loaded layers; per-layer MIDI note mapping is not implemented yet.
-- Replaced sample buffers are retained until the plug-in instance closes to avoid freeing memory while the audio thread might still be using them. Repeatedly replacing large samples can increase memory use; safe deferred reclamation is a follow-up.
-- Sample playback, per-layer preview and the optional output-bus routing require validation inside an actual DAW host.
-- The GitHub Windows x64 CI build does not prove Windows 7 compatibility. Windows 7 must be tested with a compatible Visual Studio 2019 toolchain and a DAW on the target system.
-
-## Build on Windows
-
-Requirements: CMake 3.22+, Git, Visual Studio C++ desktop tools.
-
-```powershell
-cmake -B build -G "Visual Studio 17 2022" -A x64
-cmake --build build --config Release --parallel
+```bash
+npm install
+npm run dev
 ```
 
-For a local Visual Studio 2019 installation, use:
-
-```powershell
-cmake -B build -G "Visual Studio 16 2019" -A x64
-cmake --build build --config Release --parallel
-```
-
-CMake downloads JUCE 7.0.12 automatically. To use a local JUCE checkout, pass `-DJUCE_PATH=C:/path/to/JUCE`.
-
-The VST3 is written to `build/WaveLens_artefacts/Release/VST3/WaveLens.vst3`. The GitHub Actions workflow builds a Windows x64 VST3 and uploads it as an artifact.
-
-## Source layout
-
-```
-Source/
-  LayeredSampleEngine.h/.cpp     six sample voices, timing shifts, AHDSR and waveform previews
-  LayerEnvelopeComponent.h/.cpp  waveform display with draggable AHDSR overlay and curve selectors
-  PluginProcessor.h/.cpp         JUCE buses, parameters, host latency and sample state
-  PluginEditor.h/.cpp            compact six-layer interface and master scope
-```
-
-JUCE is dual-licensed (AGPLv3 / commercial). Check the applicable JUCE licence before distributing a compiled plug-in.
+The development server runs on `http://0.0.0.0:3000`.

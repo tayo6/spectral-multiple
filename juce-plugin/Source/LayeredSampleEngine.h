@@ -27,7 +27,7 @@ public:
     static constexpr int kVoicesPerLayer = 4;
     static constexpr double kMaximumPreRollMilliseconds = 100.0;
     static constexpr double kDefaultPreRollMilliseconds = 50.0;
-    static constexpr int kPreviewPoints = 256;
+    static constexpr int kPreviewPoints = 2048;
 
     struct WaveformPreview
     {
@@ -45,15 +45,26 @@ public:
         float delayShiftMs = 0.0f;
         float highPassHz = 20.0f;
         float lowPassHz = 20000.0f;
-        float attackMs = 2.0f;
-        float holdMs = 20.0f;
-        float decayMs = 60.0f;
-        float sustain = 1.0f;
-        float releaseMs = 120.0f;
-        int attackCurve = 4;
-        int decayCurve = 4;
-        int releaseCurve = 4;
+        float attackMs = 210.0f;
+        float holdMs = 0.0f;
+        float decayMs = 310.0f;
+        float sustain = 0.76f;
+        float releaseMs = 480.0f;
+        int attackCurve = 2;   // 0..7 FL Studio modes (2 = Single curve)
+        int decayCurve = 2;
+        int releaseCurve = 2;
+        float attackTension = 0.35f;
+        float decayTension = -0.35f;
+        float releaseTension = -0.45f;
+        bool envEnabled = false;
         bool muted = false;
+        bool solo = false;
+        bool reverse = false;
+        float pogo = 0.0f;
+        float trimStart = 0.0f;
+        float trimEnd = 1.0f;
+        float fadeInMs = 0.0f;
+        float fadeOutMs = 0.0f;
     };
 
     LayeredSampleEngine();
@@ -99,11 +110,23 @@ private:
         bool active = false;
     };
 
+    struct EnvelopeSchedule
+    {
+        float attackEndMs = 210.0f;
+        float holdEndMs = 210.0f;
+        float decayEndMs = 520.0f;
+        float releaseStartMs = 520.0f;
+        float releaseMs = 480.0f;
+    };
+
+    bool isLayerAudible (int layer) const noexcept;
     void triggerAllLayers() noexcept;
     void startLayer (int layer, bool ignoreTimingShift = false) noexcept;
     float renderLayerSample (int layer, float& left, float& right) noexcept;
-    float envelopeLevelAtAge (const LayerParameters& p, int age) const noexcept;
-    float applyCurve (float progress, int curve) const noexcept;
+    static EnvelopeSchedule computeEnvelopeSchedule (const LayerParameters& p, float totalDurationMs) noexcept;
+    static float envelopeLevelAtMs (const LayerParameters& p, const EnvelopeSchedule& sched, float ageMs) noexcept;
+    static float applyPowerTension (float u, float tension) noexcept;
+    static float flSegmentLevel (float progress, float y0, float y1, int mode, float tension) noexcept;
 
     juce::AudioFormatManager formatManager;
     std::array<std::atomic<SampleData*>, kNumLayers> currentSamples {};
@@ -117,7 +140,6 @@ private:
     std::array<juce::AudioBuffer<float>, kNumLayers> layerBuffers;
     std::array<juce::dsp::LinkwitzRileyFilter<float>, kNumLayers> layerHighPass;
     std::array<juce::dsp::LinkwitzRileyFilter<float>, kNumLayers> layerLowPass;
-    std::array<std::array<float, 257>, 7> curveTables {};
 
     std::vector<float> delayLeft, delayRight;
     int delayWritePosition = 0;
