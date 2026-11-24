@@ -29,46 +29,6 @@ void LayeredSampleEngine::prepareToPlay (double sampleRate, int maximumBlockSize
     delayRight.assign (delaySize, 0.0f);
     delayWritePosition = 0;
 
-    for (int curve = 0; curve < 7; ++curve)
-        for (int i = 0; i <= 256; ++i)
-        {
-            const float t = (float) i / 256.0f;
-            float value = t;
-
-            switch (curve)
-            {
-                case 0: value = t; break; // Linear
-                case 1: value = t * t; break; // Convex / slow start
-                case 2: value = 1.0f - (1.0f - t) * (1.0f - t); break; // Concave / fast start
-                case 3: value = t * t * t * (t * (t * 6.0f - 15.0f) + 10.0f); break; // S curve
-                case 4: value = (std::exp (5.0f * t) - 1.0f) / (std::exp (5.0f) - 1.0f); break;
-                case 5: value = std::log1p (9.0f * t) / std::log (10.0f); break;
-                case 6:
-                {
-                    // Cubic Bezier from (0,0) to (1,1), control points (0.22,0.02) and (0.42,0.98).
-                    float u = t;
-                    for (int iteration = 0; iteration < 6; ++iteration)
-                    {
-                        const float oneMinus = 1.0f - u;
-                        const float x = 3.0f * oneMinus * oneMinus * u * 0.22f
-                                        + 3.0f * oneMinus * u * u * 0.42f + u * u * u;
-                        const float dx = 3.0f * oneMinus * oneMinus * 0.22f
-                                         + 6.0f * oneMinus * u * (0.42f - 0.22f)
-                                         + 3.0f * u * u * (1.0f - 0.42f);
-                        if (std::abs (dx) > 1.0e-5f)
-                            u = juce::jlimit (0.0f, 1.0f, u + (t - x) / dx);
-                    }
-                    const float oneMinus = 1.0f - u;
-                    value = 3.0f * oneMinus * oneMinus * u * 0.02f
-                            + 3.0f * oneMinus * u * u * 0.98f + u * u * u;
-                    break;
-                }
-                default: break;
-            }
-
-            curveTables[(size_t) curve][(size_t) i] = juce::jlimit (0.0f, 1.0f, value);
-        }
-
     for (int layer = 0; layer < kNumLayers; ++layer)
     {
         juce::dsp::ProcessSpec filterSpec { currentSampleRate,
@@ -264,10 +224,43 @@ void LayeredSampleEngine::setLayerParameters (int layer, const LayerParameters& 
     target.decayMs = juce::jlimit (0.1f, 5000.0f, p.decayMs);
     target.sustain = juce::jlimit (0.0f, 1.0f, p.sustain);
     target.releaseMs = juce::jlimit (0.1f, 10000.0f, p.releaseMs);
-    target.attackCurve = juce::jlimit (0, 6, p.attackCurve);
-    target.decayCurve = juce::jlimit (0, 6, p.decayCurve);
-    target.releaseCurve = juce::jlimit (0, 6, p.releaseCurve);
+    target.attackCurve = juce::jlimit (0, 7, p.attackCurve);
+    target.decayCurve = juce::jlimit (0, 7, p.decayCurve);
+    target.releaseCurve = juce::jlimit (0, 7, p.releaseCurve);
+    target.attackTension = juce::jlimit (-1.0f, 1.0f, p.attackTension);
+    target.decayTension = juce::jlimit (-1.0f, 1.0f, p.decayTension);
+    target.releaseTension = juce::jlimit (-1.0f, 1.0f, p.releaseTension);
+    target.envEnabled = p.envEnabled;
     target.muted = p.muted;
+    target.solo = p.solo;
+    target.reverse = p.reverse;
+    target.pogo = juce::jlimit (-1.0f, 1.0f, p.pogo);
+    target.trimStart = juce::jlimit (0.0f, 0.98f, p.trimStart);
+    target.trimEnd = juce::jlimit (target.trimStart + 0.01f, 1.0f, p.trimEnd);
+    target.fadeInMs = juce::jlimit (0.0f, 2000.0f, p.fadeInMs);
+    target.fadeOutMs = juce::jlimit (0.0f, 5000.0f, p.fadeOutMs);
+}
+
+bool LayeredSampleEngine::isLayerAudible (int layer) const noexcept
+{
+    if (! juce::isPositiveAndBelow (layer, kNumLayers))
+        return false;
+
+    const auto& p = parameters[(size_t) layer];
+    if (p.muted)
+        return false;
+
+    bool anySolo = false;
+    for (int i = 0; i < kNumLayers; ++i)
+    {
+        if (parameters[(size_t) i].solo)
+        {
+            anySolo = true;
+            break;
+        }
+    }
+
+    return ! anySolo || p.solo;
 }
 
 void LayeredSampleEngine::triggerAllLayers() noexcept
@@ -282,13 +275,16 @@ void LayeredSampleEngine::startLayer (int layer, bool ignoreTimingShift) noexcep
         return;
 
     auto* sample = currentSamples[(size_t) layer].load (std::memory_order_acquire);
-    if (sample == nullptr || parameters[(size_t) layer].muted)
+    if (sample == nullptr)
+        return;
+
+    if (! ignoreTimingShift && ! isLayerAudible (layer))
+        return;
+    if (ignoreTimingShift && parameters[(size_t) layer].muted)
         return;
 
     auto& layerVoices = voices[(size_t) layer];
 
-    // Prefer a free voice. If all four are active, steal slots round-robin so a
-    // new hit does not automatically cut off the immediately preceding hit.
     int selectedVoice = -1;
     for (int offset = 0; offset < kVoicesPerLayer; ++offset)
     {
@@ -308,13 +304,9 @@ void LayeredSampleEngine::startLayer (int layer, bool ignoreTimingShift) noexcep
     auto& voice = layerVoices[(size_t) selectedVoice];
     voice.sample = sample;
     voice.position = 0.0;
-    // The host sees a fixed 100 ms lookahead. Each layer can move independently
-    // around the delayed dry transient: negative values advance it, positive values delay it.
     const int shiftSamples = ignoreTimingShift ? 0
         : juce::roundToInt (parameters[(size_t) layer].delayShiftMs * (float) currentSampleRate * 0.001f);
 
-    // Manual audition bypasses both the 100 ms trigger lookahead and layer timing
-    // shift. Normal audio/MIDI triggers retain the fixed latency-compensated start.
     voice.delayRemaining = ignoreTimingShift
         ? 0
         : juce::jlimit (0, maximumDelaySamples * 2, maximumDelaySamples + shiftSamples);
@@ -324,26 +316,106 @@ void LayeredSampleEngine::startLayer (int layer, bool ignoreTimingShift) noexcep
     voice.active = true;
 }
 
-float LayeredSampleEngine::applyCurve (float progress, int curve) const noexcept
+float LayeredSampleEngine::applyPowerTension (float u, float tension) noexcept
 {
-    const float p = juce::jlimit (0.0f, 1.0f, progress);
-    const int index = juce::jlimit (0, 6, curve);
-    const float tablePosition = p * 256.0f;
-    const int lower = juce::jlimit (0, 255, (int) tablePosition);
-    const float fraction = tablePosition - (float) lower;
-    const auto& table = curveTables[(size_t) index];
-    return table[(size_t) lower]
-           + (table[(size_t) (lower + 1)] - table[(size_t) lower]) * fraction;
+    const float t = juce::jlimit (0.0f, 1.0f, u);
+    const float ten = juce::jlimit (-1.0f, 1.0f, tension);
+    if (std::abs (ten) < 1.0e-4f)
+        return t;
+    const float expVal = std::pow (2.0f, std::abs (ten) * 3.0f);
+    return ten >= 0.0f ? (1.0f - std::pow (1.0f - t, expVal)) : std::pow (t, expVal);
+}
+
+float LayeredSampleEngine::flSegmentLevel (float progress, float y0, float y1, int mode, float tension) noexcept
+{
+    const float t = juce::jlimit (0.0f, 1.0f, progress);
+    const float ten = juce::jlimit (-1.0f, 1.0f, tension);
+    const int m = juce::jlimit (0, 7, mode);
+    const float dirTen = (y1 >= y0) ? ten : -ten;
+
+    float frac = t;
+    switch (m)
+    {
+        case 0: // Hold
+            frac = t >= 1.0f ? 1.0f : 0.0f;
+            break;
+        case 1: // Smooth
+        {
+            const float s = applyPowerTension (t, dirTen);
+            frac = s * s * (3.0f - 2.0f * s);
+            break;
+        }
+        case 2: // Single curve
+            frac = applyPowerTension (t, dirTen);
+            break;
+        case 3: // Half sine
+        {
+            const float hs = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * t);
+            frac = applyPowerTension (hs, dirTen);
+            break;
+        }
+        case 4: // Stairs
+        {
+            const float steps = juce::jmax (2.0f, std::round (2.0f + (ten + 1.0f) * 6.0f));
+            frac = t >= 1.0f ? 1.0f : std::floor (t * steps) / steps;
+            break;
+        }
+        case 5: // Smooth stairs
+        {
+            const float steps = juce::jmax (2.0f, std::round (2.0f + (ten + 1.0f) * 6.0f));
+            if (t >= 1.0f)
+            {
+                frac = 1.0f;
+            }
+            else
+            {
+                const float scaled = t * steps;
+                const float idx = std::floor (scaled);
+                const float f = scaled - idx;
+                const float smoothF = f * f * (3.0f - 2.0f * f);
+                frac = (idx + smoothF) / steps;
+            }
+            break;
+        }
+        case 6: // Pulse
+        {
+            const float cycles = juce::jmax (1.0f, std::round (1.0f + (ten + 1.0f) * 5.0f));
+            if (t >= 1.0f)
+            {
+                frac = 1.0f;
+            }
+            else
+            {
+                const float phase = std::fmod (t * cycles, 1.0f);
+                frac = phase < 0.5f ? 0.0f : 1.0f;
+            }
+            break;
+        }
+        case 7: // Wave
+        {
+            const float cycles = juce::jmax (1.0f, std::round (1.0f + (ten + 1.0f) * 5.0f));
+            frac = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * (2.0f * cycles + 1.0f) * t));
+            break;
+        }
+        default:
+            frac = applyPowerTension (t, dirTen);
+            break;
+    }
+
+    return y0 + (y1 - y0) * frac;
 }
 
 float LayeredSampleEngine::envelopeLevelAtAge (const LayerParameters& p,
                                                 int age) const noexcept
 {
+    if (! p.envEnabled)
+        return 1.0f;
+
     const float attackSamples = juce::jmax (1.0f, p.attackMs * 0.001f * (float) currentSampleRate);
     const float decaySamples = juce::jmax (1.0f, p.decayMs * 0.001f * (float) currentSampleRate);
 
     if ((float) age < attackSamples)
-        return applyCurve ((float) age / attackSamples, p.attackCurve);
+        return flSegmentLevel ((float) age / attackSamples, 0.0f, 1.0f, p.attackCurve, p.attackTension);
 
     const float holdSamples = p.holdMs * 0.001f * (float) currentSampleRate;
     if ((float) age < attackSamples + holdSamples)
@@ -351,7 +423,7 @@ float LayeredSampleEngine::envelopeLevelAtAge (const LayerParameters& p,
 
     const float decayProgress = ((float) age - attackSamples - holdSamples) / decaySamples;
     if (decayProgress < 1.0f)
-        return 1.0f + (p.sustain - 1.0f) * applyCurve (decayProgress, p.decayCurve);
+        return flSegmentLevel (decayProgress, 1.0f, p.sustain, p.decayCurve, p.decayTension);
 
     return p.sustain;
 }
@@ -365,7 +437,7 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
     const auto& p = parameters[(size_t) layer];
     auto& layerVoices = voices[(size_t) layer];
 
-    if (p.muted)
+    if (! isLayerAudible (layer))
     {
         for (auto& voice : layerVoices)
             voice.active = false;
@@ -375,8 +447,6 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
         const float leftPan = p.pan > 0.0f ? 1.0f - p.pan : 1.0f;
         const float rightPan = p.pan < 0.0f ? 1.0f + p.pan : 1.0f;
 
-        // Mix active voices for this slot first, then run its filters once on the
-        // combined signal. This preserves independent filtering per layer.
         for (auto& voice : layerVoices)
         {
             if (! voice.active || voice.sample == nullptr)
@@ -394,36 +464,53 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
             const auto& audio = voice.sample->audio;
             const int length = audio.getNumSamples();
 
-            if (length <= 0 || voice.position >= (double) length)
+            if (length <= 1)
             {
                 voice.active = false;
                 continue;
             }
 
+            const int trimStartIdx = juce::jlimit (0, length - 2, (int) std::floor ((double) p.trimStart * (double) length));
+            const int trimEndIdx = juce::jlimit (trimStartIdx + 1, length, (int) std::ceil ((double) p.trimEnd * (double) length));
+            const int trimmedLength = trimEndIdx - trimStartIdx;
+
+            if (trimmedLength <= 0 || voice.position >= (double) trimmedLength)
+            {
+                voice.active = false;
+                continue;
+            }
+
+            const double u = juce::jlimit (0.0, 1.0, voice.position / (double) trimmedLength);
+            const double pogoSemitones = (double) p.pogo * 24.0 * std::pow (1.0 - u, 2.5);
             const double speed = (voice.sample->sourceSampleRate / currentSampleRate)
-                                 * std::pow (2.0, (double) p.pitchSemitones / 12.0);
-            const int index0 = juce::jlimit (0, length - 1, (int) voice.position);
-            const int index1 = juce::jmin (length - 1, index0 + 1);
-            const float fraction = (float) (voice.position - (double) index0);
+                                 * std::pow (2.0, ((double) p.pitchSemitones + pogoSemitones) / 12.0);
+
+            const double samplePos = p.reverse
+                ? ((double) (trimEndIdx - 1) - voice.position)
+                : ((double) trimStartIdx + voice.position);
+
+            const int index0 = juce::jlimit (trimStartIdx, trimEndIdx - 1, (int) std::floor (samplePos));
+            const int index1 = p.reverse ? juce::jmax (trimStartIdx, index0 - 1)
+                                         : juce::jmin (trimEndIdx - 1, index0 + 1);
+            const float fraction = (float) (p.reverse ? ((double) index0 - samplePos)
+                                                      : (samplePos - (double) index0));
 
             const float rawL = audio.getSample (0, index0)
                                + (audio.getSample (0, index1) - audio.getSample (0, index0)) * fraction;
             const float rawR = audio.getSample (1, index0)
                                + (audio.getSample (1, index1) - audio.getSample (1, index0)) * fraction;
 
-            const float totalOutputSamples = (float) length / (float) juce::jmax (0.0001, speed);
-            const float remainingSamples = (float) ((double) length - voice.position)
-                                           / (float) juce::jmax (0.0001, speed);
+            const float safeSpeed = (float) juce::jmax (0.0001, speed);
+            const float totalOutputSamples = (float) trimmedLength / safeSpeed;
+            const float elapsedSamples = (float) voice.ageSamples;
+            const float remainingSamples = (float) ((double) trimmedLength - voice.position) / safeSpeed;
             const float requestedReleaseSamples = juce::jmax (1.0f, p.releaseMs * 0.001f * (float) currentSampleRate);
-            // Very short one-shots cannot contain a full release segment. Reserve at most
-            // the final half of the file for release so the attack portion is not muted.
             const float releaseSamples = juce::jmin (requestedReleaseSamples,
                                                       juce::jmax (1.0f, totalOutputSamples * 0.5f));
 
             float envelope = envelopeLevelAtAge (p, voice.ageSamples);
 
-            // In one-shot mode, RELEASE is placed over the sample's final releaseMs.
-            if (remainingSamples <= releaseSamples)
+            if (p.envEnabled && remainingSamples <= releaseSamples)
             {
                 if (! voice.inRelease)
                 {
@@ -432,18 +519,27 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
                 }
 
                 const float releaseProgress = 1.0f - remainingSamples / releaseSamples;
-                envelope = voice.releaseStartLevel
-                           * (1.0f - applyCurve (releaseProgress, p.releaseCurve));
+                envelope = flSegmentLevel (releaseProgress, voice.releaseStartLevel, 0.0f,
+                                           p.releaseCurve, p.releaseTension);
             }
 
-            const float gain = p.gain * envelope;
+            const float fadeInSamples = p.fadeInMs * 0.001f * (float) currentSampleRate;
+            const float fadeOutSamples = p.fadeOutMs * 0.001f * (float) currentSampleRate;
+            const float fadeInGain = fadeInSamples > 0.5f
+                ? juce::jlimit (0.0f, 1.0f, elapsedSamples / fadeInSamples)
+                : 1.0f;
+            const float fadeOutGain = fadeOutSamples > 0.5f
+                ? juce::jlimit (0.0f, 1.0f, remainingSamples / fadeOutSamples)
+                : 1.0f;
+
+            const float gain = p.gain * envelope * fadeInGain * fadeOutGain;
             left += rawL * gain * leftPan;
             right += rawR * gain * rightPan;
 
             voice.position += speed;
             ++voice.ageSamples;
 
-            if (voice.position >= (double) length)
+            if (voice.position >= (double) trimmedLength)
                 voice.active = false;
         }
     }
