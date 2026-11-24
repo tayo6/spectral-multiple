@@ -1,3 +1,9 @@
-build/
+/build/
+/juce-plugin/build/
+/node_modules/
+/dist/
 .vs/
+.idea/
 *.user
+*.suo
+*.vcxproj.user

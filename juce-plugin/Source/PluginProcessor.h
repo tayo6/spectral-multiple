@@ -90,7 +90,7 @@ public:
     bool acceptsMidi() const override  { return true; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
+    double getTailLengthSeconds() const override { return layerEngine.getTailLengthSeconds(); }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -103,7 +103,8 @@ public:
 
     //==========================================================================
     void requestReset() noexcept { resetRequest.store (true); }
-    void requestTriggerAll() noexcept { triggerAllRequest.store (true); }
+    void requestTrigger() noexcept { layerEngine.requestTrigger(); }
+    void collectSampleGarbage() { layerEngine.collectRetiredSamples(); }
     bool loadSampleFile (int layer, const juce::File& file, juce::String& error);
     void clearSample (int layer);
     juce::String getSampleName (int layer) const;
@@ -177,7 +178,6 @@ private:
     float  peakDecay = 0.999f, msAlpha = 0.0001f;
 
     std::atomic<bool> resetRequest { false };
-    std::atomic<bool> triggerAllRequest { false };
 
     std::atomic<float>* pView = nullptr;
     std::atomic<float>* pCapture = nullptr;

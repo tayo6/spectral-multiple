@@ -5,6 +5,7 @@
 #include <array>
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 /**
@@ -15,8 +16,8 @@
     Slots 3-5 are main-sample layers. They start at the fixed 100 ms lookahead
     position, aligned with the latency-compensated dry input.
 
-    Sample memory is immutable after loading. Replaced sample buffers are retained
-    until the processor is destroyed so the audio thread never observes freed memory.
+    Sample memory is immutable after loading. Replaced buffers are retired at an
+    audio-block boundary and reclaimed on the UI thread after voice references clear.
 */
 class LayeredSampleEngine final
 {
@@ -45,18 +46,18 @@ public:
         float delayShiftMs = 0.0f;
         float highPassHz = 20.0f;
         float lowPassHz = 20000.0f;
-        float attackMs = 210.0f;
-        float holdMs = 0.0f;
-        float decayMs = 310.0f;
-        float sustain = 0.76f;
-        float releaseMs = 480.0f;
+        float attackMs = 2.0f;
+        float holdMs = 20.0f;
+        float decayMs = 140.0f;
+        float sustain = 0.78f;
+        float releaseMs = 200.0f;
         int attackCurve = 2;   // 0..7 FL Studio modes (2 = Single curve)
         int decayCurve = 2;
         int releaseCurve = 2;
-        float attackTension = 0.35f;
+        float attackTension = 0.25f;
         float decayTension = -0.35f;
         float releaseTension = -0.45f;
-        bool envEnabled = false;
+        bool envEnabled = true;
         bool muted = false;
         bool solo = false;
         bool reverse = false;
@@ -73,6 +74,9 @@ public:
     void prepareToPlay (double sampleRate, int maximumBlockSize);
     void setTriggerMode (int mode, float threshold) noexcept;
     void setPreRollMilliseconds (float milliseconds) noexcept;
+    void requestTrigger() noexcept { manualTriggerRequest.store (true, std::memory_order_release); }
+    void collectRetiredSamples();
+    double getTailLengthSeconds() const noexcept;
 
     bool loadSampleFromFile (int layer, const juce::File& file, juce::String& error);
     void clearSample (int layer);
@@ -97,6 +101,7 @@ private:
         double sourceSampleRate = 44100.0;
         juce::String displayName;
         WaveformPreview preview;
+        SampleData* retireNext = nullptr;
     };
 
     struct Voice
@@ -110,29 +115,26 @@ private:
         bool active = false;
     };
 
-    struct EnvelopeSchedule
-    {
-        float attackEndMs = 210.0f;
-        float holdEndMs = 210.0f;
-        float decayEndMs = 520.0f;
-        float releaseStartMs = 520.0f;
-        float releaseMs = 480.0f;
-    };
-
     bool isLayerAudible (int layer) const noexcept;
     void triggerAllLayers() noexcept;
     void startLayer (int layer, bool ignoreTimingShift = false) noexcept;
     float renderLayerSample (int layer, float& left, float& right) noexcept;
-    static EnvelopeSchedule computeEnvelopeSchedule (const LayerParameters& p, float totalDurationMs) noexcept;
-    static float envelopeLevelAtMs (const LayerParameters& p, const EnvelopeSchedule& sched, float ageMs) noexcept;
+    float envelopeLevelAtAge (const LayerParameters& p, int age) const noexcept;
     static float applyPowerTension (float u, float tension) noexcept;
     static float flSegmentLevel (float progress, float y0, float y1, int mode, float tension) noexcept;
+    static void pushSampleStack (std::atomic<SampleData*>& head, SampleData* sample) noexcept;
 
     juce::AudioFormatManager formatManager;
     std::array<std::atomic<SampleData*>, kNumLayers> currentSamples {};
+    // Lock-free retirement stacks: UI owns sample destruction; audio thread only acknowledges it.
+    std::atomic<SampleData*> retiredSamplesHead { nullptr };
+    std::atomic<SampleData*> safeToDeleteSamplesHead { nullptr };
+    std::array<std::atomic<double>, kNumLayers> tailSeconds {};
+    std::atomic<bool> manualTriggerRequest { false };
     std::array<std::atomic<bool>, kNumLayers> clearRequests {};
     std::array<std::atomic<bool>, kNumLayers> previewRequests {};
     std::array<std::vector<std::unique_ptr<SampleData>>, kNumLayers> ownedSamples;
+    std::mutex ownedSamplesMutex;
     std::array<juce::String, kNumLayers> sampleNames;
     std::array<LayerParameters, kNumLayers> parameters {};
     std::array<std::array<Voice, kVoicesPerLayer>, kNumLayers> voices {};
