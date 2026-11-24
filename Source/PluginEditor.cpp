@@ -720,7 +720,7 @@ void WaveLensEditor::setupCombo (juce::ComboBox& box, const char* paramId, std::
     att = std::make_unique<ComboAtt> (proc.apvts, paramId, box);
 }
 
-void WaveLensEditor::setupToggle (juce::TextButton& b, const juce::String& text, const char* paramId,
+void WaveLensEditor::setupToggle (juce::TextButton& b, const juce::String& text, const juce::String& paramId,
                                   std::unique_ptr<ButtonAtt>& att)
 {
     b.setButtonText (text);
