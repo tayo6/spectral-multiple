@@ -714,7 +714,7 @@ void WaveLensEditor::setupCombo (juce::ComboBox& box, const char* paramId, std::
 }
 
 void WaveLensEditor::setupToggle (juce::TextButton& button, const juce::String& text,
-                                  const char* paramId, std::unique_ptr<ButtonAtt>& attachment)
+                                  const juce::String& paramId, std::unique_ptr<ButtonAtt>& attachment)
 {
     button.setButtonText (text);
     button.setClickingTogglesState (true);
@@ -997,4 +997,60 @@ void WaveLensEditor::resized()
     triggerLayout.removeFromLeft (68);
     preLeadSlider.setBounds (triggerLayout.removeFromLeft (190));
     triggerBtn.setBounds (juce::Rectangle<int> (triggerBarArea.getCentreX() - 62,
-                                                triggerBarArea.getY() + 3, 124,
+                                                triggerBarArea.getY() + 3, 124,                                                juce::jmax (22, triggerBarArea.getHeight() - 6)));
+
+    area.removeFromTop (7);
+    const int panelGap = 8;
+    const int panelWidth = (area.getWidth() - panelGap) / 2;
+    prePanelArea = area.removeFromLeft (panelWidth);
+    area.removeFromLeft (panelGap);
+    mainPanelArea = area;
+
+    auto preLayout = prePanelArea;
+    preHeaderArea = preLayout.removeFromTop (39);
+    preBodyArea = preLayout.reduced (5, 4);
+    auto mainLayout = mainPanelArea;
+    mainHeaderArea = mainLayout.removeFromTop (39);
+    mainBodyArea = mainLayout.reduced (5, 4);
+
+    auto layoutGroupHeader = [&] (int group, juce::Rectangle<int> headerArea)
+    {
+        auto row = headerArea.reduced (5, 5);
+        row.removeFromLeft (112); // Header title occupies the left side.
+        const int selectorWidth = 51;
+        for (int index = 0; index < 3; ++index)
+        {
+            const int layer = group == 0 ? index : index + 3;
+            auto selector = row.removeFromLeft (selectorWidth);
+            layerSelectBtn[layer].setBounds (selector);
+            padCellBounds[layer] = selector;
+            row.removeFromLeft (3);
+        }
+        row.removeFromLeft (3);
+        const int selected = selectedLayerForGroup (group);
+        mutePadBtn[selected].setBounds (row.removeFromLeft (24));
+        row.removeFromLeft (3);
+        auditionBtn[selected].setBounds (row.removeFromLeft (24));
+        row.removeFromLeft (3);
+        soloPadBtn[selected].setBounds (row.removeFromLeft (24));
+        row.removeFromLeft (4);
+        loadSampleBtn[(size_t) group].setBounds (row.removeFromLeft (52));
+        row.removeFromLeft (3);
+        clearSampleBtn[(size_t) group].setBounds (row.removeFromLeft (22));
+    };
+
+    layoutGroupHeader (0, preHeaderArea);
+    layoutGroupHeader (1, mainHeaderArea);
+
+    for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
+    {
+        const bool isPreSelection = layer == selectedPreLayer;
+        const bool isMainSelection = layer == selectedMainLayer;
+        if (isPreSelection)
+            envelopeComponents[(size_t) layer]->setBounds (preBodyArea);
+        else if (isMainSelection)
+            envelopeComponents[(size_t) layer]->setBounds (mainBodyArea);
+        else
+            envelopeComponents[(size_t) layer]->setBounds (0, 0, 0, 0);
+    }
+}
