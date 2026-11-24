@@ -4,6 +4,7 @@
 #include <juce_dsp/juce_dsp.h>
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -15,8 +16,10 @@
     Slots 3-5 are main-sample layers. They start at the fixed 100 ms lookahead
     position, aligned with the latency-compensated dry input.
 
-    Sample memory is immutable after loading. Replaced sample buffers are retained
-    until the processor is destroyed so the audio thread never observes freed memory.
+    Sample memory is immutable after loading. Replaced or cleared sample buffers are
+    moved to a per-layer retired list tagged with the current audio-block epoch and
+    reclaimed via collectRetiredSamples() once activeVoices reaches zero and the
+    tagged audio block has completed.
 */
 class LayeredSampleEngine final
 {
@@ -122,6 +125,7 @@ public:
     double getTailLengthSeconds() const noexcept;
     VoiceTailSnapshot getVoiceTailSnapshot (int layer, int voiceIndex) const noexcept;
     int getRetiredSampleCount (int layer);
+    uint32_t getTriggerCount() const noexcept { return triggerCount.load (std::memory_order_relaxed); }
     const juce::AudioBuffer<float>& getLayerBuffer (int layer) const noexcept;
 
 private:
@@ -178,6 +182,7 @@ private:
     std::atomic<uint64_t> startedAudioBlocks { 0 };
     std::atomic<uint64_t> completedAudioBlocks { 0 };
     std::atomic<bool> triggerRequested { false };
+    std::atomic<uint32_t> triggerCount { 0 };
     std::atomic<double> tailLengthSeconds { 0.0 };
     std::array<LayerParameters, kNumLayers> parameters {};
     std::array<std::array<Voice, kVoicesPerLayer>, kNumLayers> voices {};

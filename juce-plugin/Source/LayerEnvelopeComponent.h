@@ -1,8 +1,13 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include "SpectralMultipleLookAndFeel.h"
+#include "FilterControlComponent.h"
 
-/** Waveform-backed FL-style envelope and sample editor for one PRE or MAIN layer. */
+/**
+    Waveform-backed sample editor, FL-style tension envelope, and Snapback-inspired
+    parameter deck for one individual SNAPBACK (0..2) or TRANSIENT (3..5) layer.
+*/
 class LayerEnvelopeComponent final : public juce::Component, private juce::Timer
 {
 public:
@@ -105,18 +110,17 @@ private:
     juce::TextButton reverseBtn, envEnableBtn;
     juce::TextButton focusStartBtn, focusEndBtn, zoomFitBtn, zoomOutBtn, zoomResetBtn, zoomInBtn;
     juce::ComboBox attackCurveBox, decayCurveBox, releaseCurveBox;
-    juce::Slider gainSlider, pitchSlider, pogoSlider;
-    juce::Slider trimStartSlider, trimEndSlider, fadeInSlider, fadeOutSlider;
-    juce::Slider delaySlider, panSlider, highPassSlider, lowPassSlider;
+    juce::Slider gainSlider, delaySlider, pitchSlider, panSlider, pogoSlider;
+    juce::Slider fadeInSlider, fadeOutSlider, trimStartSlider, trimEndSlider;
+    FilterControlComponent filterBar;
 
     using ButtonAtt = juce::AudioProcessorValueTreeState::ButtonAttachment;
-    using ComboAtt = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
+    using ComboAtt  = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     using SliderAtt = juce::AudioProcessorValueTreeState::SliderAttachment;
     std::unique_ptr<ButtonAtt> reverseAttachment, envEnableAttachment;
     std::unique_ptr<ComboAtt> attackCurveAttachment, decayCurveAttachment, releaseCurveAttachment;
-    std::unique_ptr<SliderAtt> gainAttachment, pitchAttachment, pogoAttachment;
-    std::unique_ptr<SliderAtt> trimStartAttachment, trimEndAttachment, fadeInAttachment, fadeOutAttachment;
-    std::unique_ptr<SliderAtt> delayAttachment, panAttachment, highPassAttachment, lowPassAttachment;
+    std::unique_ptr<SliderAtt> gainAttachment, delayAttachment, pitchAttachment, panAttachment, pogoAttachment;
+    std::unique_ptr<SliderAtt> fadeInAttachment, fadeOutAttachment, trimStartAttachment, trimEndAttachment;
 
     juce::Rectangle<int> flBarBounds;
     juce::Rectangle<int> controlStripBounds;
@@ -128,5 +132,6 @@ private:
     float dragStartY = 0.0f;
     float dragStartTension = 0.0f;
     float dragStartViewStart = 0.0f;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LayerEnvelopeComponent)
 };

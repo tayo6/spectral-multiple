@@ -106,6 +106,9 @@ public:
     //==========================================================================
     void requestReset() noexcept { resetRequest.store (true); }
     void requestTrigger() noexcept { layerEngine.requestTrigger(); }
+    void setPluginEnabled (bool enabled) noexcept { pluginEnabled.store (enabled, std::memory_order_relaxed); }
+    bool isPluginEnabled() const noexcept { return pluginEnabled.load (std::memory_order_relaxed); }
+    uint32_t getTriggerCount() const noexcept { return layerEngine.getTriggerCount(); }
     void collectSampleGarbage() { layerEngine.collectRetiredSamples(); }
     bool loadSampleFile (int layer, const juce::File& file, juce::String& error);
     void clearSample (int layer);
@@ -183,6 +186,7 @@ private:
     float  peakDecay = 0.999f, msAlpha = 0.0001f;
 
     std::atomic<bool> resetRequest { false };
+    std::atomic<bool> pluginEnabled { true };
 
     std::atomic<float>* pView = nullptr;
     std::atomic<float>* pCapture = nullptr;

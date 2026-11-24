@@ -19,8 +19,8 @@ jobs:
       - name: Build VST3
         run: cmake --build juce-plugin/build --config Release --target WaveLens_VST3 --parallel
 
-      - name: Build Engine Tests
-        run: cmake --build juce-plugin/build --config Release --target SpectralMultipleEngineTests --parallel
+      - name: Build Tests
+        run: cmake --build juce-plugin/build --config Release --target SpectralMultipleEngineTests WaveLensProcessorTests --parallel
 
       - name: Run CTest
         run: ctest --test-dir juce-plugin/build -C Release --output-on-failure

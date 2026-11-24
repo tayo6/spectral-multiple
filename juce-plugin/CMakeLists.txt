@@ -49,6 +49,22 @@ target_sources(WaveLens PRIVATE
     Source/LayeredSampleEngine.h
     Source/LayerEnvelopeComponent.cpp
     Source/LayerEnvelopeComponent.h
+    Source/SpectralMultipleLookAndFeel.cpp
+    Source/SpectralMultipleLookAndFeel.h
+    Source/PluginHeaderComponent.cpp
+    Source/PluginHeaderComponent.h
+    Source/MasterWaveformComponent.cpp
+    Source/MasterWaveformComponent.h
+    Source/WaveformControlBar.cpp
+    Source/WaveformControlBar.h
+    Source/FilterControlComponent.cpp
+    Source/FilterControlComponent.h
+    Source/SampleBrowserComponent.cpp
+    Source/SampleBrowserComponent.h
+    Source/SampleGroupComponent.cpp
+    Source/SampleGroupComponent.h
+    Source/SampleSelectorDot.h
+    Source/MasterButton.h
     Source/StateMigration.h)
 
 target_compile_definitions(WaveLens PUBLIC
@@ -101,3 +117,65 @@ if(BUILD_ENGINE_TESTS)
 
     add_test(NAME SpectralMultipleEngineTests COMMAND SpectralMultipleEngineTests)
 endif()
+
+option(BUILD_PROCESSOR_TESTS "Build JUCE WaveLensProcessor integration tests" ON)
+
+if(BUILD_PROCESSOR_TESTS)
+    juce_add_console_app(WaveLensProcessorTests
+        PRODUCT_NAME "WaveLensProcessorTests")
+
+    target_sources(WaveLensProcessorTests PRIVATE
+        Tests/ProcessorTests.cpp
+        Source/PluginProcessor.cpp
+        Source/PluginProcessor.h
+        Source/PluginEditor.cpp
+        Source/PluginEditor.h
+        Source/LayeredSampleEngine.cpp
+        Source/LayeredSampleEngine.h
+        Source/LayerEnvelopeComponent.cpp
+        Source/LayerEnvelopeComponent.h
+        Source/SpectralMultipleLookAndFeel.cpp
+        Source/SpectralMultipleLookAndFeel.h
+        Source/PluginHeaderComponent.cpp
+        Source/PluginHeaderComponent.h
+        Source/MasterWaveformComponent.cpp
+        Source/MasterWaveformComponent.h
+        Source/WaveformControlBar.cpp
+        Source/WaveformControlBar.h
+        Source/FilterControlComponent.cpp
+        Source/FilterControlComponent.h
+        Source/SampleBrowserComponent.cpp
+        Source/SampleBrowserComponent.h
+        Source/SampleGroupComponent.cpp
+        Source/SampleGroupComponent.h
+        Source/SampleSelectorDot.h
+        Source/MasterButton.h
+        Source/StateMigration.h)
+
+    target_include_directories(WaveLensProcessorTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source)
+
+    target_compile_features(WaveLensProcessorTests PRIVATE cxx_std_17)
+
+    target_compile_definitions(WaveLensProcessorTests PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_USE_MP3AUDIOFORMAT=1
+        JUCE_VST3_CAN_REPLACE_VST2=0
+        JUCE_DISPLAY_SPLASH_SCREEN=0
+        JUCE_REPORT_APP_USAGE=0
+        JUCE_STRICT_REFCOUNTEDPOINTER=1
+        $<$<PLATFORM_ID:Windows>:WINVER=0x0601>
+        $<$<PLATFORM_ID:Windows>:_WIN32_WINNT=0x0601>
+        $<$<PLATFORM_ID:Windows>:NTDDI_VERSION=0x06010000>)
+
+    target_link_libraries(WaveLensProcessorTests
+        PRIVATE
+            juce::juce_audio_utils
+            juce::juce_dsp
+            juce::juce_recommended_config_flags
+            juce::juce_recommended_warning_flags)
+
+    add_test(NAME WaveLensProcessorTests COMMAND WaveLensProcessorTests)
+endif()
+

@@ -483,6 +483,12 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 {
     juce::ScopedNoDenormals noDenormals;
 
+    if (! pluginEnabled.load (relaxed))
+    {
+        processBlockBypassed (buffer, midi);
+        return;
+    }
+
     const int totalSamples = buffer.getNumSamples();
     auto mainInput = getBusBuffer (buffer, true, 0);
     auto mainOutput = getBusBuffer (buffer, false, 0);

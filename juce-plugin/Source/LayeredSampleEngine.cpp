@@ -457,6 +457,7 @@ bool LayeredSampleEngine::isLayerAudible (int layer) const noexcept
 
 void LayeredSampleEngine::triggerAllLayers() noexcept
 {
+    triggerCount.fetch_add (1, std::memory_order_relaxed);
     for (int i = 0; i < kNumLayers; ++i)
         startLayer (i);
 }

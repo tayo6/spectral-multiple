@@ -138,8 +138,9 @@ std::string writeAiffFile16 (const fs::path& p, double sr, const std::vector<std
     const uint32_t frames = (uint32_t) chData[0].size();
     const uint32_t pcmBytes = frames * ch * 2;
     const uint32_t ssndPayload = 8 + pcmBytes;
+    const uint32_t ssndPad = ssndPayload & 1u;
     const uint32_t commPayload = 18;
-    const uint32_t formPayload = 4 + (8 + commPayload) + (8 + ssndPayload);
+    const uint32_t formPayload = 4 + (8 + commPayload) + (8 + ssndPayload + ssndPad);
 
     std::vector<uint8_t> bytes;
     bytes.reserve (8 + formPayload);
@@ -154,15 +155,21 @@ std::string writeAiffFile16 (const fs::path& p, double sr, const std::vector<std
     writeU32BE (bytes, frames);
     writeU16BE (bytes, 16);
 
-    // Encode sample rate as 80-bit IEEE extended float
+    // Encode sample rate as 80-bit IEEE 754 extended float without signed 64-bit overflow.
+    // std::frexp returns mant in [0.5, 1.0), so std::ldexp(mant, 64) is in [2^63, 2^64),
+    // which exceeds LLONG_MAX and cannot be converted safely via std::llround.
     int exp2 = 0;
-    double mant = std::frexp (sr, &exp2);
+    const double mant = std::frexp (sr, &exp2);
     uint16_t ieeeExp = (uint16_t) (16383 + exp2 - 1);
-    uint64_t ieeeMant = (uint64_t) std::llround (mant * (double) (1ULL << 63) * 2.0);
-    if (mant < 1.0)
-        ieeeMant = (uint64_t) std::llround (mant * (double) (1ULL << 63) * 2.0);
-    // frexp returns [0.5, 1.0); multiplying by 2^64 puts integer bit at bit 63
-    ieeeMant = (uint64_t) std::llround (std::ldexp (mant, 64));
+    const double hiDouble = std::floor (std::ldexp (mant, 32)); // [2^31, 2^32 - 1]
+    const uint64_t hiPart = (uint64_t) hiDouble;
+    const uint64_t loPart = (uint64_t) std::llround (std::ldexp (mant, 64) - std::ldexp (hiDouble, 32));
+    uint64_t ieeeMant = (hiPart << 32) + loPart;
+    if (ieeeMant == 0)
+    {
+        ieeeMant = 1ULL << 63;
+        ++ieeeExp;
+    }
     writeU16BE (bytes, ieeeExp);
     for (int shift = 56; shift >= 0; shift -= 8)
         bytes.push_back ((uint8_t) ((ieeeMant >> shift) & 0xff));
@@ -181,10 +188,48 @@ std::string writeAiffFile16 (const fs::path& p, double sr, const std::vector<std
             writeU16BE (bytes, (uint16_t) s);
         }
     }
+    if (ssndPad != 0)
+        bytes.push_back (0);
 
     std::ofstream f (p, std::ios::binary);
     f.write (reinterpret_cast<const char*> (bytes.data()), (std::streamsize) bytes.size());
     return p.string();
+}
+
+void verifyAiffFixtureStructure (const fs::path& p,
+                                 uint16_t expectedChannels,
+                                 uint32_t expectedFrames,
+                                 const std::array<uint8_t, 10>& expectedExtendedRate)
+{
+    std::ifstream f (p, std::ios::binary);
+    std::vector<uint8_t> bytes ((std::istreambuf_iterator<char> (f)), std::istreambuf_iterator<char>());
+    auto be16 = [&] (size_t off) -> uint16_t { return (uint16_t) ((bytes[off] << 8) | bytes[off + 1]); };
+    auto be32 = [&] (size_t off) -> uint32_t {
+        return ((uint32_t) bytes[off] << 24) | ((uint32_t) bytes[off + 1] << 16)
+             | ((uint32_t) bytes[off + 2] << 8) | (uint32_t) bytes[off + 3];
+    };
+
+    const uint32_t pcmBytes = expectedFrames * expectedChannels * 2;
+    const uint32_t ssndPayload = 8 + pcmBytes;
+    const uint32_t expectedFormSize = 4 + (8 + 18) + (8 + ssndPayload + (ssndPayload & 1u));
+
+    check (bytes.size() == 8 + expectedFormSize, "P1-AIFF-Verify: total file size matches FORM header");
+    check (std::memcmp (bytes.data(), "FORM", 4) == 0 && be32 (4) == expectedFormSize
+        && std::memcmp (bytes.data() + 8, "AIFF", 4) == 0,
+        "P1-AIFF-Verify: valid FORM/AIFF header");
+    check (std::memcmp (bytes.data() + 12, "COMM", 4) == 0 && be32 (16) == 18
+        && be16 (20) == expectedChannels && be32 (22) == expectedFrames && be16 (26) == 16,
+        "P1-AIFF-Verify: valid COMM chunk metadata");
+
+    bool rateBytesMatch = true;
+    for (size_t k = 0; k < 10; ++k)
+        if (bytes[28 + k] != expectedExtendedRate[k])
+            rateBytesMatch = false;
+    check (rateBytesMatch, "P1-AIFF-Verify: exact 80-bit IEEE 754 extended sample-rate bytes");
+
+    check (std::memcmp (bytes.data() + 38, "SSND", 4) == 0 && be32 (42) == ssndPayload
+        && be32 (46) == 0 && be32 (50) == 0,
+        "P1-AIFF-Verify: valid SSND chunk header");
 }
 
 int findFirstExceeding (const std::vector<float>& buf, float thresh, int startIdx = 0)
@@ -304,11 +349,32 @@ void testLoadingMonoStereoAndEdgeCases (const fs::path& dir)
     });
     check (engine.loadSampleFromFile (1, juce::File (stereoWav), err), "P1: stereo float32 WAV loads", err.toStdString());
 
-    // Stereo AIFF
+    // Stereo AIFF + independent verification of FORM/COMM/SSND chunks and 80-bit extended rates
     const auto stereoAiff = writeAiffFile16 (dir / "stereo.aif", 44100.0, {
         { 0.7f, 0.3f, 0.0f, 0.0f },
         { -0.2f, 0.6f, 0.0f, 0.0f }
     });
+    verifyAiffFixtureStructure (dir / "stereo.aif", 2, 4,
+                                { 0x40, 0x0E, 0xAC, 0x44, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 });
+    const auto aiff48 = writeAiffFile16 (dir / "stereo48.aif", 48000.0, { { 0.5f, 0.0f }, { -0.5f, 0.0f } });
+    verifyAiffFixtureStructure (dir / "stereo48.aif", 2, 2,
+                                { 0x40, 0x0E, 0xBB, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 });
+    const auto aiff96 = writeAiffFile16 (dir / "stereo96.aif", 96000.0, { { 0.5f, 0.0f }, { -0.5f, 0.0f } });
+    verifyAiffFixtureStructure (dir / "stereo96.aif", 2, 2,
+                                { 0x40, 0x0F, 0xBB, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 });
+    {
+        juce::AudioFormatManager fm;
+        fm.registerBasicFormats();
+        auto r44 = fm.createReaderFor (juce::File (stereoAiff));
+        auto r48 = fm.createReaderFor (juce::File (aiff48));
+        auto r96 = fm.createReaderFor (juce::File (aiff96));
+        check (r44 != nullptr && std::abs (r44->sampleRate - 44100.0) < 0.01 && r44->numChannels == 2 && r44->lengthInSamples == 4,
+               "P1-AIFF-Verify: reader decodes exact 44100 Hz stereo AIFF");
+        check (r48 != nullptr && std::abs (r48->sampleRate - 48000.0) < 0.01,
+               "P1-AIFF-Verify: reader decodes exact 48000 Hz stereo AIFF");
+        check (r96 != nullptr && std::abs (r96->sampleRate - 96000.0) < 0.01,
+               "P1-AIFF-Verify: reader decodes exact 96000 Hz stereo AIFF");
+    }
     check (engine.loadSampleFromFile (2, juce::File (stereoAiff), err), "P1: stereo AIFF loads", err.toStdString());
 
     // 1-sample WAV edge case
