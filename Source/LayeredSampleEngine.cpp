@@ -20,6 +20,7 @@ void LayeredSampleEngine::prepareToPlay (double sampleRate, int maximumBlockSize
 {
     currentSampleRate = juce::jmax (1.0, sampleRate);
     maximumDelaySamples = juce::jmax (1, juce::roundToInt (currentSampleRate * kMaximumPreRollMilliseconds * 0.001));
+    maximumTailSeconds.store ((float) ((double) maximumDelaySamples / currentSampleRate), std::memory_order_relaxed);
     preRollSamples = juce::jlimit (0, maximumDelaySamples,
                                    juce::roundToInt (currentSampleRate * kDefaultPreRollMilliseconds * 0.001));
     refractorySamples = juce::jmax (1, juce::roundToInt (currentSampleRate * 0.025));
