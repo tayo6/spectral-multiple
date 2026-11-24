@@ -2,7 +2,7 @@
 
 #include "PluginProcessor.h"
 
-/** FL Studio curve-tension + Ableton Simpler waveform editor with Reverse, Pogo, Front/Back Trim, Fade In/Out, Pitch, and AHDSR handles. */
+/** Waveform-backed FL-style envelope and sample editor for one PRE or MAIN layer. */
 class LayerEnvelopeComponent final : public juce::Component, private juce::Timer
 {
 public:
@@ -40,24 +40,14 @@ private:
     struct Geometry
     {
         juce::Rectangle<float> plot;
-        float envTop = 0.0f;
-        float envBot = 1.0f;
-        float envH = 12.0f;
         float trimX0 = 0.0f;
         float trimX1 = 0.0f;
         float trimW = 1.0f;
         float trimmedDurationMs = 1000.0f;
-        float attackEndMs = 210.0f;
-        float holdEndMs = 210.0f;
-        float decayEndMs = 520.0f;
-        float releaseStartMs = 520.0f;
-        float releaseMs = 480.0f;
         float attackEndX = 0.0f;
         float holdEndX = 0.0f;
         float releaseStartX = 0.0f;
-        juce::Point<float> origin, attack, hold, decay, sustain, release, endPt;
-        bool holdVisible = false;
-        bool releaseVisible = false;
+        juce::Point<float> attack, hold, decay, sustain, release;
         juce::Point<float> tensionAttack, tensionDecay, tensionRelease;
         bool tensionAttackVisible = false;
         bool tensionDecayVisible = false;

@@ -1,0 +1,27 @@
+name: Build Windows x64 VST3
+
+on:
+  push:
+    branches: [ main, "feature/**" ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure JUCE plug-in
+        run: cmake -S juce-plugin -B juce-plugin/build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build VST3
+        run: cmake --build juce-plugin/build --config Release --parallel
+
+      - name: Upload VST3 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Spectral-Multiple-Windows-x64-VST3
+          path: juce-plugin/build/WaveLens_artefacts/Release/VST3/WaveLens.vst3
+          if-no-files-found: error

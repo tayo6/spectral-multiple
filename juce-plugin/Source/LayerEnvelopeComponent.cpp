@@ -7,8 +7,8 @@ namespace
     constexpr float kHandleRadius = 4.6f;
     constexpr float kTensionRadius = 4.6f;
     constexpr int kCurveSteps = 96;
-    constexpr int kFlBarHeight = 26;
-    constexpr int kControlStripHeight = 102;
+    constexpr int kFlBarHeight = 28;
+    constexpr int kControlStripHeight = 120;
     constexpr int kHeaderHeight = 22;
     constexpr float kRulerHeight = 16.0f;
     constexpr float kOverviewHeight = 14.0f;
@@ -55,25 +55,26 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     pFadeIn = state.getRawParameterValue (ids::layerFadeIn (layer));
     pFadeOut = state.getRawParameterValue (ids::layerFadeOut (layer));
 
-    const juce::Colour flCurveColour (0xff57d6ff);
+    const bool isPre = layer < 3;
+    const juce::Colour flCurveColour (isPre ? 0xffa78bfa : 0xffd08aff);
 
     envEnableBtn.setButtonText ("ENV");
     envEnableBtn.setClickingTogglesState (true);
     envEnableBtn.setTooltip ("Enable or bypass FL envelope");
-    envEnableBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff222831));
-    envEnableBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff1e3240));
-    envEnableBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xff95a4b8));
-    envEnableBtn.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
+    envEnableBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff252235));
+    envEnableBtn.setColour (juce::TextButton::buttonOnColourId, flCurveColour);
+    envEnableBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffc2bad8));
+    envEnableBtn.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff14101c));
     addAndMakeVisible (envEnableBtn);
     envEnableAttachment = std::make_unique<ButtonAtt> (state, ids::layerEnvEnabled (layer), envEnableBtn);
 
     reverseBtn.setButtonText ("REV");
     reverseBtn.setClickingTogglesState (true);
     reverseBtn.setTooltip ("Reverse sample playback");
-    reverseBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff232230));
-    reverseBtn.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xffff7b00));
-    reverseBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffc9cce2));
-    reverseBtn.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff111111));
+    reverseBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff252235));
+    reverseBtn.setColour (juce::TextButton::buttonOnColourId, flCurveColour);
+    reverseBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffe7e2f5));
+    reverseBtn.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff14101c));
     addAndMakeVisible (reverseBtn);
     reverseAttachment = std::make_unique<ButtonAtt> (state, ids::layerReverse (layer), reverseBtn);
 
@@ -84,10 +85,10 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
         box.addItemList (flCurveNames, 1);
         box.setTooltip (tooltip);
         box.setJustificationType (juce::Justification::centredLeft);
-        box.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff1b1a26));
-        box.setColour (juce::ComboBox::textColourId, juce::Colour (0xffe5e8f5));
-        box.setColour (juce::ComboBox::outlineColourId, juce::Colour (0xff312f42));
-        box.setColour (juce::ComboBox::arrowColourId, juce::Colour (0xff95a4b8));
+        box.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff211d31));
+        box.setColour (juce::ComboBox::textColourId, juce::Colour (0xffe5def4));
+        box.setColour (juce::ComboBox::outlineColourId, juce::Colour (0xff51456f));
+        box.setColour (juce::ComboBox::arrowColourId, juce::Colour (0xffc4a8ff));
         addAndMakeVisible (box);
     };
 
@@ -102,23 +103,24 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     auto prepareRotary = [&] (juce::Slider& slider, const juce::String& tooltip, juce::Colour fill)
     {
         slider.setSliderStyle (juce::Slider::RotaryVerticalDrag);
-        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 48, 12);
+        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 52, 12);
         slider.setColour (juce::Slider::rotarySliderFillColourId, fill);
-        slider.setColour (juce::Slider::rotarySliderOutlineColourId, juce::Colour (0xff2d2b3b));
-        slider.setColour (juce::Slider::thumbColourId, juce::Colour (0xffeceeff));
-        slider.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xffd6d9ef));
+        slider.setColour (juce::Slider::rotarySliderOutlineColourId, juce::Colour (0xff514968));
+        slider.setColour (juce::Slider::thumbColourId, juce::Colour (0xffd8c8ff));
+        slider.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xffe4def4));
         slider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colours::transparentBlack);
         slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
         slider.setTooltip (tooltip);
         addAndMakeVisible (slider);
     };
 
-    const juce::Colour orangeAccent (0xffff7b00);
+    const juce::Colour secondaryAccent (isPre ? juce::Colour (0xff7866d8)
+                                               : juce::Colour (0xffa95fca));
     prepareRotary (gainSlider, "Layer gain (0% to 200%)", colour);
     prepareRotary (pitchSlider, "Layer pitch: -24 to +24 semitones", colour);
-    prepareRotary (pogoSlider, "FL Sampler style pitch-bend envelope (-100% to +100%)", orangeAccent);
-    prepareRotary (trimStartSlider, "Sample front trim (0% to 98%)", orangeAccent);
-    prepareRotary (trimEndSlider, "Sample back trim (2% to 100%)", orangeAccent);
+    prepareRotary (pogoSlider, "FL Sampler style pitch-bend envelope (-100% to +100%)", secondaryAccent);
+    prepareRotary (trimStartSlider, "Sample front trim (0% to 98%)", secondaryAccent);
+    prepareRotary (trimEndSlider, "Sample back trim (2% to 100%)", secondaryAccent);
     prepareRotary (fadeInSlider, "Sample fade-in duration (0 ms to 2000 ms)", colour);
     prepareRotary (fadeOutSlider, "Sample fade-out duration (0 ms to 5000 ms)", colour);
     prepareRotary (delaySlider, "Timing shift (-100 ms to +100 ms)", colour);
@@ -140,13 +142,13 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
 
     trimStartSlider.onValueChange = [this]
     {
-        const float maxStart = juce::jmax (0.0f, (float) trimEndSlider.getValue() - 0.005f);
+        const float maxStart = juce::jmax (0.0f, (float) trimEndSlider.getValue() - 0.02f);
         if (trimStartSlider.getValue() > maxStart)
             trimStartSlider.setValue (maxStart, juce::sendNotificationSync);
     };
     trimEndSlider.onValueChange = [this]
     {
-        const float minEnd = juce::jmin (1.0f, (float) trimStartSlider.getValue() + 0.005f);
+        const float minEnd = juce::jmin (1.0f, (float) trimStartSlider.getValue() + 0.02f);
         if (trimEndSlider.getValue() < minEnd)
             trimEndSlider.setValue (minEnd, juce::sendNotificationSync);
     };
@@ -188,14 +190,14 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     {
         b.setButtonText (text);
         b.setTooltip (tip);
-        b.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1e242d));
-        b.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff2c3440));
+        b.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff242033));
+        b.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff4a3d70));
         b.setColour (juce::TextButton::textColourOffId, textCol);
         b.setColour (juce::TextButton::textColourOnId, textCol);
         addAndMakeVisible (b);
     };
 
-    const juce::Colour orangeTxt (0xffff9f43);
+    const juce::Colour orangeTxt (0xffc0a6ff);
     prepareZoomBtn (focusStartBtn, "|<", "Center zoom on Start (Trim F)", orangeTxt);
     prepareZoomBtn (focusEndBtn, ">|", "Center zoom on End (Trim B)", orangeTxt);
     prepareZoomBtn (zoomFitBtn, "Fit", "Zoom to fit Start-End trim range", juce::Colour (0xffd2dce8));
@@ -428,7 +430,7 @@ void LayerEnvelopeComponent::updateZoomReadout()
                                : juce::String (zoomFactor, 1) + "x");
     zoomResetBtn.setButtonText (txt);
     zoomResetBtn.setColour (juce::TextButton::textColourOffId,
-                            zoomed ? juce::Colour (0xffffb04a) : juce::Colour (0xffaebacc));
+                            zoomed ? juce::Colour (0xffc0a6ff) : juce::Colour (0xffaebacc));
     zoomOutBtn.setEnabled (zoomFactor > 1.01f);
     zoomInBtn.setEnabled (zoomFactor < kMaxWaveformZoom - 0.01f);
 }
@@ -452,25 +454,16 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry (float tota
     const float safeTotal = juce::jmax (1.0f, totalDurationMs);
     result.trimmedDurationMs = juce::jmax (1.0f, safeTotal * (trimEnd - trimStart));
 
-    const float a = juce::jmax (0.1f, pAttack->load());
-    const float h = juce::jmax (0.0f, pHold->load());
-    const float d = juce::jmax (0.1f, pDecay->load());
-    const float r = juce::jmax (0.1f, pRelease->load());
-    const float sum = a + h + d + r;
-    const float scale = sum > result.trimmedDurationMs ? (result.trimmedDurationMs / sum) : 1.0f;
-
-    const float effA = a * scale;
-    const float effH = h * scale;
-    const float effD = d * scale;
-    const float effR = r * scale;
-
-    result.attackEndMs = effA;
-    result.holdEndMs = effA + effH;
-    result.decayEndMs = effA + effH + effD;
-    result.releaseStartMs = juce::jmax (result.decayEndMs, result.trimmedDurationMs - effR);
-    result.releaseMs = juce::jmax (0.1f, result.trimmedDurationMs - result.releaseStartMs);
-
+    const float attack = juce::jmax (0.1f, pAttack->load());
+    const float hold = juce::jmax (0.0f, pHold->load());
+    const float decay = juce::jmax (0.1f, pDecay->load());
+    const float release = juce::jmin (pRelease->load(), result.trimmedDurationMs * 0.5f);
+    const float releaseStart = juce::jmax (0.0f, result.trimmedDurationMs - release);
+    const float attackEnd = juce::jmin (attack, releaseStart);
+    const float holdEnd = juce::jmin (attack + hold, releaseStart);
+    const float decayEnd = juce::jmin (attack + hold + decay, releaseStart);
     const float sustain = juce::jlimit (0.0f, 1.0f, pSustain->load());
+
     const int attMode = juce::roundToInt (pAttackCurve->load());
     const int decMode = juce::roundToInt (pDecayCurve->load());
     const int relMode = juce::roundToInt (pReleaseCurve->load());
@@ -482,61 +475,56 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry (float tota
     {
         return result.trimX0 + result.trimW * juce::jlimit (0.0f, result.trimmedDurationMs, ms) / result.trimmedDurationMs;
     };
-    result.envTop = result.plot.getY() + 8.0f;
-    result.envBot = result.plot.getBottom() - 8.0f;
-    result.envH = juce::jmax (12.0f, result.envBot - result.envTop);
+    const float envTop = result.plot.getY() + 7.0f;
+    const float envBot = result.plot.getBottom() - 15.0f;
+    const float envH = juce::jmax (12.0f, envBot - envTop);
     auto yAt = [&] (float level)
     {
-        return result.envBot - result.envH * juce::jlimit (0.0f, 1.0f, level);
+        return envBot - envH * juce::jlimit (0.0f, 1.0f, level);
     };
-
-    const float attSpan = juce::jmax (0.05f, result.attackEndMs);
-    const float decSpan = juce::jmax (0.05f, result.decayEndMs - result.holdEndMs);
     auto levelAt = [&] (float ms)
     {
-        if (ms < result.attackEndMs)
-            return flSegmentLevel (ms / attSpan, 0.0f, 1.0f, attMode, attTen);
-        if (ms < result.holdEndMs)
+        if (ms < attack)
+            return flSegmentLevel (ms / attack, 0.0f, 1.0f, attMode, attTen);
+        if (ms < attack + hold)
             return 1.0f;
-        if (ms < result.decayEndMs)
-            return flSegmentLevel ((ms - result.holdEndMs) / decSpan, 1.0f, sustain, decMode, decTen);
+        const float decayProgress = (ms - attack - hold) / decay;
+        if (decayProgress < 1.0f)
+            return flSegmentLevel (decayProgress, 1.0f, sustain, decMode, decTen);
         return sustain;
     };
 
-    result.origin = { xAt (0.0f), yAt (0.0f) };
-    result.attack = { xAt (result.attackEndMs), yAt (1.0f) };
-    result.hold = { xAt (result.holdEndMs), yAt (1.0f) };
-    result.holdVisible = (result.holdEndMs - result.attackEndMs) > 1.5f;
-    result.sustain = { xAt (result.decayEndMs), yAt (sustain) };
-    result.decay = result.sustain;
-    const float relStartLevel = levelAt (result.releaseStartMs);
-    result.release = { xAt (result.releaseStartMs), yAt (relStartLevel) };
-    result.releaseVisible = (result.releaseStartMs - result.decayEndMs) > 4.0f;
-    result.endPt = { xAt (result.trimmedDurationMs), yAt (0.0f) };
+    result.attack = { xAt (attackEnd), yAt (levelAt (attackEnd)) };
+    result.hold = { xAt (holdEnd), yAt (levelAt (holdEnd)) };
+    result.decay = { xAt (decayEnd), yAt (levelAt (decayEnd)) };
+    const float sustainMid = decayEnd + (releaseStart - decayEnd) * 0.5f;
+    result.sustain = { xAt (sustainMid), yAt (sustain) };
+    const float relStartLevel = levelAt (releaseStart);
+    result.release = { xAt (releaseStart), yAt (relStartLevel) };
     result.attackEndX = result.attack.x;
     result.holdEndX = result.hold.x;
     result.releaseStartX = result.release.x;
 
-    const float attMidMs = result.attackEndMs * 0.5f;
+    const float attMidMs = attackEnd * 0.5f;
     result.tensionAttack = {
         xAt (attMidMs),
-        yAt (flSegmentLevel (0.5f, 0.0f, 1.0f, attMode, attTen))
+        yAt (flSegmentLevel (juce::jlimit (0.0f, 1.0f, attMidMs / attack), 0.0f, 1.0f, attMode, attTen))
     };
-    result.tensionAttackVisible = (result.attack.x - result.trimX0) >= 12.0f;
+    result.tensionAttackVisible = (result.attack.x - result.trimX0) >= 10.0f;
 
-    const float decMidMs = result.holdEndMs + (result.decayEndMs - result.holdEndMs) * 0.5f;
+    const float decMidMs = holdEnd + (decayEnd - holdEnd) * 0.5f;
     result.tensionDecay = {
         xAt (decMidMs),
-        yAt (flSegmentLevel (0.5f, 1.0f, sustain, decMode, decTen))
+        yAt (flSegmentLevel (juce::jlimit (0.0f, 1.0f, (decMidMs - attack - hold) / decay), 1.0f, sustain, decMode, decTen))
     };
-    result.tensionDecayVisible = (result.sustain.x - result.hold.x) >= 12.0f;
+    result.tensionDecayVisible = (result.decay.x - result.hold.x) >= 10.0f;
 
-    const float relMidMs = result.releaseStartMs + result.releaseMs * 0.5f;
+    const float relMidMs = releaseStart + release * 0.5f;
     result.tensionRelease = {
         xAt (relMidMs),
         yAt (flSegmentLevel (0.5f, relStartLevel, 0.0f, relMode, relTen))
     };
-    result.tensionReleaseVisible = (result.trimX1 - result.release.x) >= 12.0f;
+    result.tensionReleaseVisible = (result.trimX1 - result.release.x) >= 10.0f;
 
     return result;
 }
@@ -546,13 +534,11 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
     auto waveBox = getLocalBounds().withTrimmedBottom (kControlStripHeight + kFlBarHeight + 10).toFloat();
     const bool isPre = layer < 3;
     const bool envEnabled = pEnvEnabled->load() > 0.5f;
-    const juce::Colour bgTop (0xff36404d);
-    const juce::Colour bgBot (0xff28313c);
-    const juce::Colour simWave (colour);
-    const juce::Colour flCurveColour (0xff57d6ff);
-    const juce::Colour flControlDot (0xffdcf6ff);
-
-    envEnableBtn.setButtonText (envEnabled ? "ENV ON" : "ENV");
+    const juce::Colour bgTop (isPre ? 0xff251a3d : 0xff2b1938);
+    const juce::Colour bgBot (isPre ? 0xff171127 : 0xff1a1025);
+    const juce::Colour simWave (isPre ? 0xffa99aff : 0xffd18cff);
+    const juce::Colour flCurveColour (isPre ? 0xffa78bfa : 0xffd08aff);
+    const juce::Colour flControlDot (isPre ? 0xffe0d6ff : 0xffffdfff);
 
     juce::ColourGradient grad (bgTop, 0.0f, waveBox.getY(), bgBot, 0.0f, waveBox.getBottom(), false);
     g.setGradientFill (grad);
@@ -566,7 +552,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
 
     // Top readout strip (clipped left of zoom buttons)
     auto readoutBar = waveBox.removeFromTop ((float) kHeaderHeight);
-    g.setColour (juce::Colour (0xdb0e1319));
+    g.setColour (juce::Colour (0xb80c1016));
     g.fillRect (readoutBar);
     g.setColour (juce::Colour (0xffe7edf5));
     g.setFont (juce::Font (10.0f));
@@ -600,27 +586,23 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         g.saveState();
         g.reduceClipRegion (plot.toNearestInt());
 
-        if (preview.loaded)
-        {
-            g.setColour (juce::Colour (isPre ? 0x45202a4a : 0x42361c48));
-            g.fillRect (plot);
-        }
+        // Dark violet translucent overlay + adaptive grid lines
+        g.setColour (envEnabled ? juce::Colour (0x6b2a2140) : juce::Colour (0x57151022));
+        g.fillRect (plot);
 
-        // Crisp Image-Line fine 16x8 grid
-        const int gridCols = juce::jlimit (16, 512, 16 * (1 << (int) std::floor (std::log2 (juce::jmax (1.0f, zoomFactor)))));
-        const int firstGrid = juce::jmax (1, (int) std::ceil (viewStartNorm * (float) gridCols));
-        const int lastGrid = juce::jmin (gridCols - 1, (int) std::floor (vpEnd * (float) gridCols));
+        g.setColour (juce::Colour (0x1dbaa4ff));
+        const int gridDivs = juce::jlimit (8, 256, 8 * (1 << (int) std::floor (std::log2 (juce::jmax (1.0f, zoomFactor)))));
+        const int firstGrid = juce::jmax (1, (int) std::ceil (viewStartNorm * (float) gridDivs));
+        const int lastGrid = juce::jmin (gridDivs - 1, (int) std::floor (vpEnd * (float) gridDivs));
         for (int gIdx = firstGrid; gIdx <= lastGrid; ++gIdx)
         {
-            g.setColour ((gIdx % 4 == 0) ? juce::Colour (0x24dceafa) : juce::Colour (0x10cddef0));
-            const float x = normToPlotX ((float) gIdx / (float) gridCols, plot);
+            const float x = normToPlotX ((float) gIdx / (float) gridDivs, plot);
             g.drawVerticalLine (juce::roundToInt (x), plot.getY(), plot.getBottom());
         }
-        for (int r = 1; r < 8; ++r)
+        for (int r = 1; r < 4; ++r)
         {
-            g.setColour (r == 4 ? juce::Colour (0x2bdceafa)
-                                : (r % 2 == 0 ? juce::Colour (0x1acddef0) : juce::Colour (0x0dcddef0)));
-            const float y = plot.getY() + plot.getHeight() * (float) r / 8.0f;
+            g.setColour (r == 2 ? juce::Colour (0x35d4bdff) : juce::Colour (0x18baa4ff));
+            const float y = plot.getY() + plot.getHeight() * (float) r / 4.0f;
             g.drawHorizontalLine (juce::roundToInt (y), plot.getX(), plot.getRight());
         }
 
@@ -628,7 +610,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         {
             const float centre = plot.getCentreY();
             const float amplitude = plot.getHeight() * 0.44f;
-            g.setColour (simWave.withAlpha (0.85f));
+            g.setColour (simWave.withAlpha (0.88f));
             const int cols = juce::jmax (1, (int) std::floor (plot.getWidth()));
             for (int col = 0; col < cols; ++col)
             {
@@ -651,6 +633,13 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
                 const float bottom = juce::jmax (top + 1.0f, centre - minVal * amplitude);
                 g.drawVerticalLine (juce::roundToInt (x), top, bottom);
             }
+        }
+        else
+        {
+            g.setColour (juce::Colour (0x8ad7e2f0));
+            g.setFont (juce::Font (12.0f));
+            g.drawText ("Drop Sample Here or Click Load Sample", plot.toNearestInt(),
+                        juce::Justification::centred);
         }
 
         // Dim trimmed-out front and back regions inside visible plot bounds
@@ -677,7 +666,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
             pFade.closeSubPath();
             g.setColour (juce::Colours::black.withAlpha (0.34f));
             g.fillPath (pFade);
-            g.setColour (juce::Colour (0xffffd264).withAlpha (0.85f));
+            g.setColour (juce::Colour (0xffd4b9ff).withAlpha (0.85f));
             g.drawLine (geometry.trimX0, plot.getBottom(), geometry.trimX0 + fadeInPx, plot.getY(), 1.25f);
         }
         if (fadeOutPx > 1.0f)
@@ -689,11 +678,16 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
             pFade.closeSubPath();
             g.setColour (juce::Colours::black.withAlpha (0.34f));
             g.fillPath (pFade);
-            g.setColour (juce::Colour (0xffffd264).withAlpha (0.85f));
+            g.setColour (juce::Colour (0xffd4b9ff).withAlpha (0.85f));
             g.drawLine (geometry.trimX1 - fadeOutPx, plot.getY(), geometry.trimX1, plot.getBottom(), 1.25f);
         }
 
+        const float attack = juce::jmax (0.1f, pAttack->load());
+        const float hold = juce::jmax (0.0f, pHold->load());
+        const float decay = juce::jmax (0.1f, pDecay->load());
         const float sustain = pSustain->load();
+        const float release = juce::jmin (pRelease->load(), geometry.trimmedDurationMs * 0.5f);
+        const float releaseStart = juce::jmax (0.0f, geometry.trimmedDurationMs - release);
         const int attackCurve = juce::roundToInt (pAttackCurve->load());
         const int decayCurve = juce::roundToInt (pDecayCurve->load());
         const int releaseCurve = juce::roundToInt (pReleaseCurve->load());
@@ -701,54 +695,56 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         const float decayTen = pDecayTension->load();
         const float releaseTen = pReleaseTension->load();
 
-        const float attSpan = juce::jmax (0.05f, geometry.attackEndMs);
-        const float decSpan = juce::jmax (0.05f, geometry.decayEndMs - geometry.holdEndMs);
         auto envelopeLevel = [&] (float timeMs)
         {
-            if (timeMs < geometry.attackEndMs)
-                return flSegmentLevel (timeMs / attSpan, 0.0f, 1.0f, attackCurve, attackTen);
-            if (timeMs < geometry.holdEndMs)
+            if (timeMs < attack)
+                return flSegmentLevel (timeMs / attack, 0.0f, 1.0f, attackCurve, attackTen);
+            if (timeMs < attack + hold)
                 return 1.0f;
-            if (timeMs < geometry.decayEndMs)
-                return flSegmentLevel ((timeMs - geometry.holdEndMs) / decSpan, 1.0f, sustain, decayCurve, decayTen);
+            const float p = (timeMs - attack - hold) / decay;
+            if (p < 1.0f)
+                return flSegmentLevel (p, 1.0f, sustain, decayCurve, decayTen);
             return sustain;
         };
         auto xAt = [&] (float timeMs)
         {
             return geometry.trimX0 + geometry.trimW * juce::jlimit (0.0f, geometry.trimmedDurationMs, timeMs) / geometry.trimmedDurationMs;
         };
+        const float envTop = plot.getY() + 7.0f;
+        const float envBot = plot.getBottom() - 15.0f;
+        const float envH = juce::jmax (12.0f, envBot - envTop);
         auto yAt = [&] (float level)
         {
-            return geometry.envBot - geometry.envH * juce::jlimit (0.0f, 1.0f, level);
+            return envBot - envH * juce::jlimit (0.0f, 1.0f, level);
         };
 
         juce::Path envelope;
         envelope.startNewSubPath (xAt (0.0f), yAt (0.0f));
 
+        const float attackEnd = juce::jmin (attack, releaseStart);
         for (int i = 1; i <= kCurveSteps; ++i)
         {
-            const float timeMs = geometry.attackEndMs * ((float) i / (float) kCurveSteps);
+            const float timeMs = attackEnd * ((float) i / (float) kCurveSteps);
             envelope.lineTo (xAt (timeMs), yAt (envelopeLevel (timeMs)));
         }
 
-        if (geometry.holdEndMs - geometry.attackEndMs > 0.5f)
-            envelope.lineTo (xAt (geometry.holdEndMs), yAt (1.0f));
+        const float holdEnd = juce::jmin (attack + hold, releaseStart);
+        envelope.lineTo (xAt (holdEnd), yAt (envelopeLevel (holdEnd)));
 
+        const float decayEnd = juce::jmin (attack + hold + decay, releaseStart);
         for (int i = 1; i <= kCurveSteps; ++i)
         {
-            const float timeMs = geometry.holdEndMs + (geometry.decayEndMs - geometry.holdEndMs) * ((float) i / (float) kCurveSteps);
+            const float timeMs = holdEnd + (decayEnd - holdEnd) * ((float) i / (float) kCurveSteps);
             envelope.lineTo (xAt (timeMs), yAt (envelopeLevel (timeMs)));
         }
 
-        if (geometry.releaseStartMs > geometry.decayEndMs + 0.5f)
-            envelope.lineTo (xAt (geometry.releaseStartMs), yAt (envelopeLevel (geometry.releaseStartMs)));
-
-        const float releaseStartLevel = envelopeLevel (geometry.releaseStartMs);
+        envelope.lineTo (xAt (releaseStart), yAt (envelopeLevel (releaseStart)));
+        const float releaseStartLevel = envelopeLevel (releaseStart);
         for (int i = 1; i <= kCurveSteps; ++i)
         {
             const float t = (float) i / (float) kCurveSteps;
             const float level = flSegmentLevel (t, releaseStartLevel, 0.0f, releaseCurve, releaseTen);
-            envelope.lineTo (xAt (geometry.releaseStartMs + geometry.releaseMs * t), yAt (level));
+            envelope.lineTo (xAt (releaseStart + release * t), yAt (level));
         }
 
         // FL Section Markers ([D] Decay start, [S] Sustain/Release split)
@@ -756,115 +752,90 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         {
             if (mx < plot.getX() - 6.0f || mx > plot.getRight() + 6.0f)
                 return;
-            g.setColour (envEnabled ? juce::Colour (0xb8f0f8ff) : juce::Colour (0x85dce8f5));
+            g.setColour (envEnabled ? juce::Colour (0x8cebf2fa) : juce::Colour (0x40c8d2e0));
             g.drawVerticalLine (juce::roundToInt (mx), plot.getY(), plot.getBottom());
 
-            const float bw = 11.0f;
-            const float bh = 12.0f;
-            const float bx = juce::jlimit (plot.getX() + 2.0f, plot.getRight() - bw - 2.0f, mx + 1.0f);
-            const float by = plot.getBottom() - bh - 1.0f;
-            juce::Path tab;
-            tab.startNewSubPath (bx, by);
-            tab.lineTo (bx + bw - 3.0f, by);
-            tab.lineTo (bx + bw, by + 3.0f);
-            tab.lineTo (bx + bw, by + bh);
-            tab.lineTo (bx, by + bh);
-            tab.closeSubPath();
-            g.setColour (envEnabled ? juce::Colour (0xffcdd7e3) : juce::Colour (0xff9ca7b5));
-            g.fillPath (tab);
-            g.setColour (juce::Colour (0xff181e26));
+            const float bx = juce::jlimit (plot.getX() + 2.0f, plot.getRight() - 14.0f, mx + 1.0f);
+            const float by = plot.getBottom() - 13.0f;
+            g.setColour (envEnabled ? juce::Colour (0xffb9c3cf) : juce::Colour (0xff58626e));
+            g.fillRoundedRectangle (bx, by, 12.0f, 12.0f, 2.0f);
+            g.setColour (juce::Colour (0xff1d172b));
             g.setFont (juce::Font (8.5f, juce::Font::bold));
-            g.drawText (tag, juce::Rectangle<float> (bx, by, bw, bh), juce::Justification::centred);
+            g.drawText (tag, juce::Rectangle<float> (bx, by, 12.0f, 12.0f), juce::Justification::centred);
         };
 
         drawSectionMarker (geometry.holdEndX, "D");
         drawSectionMarker (geometry.releaseStartX, "S");
 
         auto fill = envelope;
-        fill.lineTo (geometry.trimX1, geometry.envBot);
-        fill.lineTo (geometry.trimX0, geometry.envBot);
+        fill.lineTo (geometry.trimX1, envBot);
+        fill.lineTo (geometry.trimX0, envBot);
         fill.closeSubPath();
-        juce::ColourGradient fillGrad (flCurveColour.withAlpha (envEnabled ? 0.28f : 0.18f),
-                                       0.0f, geometry.envTop,
-                                       flCurveColour.withAlpha (envEnabled ? 0.05f : 0.03f),
-                                       0.0f, geometry.envBot, false);
-        g.setGradientFill (fillGrad);
+        g.setColour (envEnabled ? flCurveColour.withAlpha (0.16f) : juce::Colour (0x10a0aab9));
         g.fillPath (fill);
 
-        g.setColour (envEnabled ? flCurveColour : flCurveColour.withAlpha (0.82f));
-        g.strokePath (envelope, juce::PathStrokeType (envEnabled ? 2.15f : 1.85f,
+        g.setColour (envEnabled ? flCurveColour : juce::Colour (0x73b4c0ce));
+        g.strokePath (envelope, juce::PathStrokeType (envEnabled ? 2.0f : 1.4f,
                                                       juce::PathStrokeType::curved,
                                                       juce::PathStrokeType::rounded));
 
-        if (! preview.loaded)
-        {
-            g.setColour (juce::Colour (0x6bdae5f2));
-            g.setFont (juce::Font (11.0f));
-            g.drawText ("Drop Sample Here or Click Load Sample",
-                        juce::Rectangle<float> (plot.getX(), plot.getBottom() - 28.0f, plot.getWidth(), 18.0f),
-                        juce::Justification::centred);
-        }
-
-        if (! envEnabled)
-        {
-            g.setColour (juce::Colour (0xc48cdcf7));
-            g.setFont (juce::Font (9.5f, juce::Font::bold));
-            g.drawText ("BYPASSED - Click ENV",
-                        juce::Rectangle<float> (plot.getRight() - 150.0f, plot.getY() + 6.0f, 142.0f, 14.0f),
-                        juce::Justification::centredRight);
-        }
-
         // Front Trim & Back Trim vertical bars + flags
-        const bool isTrimmed = pTrimStart->load() > 0.001f || pTrimEnd->load() < 0.999f;
-        g.setColour (juce::Colour (0xffff7b00).withAlpha (isTrimmed ? 1.0f : 0.55f));
-        g.drawLine (geometry.trimX0, plot.getY(), geometry.trimX0, plot.getBottom(), isTrimmed ? 2.0f : 1.5f);
-        g.drawLine (geometry.trimX1, plot.getY(), geometry.trimX1, plot.getBottom(), isTrimmed ? 2.0f : 1.5f);
+        g.setColour (juce::Colour (0xffb79aff));
+        g.drawLine (geometry.trimX0, plot.getY(), geometry.trimX0, plot.getBottom(), 2.0f);
+        g.drawLine (geometry.trimX1, plot.getY(), geometry.trimX1, plot.getBottom(), 2.0f);
 
-        g.setColour (juce::Colour (0xffff7b00));
         juce::Path frontFlag, backFlag;
         frontFlag.addTriangle (geometry.trimX0, plot.getY(),
-                               geometry.trimX0 + 10.0f, plot.getY() + 5.5f,
-                               geometry.trimX0, plot.getY() + 11.0f);
+                               geometry.trimX0 + 11.0f, plot.getY() + 6.0f,
+                               geometry.trimX0, plot.getY() + 12.0f);
         backFlag.addTriangle (geometry.trimX1, plot.getY(),
-                              geometry.trimX1 - 10.0f, plot.getY() + 5.5f,
-                              geometry.trimX1, plot.getY() + 11.0f);
+                              geometry.trimX1 - 11.0f, plot.getY() + 6.0f,
+                              geometry.trimX1, plot.getY() + 12.0f);
         g.fillPath (frontFlag);
         g.fillPath (backFlag);
 
-        // FL Tension Handles (hollow circles)
+        // FL Tension Handles (hollow circles ○)
         auto drawTensionHandle = [&] (juce::Point<float> pt, bool visible)
         {
             if (! visible)
                 return;
-            const float r = kTensionRadius - 0.3f;
-            g.setColour (juce::Colour (0xb82a3440));
-            g.fillEllipse (pt.x - r, pt.y - r, 2.0f * r, 2.0f * r);
-            g.setColour (envEnabled ? flCurveColour : flCurveColour.withAlpha (0.88f));
-            g.drawEllipse (pt.x - r, pt.y - r, 2.0f * r, 2.0f * r, 1.5f);
+            g.setColour (juce::Colour (0xff201a30));
+            g.fillEllipse (pt.x - kTensionRadius, pt.y - kTensionRadius,
+                           2.0f * kTensionRadius, 2.0f * kTensionRadius);
+            g.setColour (envEnabled ? flCurveColour : juce::Colour (0x80b4c0ce));
+            g.drawEllipse (pt.x - kTensionRadius, pt.y - kTensionRadius,
+                           2.0f * kTensionRadius, 2.0f * kTensionRadius, 1.7f);
         };
 
         drawTensionHandle (geometry.tensionAttack, geometry.tensionAttackVisible);
         drawTensionHandle (geometry.tensionDecay, geometry.tensionDecayVisible);
         drawTensionHandle (geometry.tensionRelease, geometry.tensionReleaseVisible);
 
-        // Crisp FL Control Points (no permanent letters cluttering the diagram)
-        auto drawControlPoint = [&] (juce::Point<float> point, bool small = false)
+        // Control Points (solid ● dots)
+        auto drawControlPoint = [&] (juce::Point<float> point, const juce::String& label)
         {
             if (point.x < plot.getX() - 12.0f || point.x > plot.getRight() + 12.0f)
                 return;
-            const float r = small ? 3.2f : 3.8f;
-            g.setColour (juce::Colour (0xff141920));
-            g.fillEllipse (point.x - r - 1.4f, point.y - r - 1.4f, 2.0f * (r + 1.4f), 2.0f * (r + 1.4f));
-            g.setColour (envEnabled ? flControlDot : juce::Colour (0xffbfefff));
-            g.fillEllipse (point.x - r, point.y - r, 2.0f * r, 2.0f * r);
+            g.setColour (juce::Colour (0xff181321));
+            g.fillEllipse (point.x - kHandleRadius - 1.5f, point.y - kHandleRadius - 1.5f,
+                           2.0f * (kHandleRadius + 1.5f), 2.0f * (kHandleRadius + 1.5f));
+            g.setColour (envEnabled ? flControlDot : juce::Colour (0xff8a95a5));
+            g.fillEllipse (point.x - kHandleRadius, point.y - kHandleRadius,
+                           2.0f * kHandleRadius, 2.0f * kHandleRadius);
+            g.setColour (juce::Colour (0xffeef3fa));
+            g.setFont (juce::Font (9.0f, juce::Font::bold));
+            const bool nearTop = (point.y - plot.getY()) < 18.0f;
+            const float labelX = juce::jlimit (plot.getX() + 1.0f, plot.getRight() - 15.0f, point.x - 7.0f);
+            const float labelY = nearTop ? (point.y + kHandleRadius + 2.0f) : (point.y - kHandleRadius - 12.0f);
+            g.drawText (label, juce::Rectangle<float> (labelX, labelY, 14.0f, 10.0f),
+                        juce::Justification::centred);
         };
 
-        drawControlPoint (geometry.origin, true);
-        drawControlPoint (geometry.attack);
-        if (geometry.holdVisible) drawControlPoint (geometry.hold);
-        drawControlPoint (geometry.sustain);
-        if (geometry.releaseVisible) drawControlPoint (geometry.release);
-        drawControlPoint (geometry.endPt, true);
+        drawControlPoint (geometry.attack, "A");
+        drawControlPoint (geometry.hold, "H");
+        drawControlPoint (geometry.decay, "D");
+        drawControlPoint (geometry.sustain, "S");
+        drawControlPoint (geometry.release, "R");
         g.restoreState();
     }
 
@@ -898,9 +869,9 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
 
         const float trimBoxX = ov.getX() + trimStart * ov.getWidth();
         const float trimBoxW = juce::jmax (2.0f, (trimEnd - trimStart) * ov.getWidth());
-        g.setColour (juce::Colour (0x4dff7b00));
+        g.setColour (juce::Colour (0x4dc09cff));
         g.fillRect (trimBoxX, ov.getY() + 4.0f, trimBoxW, ov.getHeight() - 8.0f);
-        g.setColour (juce::Colour (0xffff7b00));
+        g.setColour (juce::Colour (0xffb79aff));
         g.drawVerticalLine (juce::roundToInt (trimBoxX), ov.getY() + 3.0f, ov.getBottom() - 3.0f);
         g.drawVerticalLine (juce::roundToInt (trimBoxX + trimBoxW), ov.getY() + 3.0f, ov.getBottom() - 3.0f);
 
@@ -913,19 +884,18 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
     }
 
     // FL Studio Envelope Toolbar Strip
-    g.setColour (juce::Colour (0xff1a1924));
+    g.setColour (juce::Colour (0xff211d31));
     g.fillRoundedRectangle (flBarBounds.toFloat(), 3.0f);
-    g.setColour (juce::Colour (0xff2d2b3c));
+    g.setColour (juce::Colour (0xff43385f));
     g.drawRoundedRectangle (flBarBounds.toFloat().reduced (0.5f), 3.0f, 1.0f);
 
-    const juce::Colour flCurveColour (0xff57d6ff);
     g.setFont (juce::Font (9.5f, juce::Font::bold));
     auto drawFlBoxLabel = [&] (const juce::ComboBox& box, const juce::String& lbl, float tensionVal)
     {
-        g.setColour (juce::Colour (0xff8c91ad));
+        g.setColour (juce::Colour (0xff95a4b8));
         g.drawText (lbl, box.getX() - 28, box.getY(), 26, box.getHeight(), juce::Justification::centredRight);
         const int pct = juce::roundToInt (tensionVal * 100.0f);
-        g.setColour (std::abs (pct) > 0 ? flCurveColour : juce::Colour (0xff8c91ad));
+        g.setColour (std::abs (pct) > 0 ? flCurveColour : juce::Colour (0xff8a96a6));
         g.drawText ((pct > 0 ? "+" : "") + juce::String (pct) + "%",
                     box.getRight() + 3, box.getY(), 34, box.getHeight(), juce::Justification::centredLeft);
     };
@@ -933,30 +903,30 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
     drawFlBoxLabel (decayCurveBox, "DEC", pDecayTension->load());
     drawFlBoxLabel (releaseCurveBox, "REL", pReleaseTension->load());
 
-    // Bottom Snapback Dark Control Strip
-    g.setColour (juce::Colour (0xff17161f));
+    // Dark sample-control strip; all controls remain inside the selected layer panel.
+    g.setColour (juce::Colour (0xff171522));
     g.fillRoundedRectangle (controlStripBounds.toFloat(), 3.0f);
-    g.setColour (juce::Colour (0xff2d2b3c));
+    g.setColour (juce::Colour (0xff39324f));
     g.drawRoundedRectangle (controlStripBounds.toFloat().reduced (0.5f), 3.0f, 1.0f);
 
-    g.setColour (juce::Colour (0xff8f92ab));
+    g.setColour (juce::Colour (0xffc7c0df));
     g.setFont (juce::Font (9.5f, juce::Font::bold));
     auto drawKnobLabel = [&] (const juce::Slider& s, const juce::String& label)
     {
         const auto b = s.getBounds();
-        g.drawText (label, b.getX(), b.getY() - 11, b.getWidth(), 10, juce::Justification::centred);
+        g.drawText (label, b.getX(), b.getY() - 12, b.getWidth(), 11, juce::Justification::centred);
     };
-    drawKnobLabel (gainSlider, "Vol");
+    drawKnobLabel (gainSlider, "Gain");
     drawKnobLabel (pitchSlider, "Pitch");
     drawKnobLabel (pogoSlider, "Pogo");
     drawKnobLabel (trimStartSlider, "Trim F");
     drawKnobLabel (trimEndSlider, "Trim B");
     drawKnobLabel (fadeInSlider, "Fade In");
     drawKnobLabel (fadeOutSlider, "Fade Out");
-    drawKnobLabel (delaySlider, "Shift");
+    drawKnobLabel (delaySlider, "Timing");
     drawKnobLabel (panSlider, "Pan");
-    drawKnobLabel (highPassSlider, "HP");
-    drawKnobLabel (lowPassSlider, "LP");
+    drawKnobLabel (highPassSlider, "HPF");
+    drawKnobLabel (lowPassSlider, "LPF");
 }
 
 void LayerEnvelopeComponent::resized()
@@ -988,7 +958,7 @@ void LayerEnvelopeComponent::resized()
     envEnableBtn.setBounds (flRow.removeFromLeft (44));
     flRow.removeFromLeft (8);
 
-    const int segSlotW = juce::jmin (164, juce::jmax (96, (flRow.getWidth() - 12) / 3));
+    const int segSlotW = juce::jmin (164, juce::jmax (110, flRow.getWidth() / 3));
     auto placeSeg = [&] (juce::ComboBox& box)
     {
         auto slot = flRow.removeFromLeft (segSlotW);
@@ -1007,8 +977,8 @@ void LayerEnvelopeComponent::resized()
     strip.removeFromTop (4);
     auto row2 = strip;
 
-    const int knobW = 50;
-    const int knobGap = 4;
+    const int knobW = 54;
+    const int knobGap = 6;
 
     // Row 1: [REV] [Gain] [Pitch] [Pogo] [Trim F] [Trim B] [Fade In] [Fade Out]
     reverseBtn.setBounds (row1.removeFromLeft (42).withSizeKeepingCentre (42, 26));
@@ -1028,7 +998,6 @@ void LayerEnvelopeComponent::resized()
         row2.removeFromLeft (knobGap);
     }
 }
-
 LayerEnvelopeComponent::Handle LayerEnvelopeComponent::hitTestHandle (juce::Point<float> pos,
                                                                       const Geometry& g,
                                                                       float maxRadius) const noexcept
@@ -1039,9 +1008,10 @@ LayerEnvelopeComponent::Handle LayerEnvelopeComponent::hitTestHandle (juce::Poin
         { Handle::TensionDecay, g.tensionDecay, g.tensionDecayVisible },
         { Handle::TensionRelease, g.tensionRelease, g.tensionReleaseVisible },
         { Handle::Attack, g.attack, true },
-        { Handle::Hold, g.hold, g.holdVisible },
+        { Handle::Hold, g.hold, true },
+        { Handle::Decay, g.decay, true },
         { Handle::Sustain, g.sustain, true },
-        { Handle::Release, g.release, g.releaseVisible },
+        { Handle::Release, g.release, true },
     };
 
     float bestDist = maxRadius;
@@ -1086,7 +1056,7 @@ void LayerEnvelopeComponent::resolveCircleForContext (juce::Point<float> pos,
         case Handle::Attack:
             outSegment = Segment::Attack;
             outCirclePos = g.attack;
-            outTitle = "Point D (Attack Peak)";
+            outTitle = "Point A (Attack)";
             return;
         case Handle::TensionAttack:
             outSegment = Segment::Attack;
@@ -1096,13 +1066,17 @@ void LayerEnvelopeComponent::resolveCircleForContext (juce::Point<float> pos,
         case Handle::Hold:
             outSegment = Segment::Decay;
             outCirclePos = g.hold;
-            outTitle = "Point H (Hold End)";
+            outTitle = "Point H (Decay Start)";
             return;
-        case Handle::Sustain:
         case Handle::Decay:
             outSegment = Segment::Decay;
+            outCirclePos = g.decay;
+            outTitle = "Point D (Decay End)";
+            return;
+        case Handle::Sustain:
+            outSegment = Segment::Decay;
             outCirclePos = g.sustain;
-            outTitle = "Point S (Sustain / Decay)";
+            outTitle = "Point S (Sustain)";
             return;
         case Handle::TensionDecay:
             outSegment = Segment::Decay;
@@ -1111,7 +1085,7 @@ void LayerEnvelopeComponent::resolveCircleForContext (juce::Point<float> pos,
             return;
         case Handle::Release:
             outSegment = Segment::Release;
-            outCirclePos = g.releaseVisible ? g.release : g.endPt;
+            outCirclePos = g.release;
             outTitle = "Point R (Release)";
             return;
         case Handle::TensionRelease:
@@ -1121,14 +1095,6 @@ void LayerEnvelopeComponent::resolveCircleForContext (juce::Point<float> pos,
             return;
         default:
             break;
-    }
-
-    if (pos.getDistanceFrom (g.endPt) <= 18.0f)
-    {
-        outSegment = Segment::Release;
-        outCirclePos = g.endPt;
-        outTitle = "Point End (Release)";
-        return;
     }
 
     outCirclePos = pos;
@@ -1320,51 +1286,28 @@ void LayerEnvelopeComponent::applyDrag (juce::Point<float> position)
     switch (activeHandle)
     {
         case Handle::Attack:
-        {
-            const float rest = juce::jmax (0.0f, pHold->load())
-                             + juce::jmax (0.1f, pDecay->load())
-                             + juce::jmax (0.1f, pRelease->load());
-            const float clampedT = juce::jlimit (0.1f, juce::jmax (0.2f, duration - 1.0f), timeMs);
-            const float nextAttack = (clampedT + rest <= duration)
-                ? clampedT
-                : (clampedT * rest) / juce::jmax (1.0f, duration - clampedT);
-            setParameter (ids::layerAttack (layer), juce::jlimit (0.1f, 2000.0f, nextAttack));
+            setParameter (ids::layerAttack (layer), juce::jlimit (0.1f, 2000.0f, timeMs));
             break;
-        }
         case Handle::Hold:
             setParameter (ids::layerHold (layer),
-                          juce::jlimit (0.0f, 2000.0f, timeMs - geometry.attackEndMs));
+                          juce::jlimit (0.0f, 2000.0f, timeMs - pAttack->load()));
+            break;
+        case Handle::Decay:
+            setParameter (ids::layerDecay (layer),
+                          juce::jlimit (0.1f, 5000.0f, timeMs - pAttack->load() - pHold->load()));
             break;
         case Handle::Sustain:
         {
-            const float level = juce::jlimit (0.0f, 1.0f, (geometry.envBot - position.y) / geometry.envH);
+            const float envTop = geometry.plot.getY() + 7.0f;
+            const float envBot = geometry.plot.getBottom() - 15.0f;
+            const float envH = juce::jmax (12.0f, envBot - envTop);
+            const float level = juce::jlimit (0.0f, 1.0f, (envBot - position.y) / envH);
             setParameter (ids::layerSustain (layer), level);
-            if (! geometry.releaseVisible)
-            {
-                const float minT = juce::jmin (duration - 1.0f, geometry.holdEndMs + 1.0f);
-                const float splitT = juce::jlimit (minT, juce::jmax (minT, duration - 1.0f), timeMs);
-                const float prevSum = juce::jmax (0.1f, pAttack->load())
-                                    + juce::jmax (0.0f, pHold->load())
-                                    + juce::jmax (0.1f, pDecay->load())
-                                    + juce::jmax (0.1f, pRelease->load());
-                const float scale = prevSum > duration ? (prevSum / duration) : 1.0f;
-                setParameter (ids::layerDecay (layer), juce::jlimit (0.1f, 5000.0f, (splitT - geometry.holdEndMs) * scale));
-                setParameter (ids::layerRelease (layer), juce::jlimit (0.1f, 10000.0f, (duration - splitT) * scale));
-            }
-            else
-            {
-                setParameter (ids::layerDecay (layer),
-                              juce::jlimit (0.1f, 5000.0f, timeMs - geometry.holdEndMs));
-            }
             break;
         }
         case Handle::Release:
-        {
-            const float level = juce::jlimit (0.0f, 1.0f, (geometry.envBot - position.y) / geometry.envH);
-            setParameter (ids::layerSustain (layer), level);
             setParameter (ids::layerRelease (layer), juce::jlimit (0.1f, 10000.0f, duration - timeMs));
             break;
-        }
         default:
             break;
     }

@@ -3,74 +3,29 @@
 #include "PluginProcessor.h"
 #include "LayerEnvelopeComponent.h"
 
-/** Trace colour of signal n (0-based): 0..2 Snapback blues, 3..5 Transient violets. */
+/** Trace colour of signal n (0-based). */
 inline juce::Colour signalColour (int n)
 {
-    static const juce::uint32 table[] = { 0xff56ccf2,   // Snapback 1: sky blue
-                                          0xff7d92ff,   // Snapback 2: periwinkle indigo
-                                          0xffa5b4ff,   // Snapback 3: ice lavender-blue
-                                          0xffcc6bff,   // Transient 1: electric orchid
-                                          0xfff46ec8,   // Transient 2: neon rose-violet
-                                          0xff8b5cf6 }; // Transient 3: deep violet
+    static const juce::uint32 table[] = { 0xff8b7cff,   // PRE 1: violet
+                                          0xffa78bfa,   // PRE 2: light violet
+                                          0xffc084fc,   // PRE 3: lavender
+                                          0xffc06cff,   // MAIN 1: magenta-violet
+                                          0xffd58cff,   // MAIN 2: light magenta
+                                          0xff9b8cff }; // MAIN 3: periwinkle
     return juce::Colour (table[juce::jlimit (0, 5, n)]);
 }
 
 //==============================================================================
-/** Top 1-Bar Stacked Master Waveform Canvas supporting Grid and Seconds zoom modes. */
 class LayerOverlayView final : public juce::Component, private juce::Timer
 {
 public:
     explicit LayerOverlayView (WaveLensProcessor&);
     ~LayerOverlayView() override { stopTimer(); }
-
-    void setSelectedPair (int snapbackIdx, int transientIdx) noexcept
-    {
-        selectedSnapback = snapbackIdx;
-        selectedTransient = transientIdx;
-        repaint();
-    }
-
-    void setBpm (double nextBpm) noexcept
-    {
-        bpm = juce::jlimit (40.0, 240.0, nextBpm);
-        repaint();
-    }
-
-    void setGridMode (bool useGrid) noexcept
-    {
-        gridMode = useGrid;
-        repaint();
-    }
-
-    bool isGridMode() const noexcept { return gridMode; }
-    float getZoomFactor() const noexcept { return zoomFactor; }
-
-    void zoomBy (float factor, float anchorNorm = 0.5f) noexcept;
-    void resetZoom() noexcept;
-    void focusTrigger (float zoomIfUnzoomed = 4.0f) noexcept;
-
     void paint (juce::Graphics&) override;
-    void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
-    void mouseDoubleClick (const juce::MouseEvent&) override;
-    void mouseDown (const juce::MouseEvent&) override;
-    void mouseDrag (const juce::MouseEvent&) override;
 
 private:
     void timerCallback() override { repaint(); }
-    void clampViewport (float nextStart, float nextZoom) noexcept;
-    float normToX (float norm, float plotX, float plotW) const noexcept;
-    float xToNorm (float x, float plotX, float plotW) const noexcept;
-
     WaveLensProcessor& processor;
-    int selectedSnapback = 0;
-    int selectedTransient = 3;
-    double bpm = 120.0;
-    bool gridMode = true;
-    float zoomFactor = 1.0f;
-    float viewStartNorm = 0.0f;
-    float dragStartX = 0.0f;
-    float dragStartView = 0.0f;
-
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LayerOverlayView)
 };
 
@@ -139,8 +94,6 @@ public:
     void drawRotarySlider (juce::Graphics&, int x, int y, int width, int height,
                            float sliderPosProportional, float rotaryStartAngle,
                            float rotaryEndAngle, juce::Slider&) override;
-    void drawButtonBackground (juce::Graphics&, juce::Button&, const juce::Colour& backgroundColour,
-                               bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
 };
 
 //==============================================================================
@@ -159,18 +112,19 @@ public:
     void filesDropped (const juce::StringArray& files, int x, int y) override;
 
 private:
-    void timerCallback() override;
-    void updateEnabledStates();
-    void updateViewVisibility();
-    void loadFileIntoLayer (int layer, const juce::File& file);
-    void promptLoadLayer (int layer);
-
     using SliderAtt = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ComboAtt  = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     using ButtonAtt = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
+    void timerCallback() override;
+    void updateEnabledStates();
+    void updateViewVisibility();
+    void selectLayer (int layer);
+    int selectedLayerForGroup (int group) const noexcept;
+    void chooseLoadSample (int group);
+    void loadFileIntoLayer (int layer, const juce::File& file);
     void setupCombo (juce::ComboBox&, const char* paramId, std::unique_ptr<ComboAtt>&);
-    void setupToggle (juce::TextButton&, const juce::String& text, const char* paramId,
+    void setupToggle (juce::TextButton&, const juce::String& text, const juce::String& paramId,
                       std::unique_ptr<ButtonAtt>&);
 
     WaveLensProcessor& proc;
@@ -182,32 +136,30 @@ private:
 
     juce::ComboBox viewBox, layoutBox;
     juce::TextButton freezeBtn, holdBtn, resetBtn;
-    juce::TextButton bpmDownBtn, bpmUpBtn;
-    juce::TextButton triggerBtn, gridModeBtn, secondsModeBtn, detailBtn;
-    juce::TextButton masterZoomOutBtn, masterZoomResetBtn, masterZoomInBtn, outputBtn;
-
-    // Left SNAPBACK deck (layers 0..2) & Right TRANSIENT deck (layers 3..5)
-    juce::TextButton circleSelectBtn[WaveLensProcessor::kMaxSignals];
+    juce::TextButton masterBtn, monitorBtn, triggerBtn;
+    juce::TextButton layerSelectBtn[WaveLensProcessor::kMaxSignals];
     juce::TextButton mutePadBtn[WaveLensProcessor::kMaxSignals];
-    juce::TextButton soloPadBtn[WaveLensProcessor::kMaxSignals];
     juce::TextButton auditionBtn[WaveLensProcessor::kMaxSignals];
-    juce::TextButton sbPrevBtn, sbNextBtn, sbLoadBtn, sbClearBtn;
-    juce::TextButton trPrevBtn, trNextBtn, trLoadBtn, trClearBtn;
+    juce::TextButton soloPadBtn[WaveLensProcessor::kMaxSignals];
     juce::TextButton sigBtn[WaveLensProcessor::kMaxSignals];
+    std::array<juce::TextButton, 2> loadSampleBtn, clearSampleBtn;
+    juce::Slider preLeadSlider;
 
     std::array<std::unique_ptr<LayerEnvelopeComponent>, WaveLensProcessor::kMaxSignals> envelopeComponents;
     std::array<juce::String, WaveLensProcessor::kMaxSignals> displayedSampleNames;
-    int selectedSnapback = 0; // 0..2
-    int selectedTransient = 3; // 3..5
-    double bpm = 120.0;
+    int selectedPreLayer = 0;
+    int selectedMainLayer = 3;
+    int lastSelectedLayer = 0;
     bool monitorMode = false;
 
-    juce::Rectangle<int> topHeaderArea, topCanvasArea, dividerArea;
-    juce::Rectangle<int> snapbackDeckArea, transientDeckArea;
-    juce::Rectangle<int> snapbackHeaderArea, transientHeaderArea;
-    juce::Rectangle<int> monitorToolbarArea;
+    juce::Rectangle<int> topBarArea, waveformArea, triggerBarArea;
+    juce::Rectangle<int> prePanelArea, mainPanelArea;
+    juce::Rectangle<int> preHeaderArea, mainHeaderArea;
+    juce::Rectangle<int> preBodyArea, mainBodyArea;
+    juce::Rectangle<int> padCellBounds[WaveLensProcessor::kMaxSignals];
 
-    std::unique_ptr<ComboAtt>  viewAtt, layoutAtt;
+    std::unique_ptr<ComboAtt> viewAtt, layoutAtt;
+    std::unique_ptr<SliderAtt> preLeadAtt;
     std::unique_ptr<ButtonAtt> freezeAtt, holdAtt;
     std::unique_ptr<ButtonAtt> sigAtt[WaveLensProcessor::kMaxSignals];
     std::unique_ptr<ButtonAtt> muteAtt[WaveLensProcessor::kMaxSignals];
