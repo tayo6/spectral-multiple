@@ -11,6 +11,8 @@ LayeredSampleEngine::LayeredSampleEngine()
         currentSamples[(size_t) i].store (nullptr, std::memory_order_relaxed);
         clearRequests[(size_t) i].store (false, std::memory_order_relaxed);
         previewRequests[(size_t) i].store (false, std::memory_order_relaxed);
+        layerTailSeconds[(size_t) i].store (0.0f, std::memory_order_relaxed);
+        tailEstimateDirty[(size_t) i].store (false, std::memory_order_relaxed);
     }
 }
 
@@ -103,6 +105,13 @@ bool LayeredSampleEngine::loadSampleFromFile (int layer, const juce::File& file,
     }
 
     const int sampleCount = (int) reader->lengthInSamples;
+    const size_t requiredSampleBytes = (size_t) sampleCount * 2u * sizeof (float);
+    if (requiredSampleBytes > kMaximumRetainedSampleBytes - retainedSampleBytes)
+    {
+        error = "The sample memory budget is full. Reopen the plugin to reclaim memory from replaced samples.";
+        return false;
+    }
+
     auto data = std::make_unique<SampleData>();
     data->audio.setSize (2, sampleCount, false, true, false);
     data->sourceSampleRate = reader->sampleRate;
@@ -134,10 +143,12 @@ bool LayeredSampleEngine::loadSampleFromFile (int layer, const juce::File& file,
     data->preview.loaded = true;
     for (int point = 0; point < kPreviewPoints; ++point)
     {
-        const int first = (int) ((juce::int64) point * sampleCount / kPreviewPoints);
-        const int last = juce::jmax (first + 1, (int) ((juce::int64) (point + 1) * sampleCount / kPreviewPoints));
+        const int rawFirst = (int) ((juce::int64) point * sampleCount / kPreviewPoints);
+        const int rawLast = (int) ((juce::int64) (point + 1) * sampleCount / kPreviewPoints);
+        const int first = juce::jlimit (0, sampleCount - 1, rawFirst);
+        const int last = juce::jlimit (first + 1, sampleCount, juce::jmax (first + 1, rawLast));
         float minimum = 1.0f, maximum = -1.0f;
-        for (int sample = first; sample < juce::jmin (sampleCount, last); ++sample)
+        for (int sample = first; sample < last; ++sample)
             for (int channel = 0; channel < 2; ++channel)
             {
                 const float value = data->audio.getSample (channel, sample);
@@ -153,8 +164,10 @@ bool LayeredSampleEngine::loadSampleFromFile (int layer, const juce::File& file,
     // Never free an old buffer while the audio thread might still be reading it.
     // All versions remain owned until this processor instance is destroyed.
     ownedSamples[(size_t) layer].push_back (std::move (data));
+    retainedSampleBytes += requiredSampleBytes;
     sampleNames[(size_t) layer] = raw->displayName;
     currentSamples[(size_t) layer].store (raw, std::memory_order_release);
+    tailEstimateDirty[(size_t) layer].store (true, std::memory_order_release);
 
     error.clear();
     return true;
@@ -167,6 +180,7 @@ void LayeredSampleEngine::clearSample (int layer)
 
     currentSamples[(size_t) layer].store (nullptr, std::memory_order_release);
     clearRequests[(size_t) layer].store (true, std::memory_order_release);
+    tailEstimateDirty[(size_t) layer].store (true, std::memory_order_release);
     sampleNames[(size_t) layer].clear();
 }
 
@@ -209,6 +223,11 @@ void LayeredSampleEngine::setLayerParameters (int layer, const LayerParameters& 
         return;
 
     auto& target = parameters[(size_t) layer];
+    const bool tailParametersChanged = target.pitchSemitones != p.pitchSemitones
+        || target.pogo != p.pogo || target.trimStart != p.trimStart || target.trimEnd != p.trimEnd;
+    const bool recomputeTail = tailParametersChanged
+        || tailEstimateDirty[(size_t) layer].exchange (false, std::memory_order_acq_rel);
+
     target.gain = juce::jlimit (0.0f, 2.0f, p.gain);
     target.pan = juce::jlimit (-1.0f, 1.0f, p.pan);
     target.pitchSemitones = juce::jlimit (-24.0f, 24.0f, p.pitchSemitones);
@@ -239,6 +258,9 @@ void LayeredSampleEngine::setLayerParameters (int layer, const LayerParameters& 
     target.trimEnd = juce::jlimit (target.trimStart + 0.01f, 1.0f, p.trimEnd);
     target.fadeInMs = juce::jlimit (0.0f, 2000.0f, p.fadeInMs);
     target.fadeOutMs = juce::jlimit (0.0f, 5000.0f, p.fadeOutMs);
+
+    if (recomputeTail)
+        updateTailEstimate (layer);
 }
 
 bool LayeredSampleEngine::isLayerAudible (int layer) const noexcept
@@ -261,6 +283,41 @@ bool LayeredSampleEngine::isLayerAudible (int layer) const noexcept
     }
 
     return ! anySolo || p.solo;
+}
+
+void LayeredSampleEngine::updateTailEstimate (int layer) noexcept
+{
+    if (! juce::isPositiveAndBelow (layer, kNumLayers))
+        return;
+
+    double estimateSeconds = 0.0;
+    auto* sample = currentSamples[(size_t) layer].load (std::memory_order_acquire);
+    if (sample != nullptr && sample->sourceSampleRate > 0.0)
+    {
+        const auto& p = parameters[(size_t) layer];
+        const float trimFraction = juce::jlimit (0.01f, 1.0f, p.trimEnd - p.trimStart);
+        const double sourceDuration = ((double) sample->audio.getNumSamples() * (double) trimFraction)
+                                      / sample->sourceSampleRate;
+
+        // Estimate the variable Pogo pitch ramp without doing this work every audio block.
+        constexpr int integrationSteps = 32;
+        double durationMultiplier = 0.0;
+        for (int i = 0; i < integrationSteps; ++i)
+        {
+            const double u = ((double) i + 0.5) / (double) integrationSteps;
+            const double pogoSemitones = (double) p.pogo * 24.0 * std::pow (1.0 - u, 2.5);
+            const double semitones = (double) p.pitchSemitones + pogoSemitones;
+            durationMultiplier += std::pow (2.0, -semitones / 12.0);
+        }
+        estimateSeconds = sourceDuration * durationMultiplier / (double) integrationSteps;
+        estimateSeconds += (double) maximumDelaySamples * 2.0 / juce::jmax (1.0, currentSampleRate);
+    }
+
+    layerTailSeconds[(size_t) layer].store ((float) estimateSeconds, std::memory_order_relaxed);
+    float maximum = 0.0f;
+    for (const auto& value : layerTailSeconds)
+        maximum = juce::jmax (maximum, value.load (std::memory_order_relaxed));
+    maximumTailSeconds.store (maximum, std::memory_order_relaxed);
 }
 
 void LayeredSampleEngine::triggerAllLayers() noexcept
@@ -306,10 +363,16 @@ void LayeredSampleEngine::startLayer (int layer, bool ignoreTimingShift) noexcep
     voice.position = 0.0;
     const int shiftSamples = ignoreTimingShift ? 0
         : juce::roundToInt (parameters[(size_t) layer].delayShiftMs * (float) currentSampleRate * 0.001f);
+    const int preLayerCompatibilityOffset = layer < kPreLayers
+        ? juce::roundToInt ((float) kDefaultPreRollMilliseconds * (float) currentSampleRate * 0.001f)
+        : 0;
+    const int baseDelaySamples = layer < kPreLayers
+        ? maximumDelaySamples - preRollSamples + preLayerCompatibilityOffset
+        : maximumDelaySamples;
 
     voice.delayRemaining = ignoreTimingShift
         ? 0
-        : juce::jlimit (0, maximumDelaySamples * 2, maximumDelaySamples + shiftSamples);
+        : juce::jlimit (0, maximumDelaySamples * 2, baseDelaySamples + shiftSamples);
     voice.ageSamples = 0;
     voice.releaseStartLevel = 1.0f;
     voice.inRelease = false;
@@ -492,8 +555,10 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
             const int index0 = juce::jlimit (trimStartIdx, trimEndIdx - 1, (int) std::floor (samplePos));
             const int index1 = p.reverse ? juce::jmax (trimStartIdx, index0 - 1)
                                          : juce::jmin (trimEndIdx - 1, index0 + 1);
-            const float fraction = (float) (p.reverse ? ((double) index0 - samplePos)
-                                                      : (samplePos - (double) index0));
+            // Both directions interpolate from index0 toward index1 using a positive fraction.
+            // For reverse playback index1 is the preceding sample, so this avoids the old
+            // negative interpolation fraction and the resulting level overshoot.
+            const float fraction = (float) (samplePos - (double) index0);
 
             const float rawL = audio.getSample (0, index0)
                                + (audio.getSample (0, index1) - audio.getSample (0, index0)) * fraction;
