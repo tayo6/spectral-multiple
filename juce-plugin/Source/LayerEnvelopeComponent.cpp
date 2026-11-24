@@ -998,3 +998,424 @@ void LayerEnvelopeComponent::resized()
         row2.removeFromLeft (knobGap);
     }
 }
+LayerEnvelopeComponent::Handle LayerEnvelopeComponent::hitTestHandle (juce::Point<float> pos,
+                                                                      const Geometry& g,
+                                                                      float maxRadius) const noexcept
+{
+    struct Candidate { Handle h; juce::Point<float> pt; bool active; };
+    const Candidate list[] = {
+        { Handle::TensionAttack, g.tensionAttack, g.tensionAttackVisible },
+        { Handle::TensionDecay, g.tensionDecay, g.tensionDecayVisible },
+        { Handle::TensionRelease, g.tensionRelease, g.tensionReleaseVisible },
+        { Handle::Attack, g.attack, true },
+        { Handle::Hold, g.hold, true },
+        { Handle::Decay, g.decay, true },
+        { Handle::Sustain, g.sustain, true },
+        { Handle::Release, g.release, true },
+    };
+
+    float bestDist = maxRadius;
+    Handle best = Handle::None;
+    for (const auto& c : list)
+    {
+        if (! c.active) continue;
+        const float d = pos.getDistanceFrom (c.pt);
+        if (d < bestDist)
+        {
+            bestDist = d;
+            best = c.h;
+        }
+    }
+
+    if (best == Handle::None)
+    {
+        const bool startVisible = g.trimX0 >= g.plot.getX() - 10.0f
+                               && g.trimX0 <= g.plot.getRight() + 10.0f;
+        const bool endVisible = g.trimX1 >= g.plot.getX() - 10.0f
+                             && g.trimX1 <= g.plot.getRight() + 10.0f;
+        const float distStart = startVisible ? std::abs (pos.x - g.trimX0) : 1.0e6f;
+        const float distEnd = endVisible ? std::abs (pos.x - g.trimX1) : 1.0e6f;
+        if (distStart <= 12.0f && distStart <= distEnd)
+            best = Handle::TrimStart;
+        else if (distEnd <= 12.0f)
+            best = Handle::TrimEnd;
+    }
+
+    return best;
+}
+
+void LayerEnvelopeComponent::resolveCircleForContext (juce::Point<float> pos,
+                                                      const Geometry& g,
+                                                      Segment& outSegment,
+                                                      juce::Point<float>& outCirclePos,
+                                                      juce::String& outTitle) const noexcept
+{
+    const auto hit = hitTestHandle (pos, g, 18.0f);
+    switch (hit)
+    {
+        case Handle::Attack:
+            outSegment = Segment::Attack;
+            outCirclePos = g.attack;
+            outTitle = "Point A (Attack)";
+            return;
+        case Handle::TensionAttack:
+            outSegment = Segment::Attack;
+            outCirclePos = g.tensionAttack;
+            outTitle = "Attack Tension";
+            return;
+        case Handle::Hold:
+            outSegment = Segment::Decay;
+            outCirclePos = g.hold;
+            outTitle = "Point H (Decay Start)";
+            return;
+        case Handle::Decay:
+            outSegment = Segment::Decay;
+            outCirclePos = g.decay;
+            outTitle = "Point D (Decay End)";
+            return;
+        case Handle::Sustain:
+            outSegment = Segment::Decay;
+            outCirclePos = g.sustain;
+            outTitle = "Point S (Sustain)";
+            return;
+        case Handle::TensionDecay:
+            outSegment = Segment::Decay;
+            outCirclePos = g.tensionDecay;
+            outTitle = "Decay Tension";
+            return;
+        case Handle::Release:
+            outSegment = Segment::Release;
+            outCirclePos = g.release;
+            outTitle = "Point R (Release)";
+            return;
+        case Handle::TensionRelease:
+            outSegment = Segment::Release;
+            outCirclePos = g.tensionRelease;
+            outTitle = "Release Tension";
+            return;
+        default:
+            break;
+    }
+
+    outCirclePos = pos;
+    if (pos.x <= g.attackEndX + 8.0f)
+    {
+        outSegment = Segment::Attack;
+        outTitle = "Attack Curve";
+    }
+    else if (pos.x >= g.releaseStartX - 8.0f)
+    {
+        outSegment = Segment::Release;
+        outTitle = "Release Curve";
+    }
+    else
+    {
+        outSegment = Segment::Decay;
+        outTitle = "Decay Curve";
+    }
+}
+
+void LayerEnvelopeComponent::showFlCurveMenu (Segment segment,
+                                              juce::Point<float> circleLocalPos,
+                                              const juce::String& title)
+{
+    const juce::String curveId = segment == Segment::Attack ? ids::layerAttackCurve (layer)
+        : (segment == Segment::Decay ? ids::layerDecayCurve (layer) : ids::layerReleaseCurve (layer));
+    const juce::String tensionId = segment == Segment::Attack ? ids::layerAttackTension (layer)
+        : (segment == Segment::Decay ? ids::layerDecayTension (layer) : ids::layerReleaseTension (layer));
+    const int currentMode = juce::roundToInt (segment == Segment::Attack ? pAttackCurve->load()
+        : (segment == Segment::Decay ? pDecayCurve->load() : pReleaseCurve->load()));
+    const bool envOn = pEnvEnabled->load() > 0.5f;
+
+    juce::PopupMenu menu;
+    menu.addSectionHeader (title);
+
+    const char* modes[] = { "Hold", "Smooth", "Single curve", "Half sine", "Stairs", "Smooth stairs", "Pulse", "Wave" };
+    for (int i = 0; i < 8; ++i)
+        menu.addItem (100 + i, modes[i], true, currentMode == i);
+
+    menu.addSeparator();
+    menu.addItem (200, "Reset Tension (0%)");
+    menu.addItem (201, envOn ? "Disable Envelope" : "Enable Envelope");
+
+    const auto screenCirclePt = localPointToGlobal (circleLocalPos.roundToInt());
+    const juce::Rectangle<int> anchorRect (screenCirclePt.x - 6, screenCirclePt.y - 6, 12, 12);
+
+    auto options = juce::PopupMenu::Options()
+                       .withTargetScreenArea (anchorRect)
+                       .withStandardItemHeight (20);
+    if (auto* top = getTopLevelComponent())
+        options = options.withParentComponent (top);
+
+    juce::Component::SafePointer<LayerEnvelopeComponent> safeThis (this);
+    menu.showMenuAsync (options, [safeThis, curveId, tensionId, envOn] (int result)
+    {
+        if (safeThis == nullptr)
+            return;
+        if (result >= 100 && result < 108)
+            safeThis->setParameter (curveId, (float) (result - 100));
+        else if (result == 200)
+            safeThis->setParameter (tensionId, 0.0f);
+        else if (result == 201)
+            safeThis->setParameter (ids::layerEnvEnabled (safeThis->layer), envOn ? 0.0f : 1.0f);
+    });
+}
+
+void LayerEnvelopeComponent::beginGesture (Handle handle)
+{
+    activeHandle = handle;
+    juce::String parameterId;
+    switch (handle)
+    {
+        case Handle::TrimStart: parameterId = ids::layerTrimStart (layer); break;
+        case Handle::TrimEnd: parameterId = ids::layerTrimEnd (layer); break;
+        case Handle::Attack: parameterId = ids::layerAttack (layer); break;
+        case Handle::Hold: parameterId = ids::layerHold (layer); break;
+        case Handle::Decay: parameterId = ids::layerDecay (layer); break;
+        case Handle::Sustain: parameterId = ids::layerSustain (layer); break;
+        case Handle::Release: parameterId = ids::layerRelease (layer); break;
+        case Handle::TensionAttack: parameterId = ids::layerAttackTension (layer); break;
+        case Handle::TensionDecay: parameterId = ids::layerDecayTension (layer); break;
+        case Handle::TensionRelease: parameterId = ids::layerReleaseTension (layer); break;
+        default: break;
+    }
+
+    if (parameterId.isNotEmpty())
+        if (auto* parameter = dynamic_cast<juce::RangedAudioParameter*> (processor.apvts.getParameter (parameterId)))
+            parameter->beginChangeGesture();
+}
+
+void LayerEnvelopeComponent::endGesture()
+{
+    if (activeHandle == Handle::None)
+        return;
+
+    juce::String parameterId;
+    switch (activeHandle)
+    {
+        case Handle::TrimStart: parameterId = ids::layerTrimStart (layer); break;
+        case Handle::TrimEnd: parameterId = ids::layerTrimEnd (layer); break;
+        case Handle::Attack: parameterId = ids::layerAttack (layer); break;
+        case Handle::Hold: parameterId = ids::layerHold (layer); break;
+        case Handle::Decay: parameterId = ids::layerDecay (layer); break;
+        case Handle::Sustain: parameterId = ids::layerSustain (layer); break;
+        case Handle::Release: parameterId = ids::layerRelease (layer); break;
+        case Handle::TensionAttack: parameterId = ids::layerAttackTension (layer); break;
+        case Handle::TensionDecay: parameterId = ids::layerDecayTension (layer); break;
+        case Handle::TensionRelease: parameterId = ids::layerReleaseTension (layer); break;
+        default: break;
+    }
+
+    if (parameterId.isNotEmpty())
+        if (auto* parameter = dynamic_cast<juce::RangedAudioParameter*> (processor.apvts.getParameter (parameterId)))
+            parameter->endChangeGesture();
+
+    activeHandle = Handle::None;
+}
+
+void LayerEnvelopeComponent::setParameter (const juce::String& parameterId, float value)
+{
+    if (auto* parameter = dynamic_cast<juce::RangedAudioParameter*> (processor.apvts.getParameter (parameterId)))
+        parameter->setValueNotifyingHost (parameter->convertTo0to1 (value));
+}
+
+void LayerEnvelopeComponent::applyDrag (juce::Point<float> position)
+{
+    if (activeHandle == Handle::OverviewPan && overviewBarBounds.getWidth() > 1.0f)
+    {
+        const float norm = juce::jlimit (0.0f, 1.0f,
+            (position.x - overviewBarBounds.getX()) / overviewBarBounds.getWidth());
+        const float span = 1.0f / juce::jmax (1.0f, zoomFactor);
+        clampViewport (norm - span * 0.5f, zoomFactor);
+        repaint();
+        return;
+    }
+
+    const auto preview = processor.getWaveformPreview (layer);
+    const auto geometry = getGeometry (preview.loaded ? (float) preview.durationMs : 1000.0f);
+
+    if (activeHandle == Handle::Pan)
+    {
+        const float span = 1.0f / juce::jmax (1.0f, zoomFactor);
+        const float dx = position.x - dragStartX;
+        clampViewport (dragStartViewStart - (dx / juce::jmax (1.0f, geometry.plot.getWidth())) * span,
+                       zoomFactor);
+        repaint();
+        return;
+    }
+
+    if (activeHandle == Handle::TensionAttack
+        || activeHandle == Handle::TensionDecay
+        || activeHandle == Handle::TensionRelease)
+    {
+        const float delta = (dragStartY - position.y) / 85.0f;
+        const float nextTen = juce::jlimit (-1.0f, 1.0f, dragStartTension + delta);
+        if (activeHandle == Handle::TensionAttack)
+            setParameter (ids::layerAttackTension (layer), nextTen);
+        else if (activeHandle == Handle::TensionDecay)
+            setParameter (ids::layerDecayTension (layer), nextTen);
+        else
+            setParameter (ids::layerReleaseTension (layer), nextTen);
+        repaint();
+        return;
+    }
+
+    if (activeHandle == Handle::TrimStart)
+    {
+        const float rawNorm = plotXToNorm (position.x, geometry.plot);
+        const float norm = juce::jlimit (0.0f, juce::jmax (0.0f, pTrimEnd->load() - 0.005f), rawNorm);
+        setParameter (ids::layerTrimStart (layer), norm);
+        repaint();
+        return;
+    }
+    if (activeHandle == Handle::TrimEnd)
+    {
+        const float rawNorm = plotXToNorm (position.x, geometry.plot);
+        const float norm = juce::jlimit (juce::jmin (1.0f, pTrimStart->load() + 0.005f), 1.0f, rawNorm);
+        setParameter (ids::layerTrimEnd (layer), norm);
+        repaint();
+        return;
+    }
+
+    const float duration = juce::jmax (1.0f, geometry.trimmedDurationMs);
+    const float x = juce::jlimit (0.0f, 1.0f,
+                                  (position.x - geometry.trimX0)
+                                      / juce::jmax (1.0f, geometry.trimW));
+    const float timeMs = x * duration;
+
+    switch (activeHandle)
+    {
+        case Handle::Attack:
+            setParameter (ids::layerAttack (layer), juce::jlimit (0.1f, 2000.0f, timeMs));
+            break;
+        case Handle::Hold:
+            setParameter (ids::layerHold (layer),
+                          juce::jlimit (0.0f, 2000.0f, timeMs - pAttack->load()));
+            break;
+        case Handle::Decay:
+            setParameter (ids::layerDecay (layer),
+                          juce::jlimit (0.1f, 5000.0f, timeMs - pAttack->load() - pHold->load()));
+            break;
+        case Handle::Sustain:
+        {
+            const float envTop = geometry.plot.getY() + 7.0f;
+            const float envBot = geometry.plot.getBottom() - 15.0f;
+            const float envH = juce::jmax (12.0f, envBot - envTop);
+            const float level = juce::jlimit (0.0f, 1.0f, (envBot - position.y) / envH);
+            setParameter (ids::layerSustain (layer), level);
+            break;
+        }
+        case Handle::Release:
+            setParameter (ids::layerRelease (layer), juce::jlimit (0.1f, 10000.0f, duration - timeMs));
+            break;
+        default:
+            break;
+    }
+
+    repaint();
+}
+
+void LayerEnvelopeComponent::mouseDown (const juce::MouseEvent& event)
+{
+    const auto preview = processor.getWaveformPreview (layer);
+    const auto geometry = getGeometry (preview.loaded ? (float) preview.durationMs : 1000.0f);
+
+    if (event.mods.isPopupMenu())
+    {
+        if (geometry.plot.contains (event.position))
+        {
+            Segment segment = Segment::Decay;
+            juce::Point<float> circlePos = event.position;
+            juce::String title;
+            resolveCircleForContext (event.position, geometry, segment, circlePos, title);
+            showFlCurveMenu (segment, circlePos, title);
+        }
+        return;
+    }
+
+    endGesture();
+
+    if (zoomFactor > 1.01f && overviewBarBounds.contains (event.position))
+    {
+        activeHandle = Handle::OverviewPan;
+        applyDrag (event.position);
+        return;
+    }
+
+    if ((event.mods.isMiddleButtonDown() || event.mods.isAltDown())
+        && zoomFactor > 1.01f && geometry.plot.contains (event.position))
+    {
+        activeHandle = Handle::Pan;
+        dragStartX = event.position.x;
+        dragStartViewStart = viewStartNorm;
+        return;
+    }
+
+    const Handle bestHandle = hitTestHandle (event.position, geometry);
+    if (bestHandle != Handle::None)
+    {
+        dragStartX = event.position.x;
+        dragStartY = event.position.y;
+        dragStartViewStart = viewStartNorm;
+        if (bestHandle == Handle::TensionAttack) dragStartTension = pAttackTension->load();
+        else if (bestHandle == Handle::TensionDecay) dragStartTension = pDecayTension->load();
+        else if (bestHandle == Handle::TensionRelease) dragStartTension = pReleaseTension->load();
+        beginGesture (bestHandle);
+    }
+}
+
+void LayerEnvelopeComponent::mouseDrag (const juce::MouseEvent& event)
+{
+    if (activeHandle != Handle::None)
+        applyDrag (event.position);
+}
+
+void LayerEnvelopeComponent::mouseUp (const juce::MouseEvent&)
+{
+    if (activeHandle == Handle::Pan || activeHandle == Handle::OverviewPan)
+    {
+        activeHandle = Handle::None;
+        return;
+    }
+    endGesture();
+}
+
+void LayerEnvelopeComponent::mouseDoubleClick (const juce::MouseEvent& event)
+{
+    const auto preview = processor.getWaveformPreview (layer);
+    const auto geometry = getGeometry (preview.loaded ? (float) preview.durationMs : 1000.0f);
+    const Handle hit = hitTestHandle (event.position, geometry);
+    if (hit == Handle::TensionAttack) setParameter (ids::layerAttackTension (layer), 0.0f);
+    else if (hit == Handle::TensionDecay) setParameter (ids::layerDecayTension (layer), 0.0f);
+    else if (hit == Handle::TensionRelease) setParameter (ids::layerReleaseTension (layer), 0.0f);
+}
+
+void LayerEnvelopeComponent::mouseWheelMove (const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
+{
+    const auto preview = processor.getWaveformPreview (layer);
+    const auto geometry = getGeometry (preview.loaded ? (float) preview.durationMs : 1000.0f);
+    if (! geometry.plot.contains (event.position))
+    {
+        juce::Component::mouseWheelMove (event, wheel);
+        return;
+    }
+
+    const float span = 1.0f / juce::jmax (1.0f, zoomFactor);
+    if (event.mods.isShiftDown() || std::abs (wheel.deltaX) > std::abs (wheel.deltaY))
+    {
+        const float delta = std::abs (wheel.deltaX) > std::abs (wheel.deltaY) ? -wheel.deltaX : -wheel.deltaY;
+        clampViewport (viewStartNorm + delta * span * 0.35f, zoomFactor);
+        resized();
+        repaint();
+        return;
+    }
+
+    if (std::abs (wheel.deltaY) > 0.0001f)
+    {
+        const float anchorNorm = plotXToNorm (event.position.x, geometry.plot);
+        const float factor = wheel.deltaY > 0.0f ? 1.35f : (1.0f / 1.35f);
+        zoomAroundNormalized (anchorNorm, factor);
+        resized();
+        repaint();
+    }
+}
