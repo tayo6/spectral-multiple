@@ -575,6 +575,19 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     setupToggle (freezeBtn, "Freeze", ids::freeze, freezeAtt);
     setupToggle (holdBtn, "Hold", ids::hold, holdAtt);
 
+    preRollSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    preRollSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 42, 16);
+    preRollSlider.setColour (juce::Slider::trackColourId, kAbletonOrange);
+    preRollSlider.setColour (juce::Slider::backgroundColourId, juce::Colour (0xff555555));
+    preRollSlider.setColour (juce::Slider::thumbColourId, kTextLight);
+    preRollSlider.setColour (juce::Slider::textBoxTextColourId, kTextDark);
+    preRollSlider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour (0xffb4b4b4));
+    preRollSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colour (0xff555555));
+    preRollSlider.setTooltip ("PRE lead: start PRE samples this many milliseconds before the aligned MAIN samples");
+    preRollSlider.textFromValueFunction = [] (double value) { return juce::String (value, 0) + " ms"; };
+    addAndMakeVisible (preRollSlider);
+    preRollAtt = std::make_unique<SliderAtt> (proc.apvts, ids::preRollMs, preRollSlider);
+
     resetBtn.setButtonText ("Reset");
     resetBtn.onClick = [this] { proc.requestReset(); };
     addAndMakeVisible (resetBtn);
@@ -829,6 +842,10 @@ void WaveLensEditor::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0xffdcdcdc));
     g.setFont (juce::Font (10.5f));
     g.drawText ("SIX-LAYER TRANSIENT SAMPLER", 96, 6, 240, 20, juce::Justification::centredLeft);
+    g.setColour (kTextLight.withAlpha (0.9f));
+    g.setFont (juce::Font (9.5f, juce::Font::bold));
+    g.drawText ("PRE LEAD", preRollSlider.getX() - 62, preRollSlider.getY(), 58, preRollSlider.getHeight(),
+                juce::Justification::centredRight);
 
     auto drawDeviceFrame = [&] (juce::Rectangle<int> area, juce::Rectangle<int> hdr, const juce::String& title)
     {
@@ -895,6 +912,8 @@ void WaveLensEditor::resized()
     holdBtn.setBounds (topBar.removeFromRight (56));
     topBar.removeFromRight (4);
     freezeBtn.setBounds (topBar.removeFromRight (56));
+    topBar.removeFromRight (8);
+    preRollSlider.setBounds (topBar.removeFromRight (120).withHeight (22));
 
     area.removeFromTop (5);
     drumRackDeviceArea = area.removeFromLeft (juce::jmax (210, juce::roundToInt ((float) area.getWidth() * 0.25f)));
