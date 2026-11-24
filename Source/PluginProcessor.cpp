@@ -257,6 +257,7 @@ void WaveLensProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     sr = sampleRate;
     layerEngine.prepareToPlay (sampleRate, samplesPerBlock);
+    layerEngine.setPreRollMilliseconds (pPreRollMs->load (std::memory_order_relaxed));
     triggerBuffer.setSize (2, juce::jmax (1, samplesPerBlock), false, true, false);
     setLatencySamples (juce::jmax (1, juce::roundToInt (sampleRate * LayeredSampleEngine::kMaximumPreRollMilliseconds * 0.001)));
 
@@ -506,6 +507,7 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         layerEngine.setLayerParameters (layer, params);
     }
 
+    layerEngine.setPreRollMilliseconds (pPreRollMs->load (relaxed));
     layerEngine.setTriggerMode (juce::roundToInt (pTriggerMode->load (relaxed)),
                                 pThreshold->load (relaxed));
     layerEngine.processBlock (triggerBuffer, mainOutput, layerOutputPointers, midi);
