@@ -42,47 +42,6 @@ namespace
         const float db = 20.0f * std::log10 (juce::jmax (linear, 1.0e-6f));
         return db <= floorDb ? juce::String ("-inf dB") : juce::String (db, 1) + " dB";
     }
-
-    float applyTension (float u, float tension) noexcept
-    {
-        const float t = juce::jlimit (0.0f, 1.0f, u);
-        const float ten = juce::jlimit (-1.0f, 1.0f, tension);
-        if (std::abs (ten) < 1.0e-4f) return t;
-        const float exp = std::pow (2.0f, std::abs (ten) * 3.0f);
-        return ten >= 0.0f ? 1.0f - std::pow (1.0f - t, exp) : std::pow (t, exp);
-    }
-
-    float evalFlSegment (float progress, float y0, float y1, int mode, float tension) noexcept
-    {
-        const float t = juce::jlimit (0.0f, 1.0f, progress);
-        const float ten = juce::jlimit (-1.0f, 1.0f, tension);
-        const int m = juce::jlimit (0, 7, mode);
-        const float dirTen = y1 >= y0 ? ten : -ten;
-        float frac = t;
-        switch (m)
-        {
-            case 0: frac = t >= 1.0f ? 1.0f : 0.0f; break;
-            case 1: { const float s = applyTension (t, dirTen); frac = s * s * (3.0f - 2.0f * s); break; }
-            case 2: frac = applyTension (t, dirTen); break;
-            case 3: { const float hs = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * t); frac = applyTension (hs, dirTen); break; }
-            case 4: { const int steps = juce::jmax (2, juce::roundToInt (2.0f + (ten + 1.0f) * 6.0f)); frac = t >= 1.0f ? 1.0f : std::floor (t * (float) steps) / (float) steps; break; }
-            case 5: {
-                const int steps = juce::jmax (2, juce::roundToInt (2.0f + (ten + 1.0f) * 6.0f));
-                if (t >= 1.0f) frac = 1.0f;
-                else {
-                    const float sc = t * (float) steps;
-                    const int idx = (int) std::floor (sc);
-                    const float f = sc - (float) idx;
-                    frac = ((float) idx + f * f * (3.0f - 2.0f * f)) / (float) steps;
-                }
-                break;
-            }
-            case 6: { const int cyc = juce::jmax (1, juce::roundToInt (1.0f + (ten + 1.0f) * 5.0f)); frac = t >= 1.0f ? 1.0f : (std::fmod (t * (float) cyc, 1.0f) < 0.5f ? 0.0f : 1.0f); break; }
-            case 7: { const int cyc = juce::jmax (1, juce::roundToInt (1.0f + (ten + 1.0f) * 5.0f)); frac = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * (float) (2 * cyc + 1) * t)); break; }
-            default: frac = applyTension (t, dirTen); break;
-        }
-        return y0 + (y1 - y0) * frac;
-    }
 }
 
 //==============================================================================
@@ -411,15 +370,32 @@ void LayerOverlayView::paint (juce::Graphics& g)
         const float visX1 = juce::jmin (plot.getRight(), x1);
         const int steps = juce::jlimit (48, 420, juce::roundToInt ((visX1 - visX0) * 1.5f));
 
-        const double sum = juce::jmax (0.1, (double) attMs) + juce::jmax (0.0, (double) holdMs)
-                           + juce::jmax (0.1, (double) decMs) + juce::jmax (0.1, (double) relMs);
-        const double sc = sum > trimmedMs ? trimmedMs / sum : 1.0;
-        const float aEnd = (float) (attMs * sc);
-        const float hEnd = aEnd + (float) (holdMs * sc);
-        const float dEnd = hEnd + (float) (decMs * sc);
-        const float rStart = juce::jmax (dEnd, (float) trimmedMs - (float) (relMs * sc));
-        const float effRel = juce::jmax (0.1f, (float) trimmedMs - rStart);
+        LayeredSampleEngine::LayerParameters lp;
+        lp.gain = gainScale;
+        lp.pitchSemitones = pitch;
+        lp.attackMs = attMs;
+        lp.holdMs = holdMs;
+        lp.decayMs = decMs;
+        lp.sustain = sus;
+        lp.releaseMs = relMs;
+        lp.attackCurve = attCurve;
+        lp.decayCurve = decCurve;
+        lp.releaseCurve = relCurve;
+        lp.attackTension = attTen;
+        lp.decayTension = decTen;
+        lp.releaseTension = relTen;
+        lp.envEnabled = envOn;
+        lp.reverse = reversed;
+        lp.trimStart = trimStart;
+        lp.trimEnd = trimEnd;
+        lp.fadeInMs = fadeInMs;
+        lp.fadeOutMs = fadeOutMs;
 
+        const float totalPlayMs = (float) playbackMs;
+        const auto sched = LayeredSampleEngine::computeEnvelopeSchedule (lp, totalPlayMs);
+
+        std::array<float, 422> lowerPx {};
+        std::array<float, 422> lowerYs {};
         juce::Path area, upper, lower;
         for (int s = 0; s <= steps; ++s)
         {
@@ -429,36 +405,22 @@ void LayerOverlayView::paint (juce::Graphics& g)
             const int idx = juce::jlimit (0, LayeredSampleEngine::kPreviewPoints - 1,
                 juce::roundToInt (posInWave * (float) (LayeredSampleEngine::kPreviewPoints - 1)));
 
-            const float elapsedMs = u * (float) trimmedMs;
-            const float remainingMs = (1.0f - u) * (float) trimmedMs;
+            const float elapsedMs = u * totalPlayMs;
+            const float remainingMs = (1.0f - u) * totalPlayMs;
             const float fadeInG = fadeInMs > 0.5f ? juce::jlimit (0.0f, 1.0f, elapsedMs / fadeInMs) : 1.0f;
             const float fadeOutG = fadeOutMs > 0.5f ? juce::jlimit (0.0f, 1.0f, remainingMs / fadeOutMs) : 1.0f;
-            float flEnv = 1.0f;
-            if (envOn)
-            {
-                if (elapsedMs < aEnd) flEnv = evalFlSegment (elapsedMs / juce::jmax (0.05f, aEnd), 0.0f, 1.0f, attCurve, attTen);
-                else if (elapsedMs < hEnd) flEnv = 1.0f;
-                else if (elapsedMs < dEnd) flEnv = evalFlSegment ((elapsedMs - hEnd) / juce::jmax (0.05f, dEnd - hEnd), 1.0f, sus, decCurve, decTen);
-                else if (elapsedMs < rStart) flEnv = sus;
-                else flEnv = evalFlSegment ((elapsedMs - rStart) / effRel, sus, 0.0f, relCurve, relTen);
-            }
+            const float flEnv = LayeredSampleEngine::evaluateCompleteEnvelopeAtMs (lp, sched, elapsedMs);
             const float env = gainScale * fadeInG * fadeOutG * flEnv;
             const float top = centre - juce::jlimit (-1.0f, 1.0f, preview.maximum[(size_t) idx] * env) * halfHeight;
             const float bot = centre - juce::jlimit (-1.0f, 1.0f, preview.minimum[(size_t) idx] * env) * halfHeight;
+            lowerPx[(size_t) s] = px;
+            lowerYs[(size_t) s] = bot;
 
             if (s == 0) { area.startNewSubPath (px, top); upper.startNewSubPath (px, top); lower.startNewSubPath (px, bot); }
             else        { area.lineTo (px, top); upper.lineTo (px, top); lower.lineTo (px, bot); }
         }
         for (int s = steps; s >= 0; --s)
-        {
-            const float px = visX0 + ((float) s / (float) steps) * (visX1 - visX0);
-            const float u = juce::jlimit (0.0f, 1.0f, (xToNorm (px, plotX, plotW) - startNorm) / juce::jmax (1.0e-6f, spanNorm));
-            const float posInWave = reversed ? (trimEnd - u * (trimEnd - trimStart)) : (trimStart + u * (trimEnd - trimStart));
-            const int idx = juce::jlimit (0, LayeredSampleEngine::kPreviewPoints - 1,
-                juce::roundToInt (posInWave * (float) (LayeredSampleEngine::kPreviewPoints - 1)));
-            const float bot = centre - juce::jlimit (-1.0f, 1.0f, preview.minimum[(size_t) idx] * gainScale) * halfHeight;
-            area.lineTo (px, bot);
-        }
+            area.lineTo (lowerPx[(size_t) s], lowerYs[(size_t) s]);
         area.closeSubPath();
 
         const float alpha = ! audible ? 0.16f : focused ? 1.0f : 0.58f;
@@ -796,8 +758,22 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     triggerBtn.setButtonText ("TRIGGER");
     triggerBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff242233));
     triggerBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffeef0ff));
-    triggerBtn.onClick = [this] { proc.requestTriggerAll(); };
+    triggerBtn.onClick = [this] { proc.requestTrigger(); };
     addAndMakeVisible (triggerBtn);
+
+    preLeadSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    preLeadSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 52, 18);
+    preLeadSlider.setColour (juce::Slider::trackColourId, juce::Colour (0xff8b7cff));
+    preLeadSlider.setColour (juce::Slider::backgroundColourId, juce::Colour (0xff262438));
+    preLeadSlider.setColour (juce::Slider::thumbColourId, juce::Colour (0xffd5cbff));
+    preLeadSlider.setColour (juce::Slider::textBoxTextColourId, kTextLight);
+    preLeadSlider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour (0xff12111a));
+    preLeadSlider.setColour (juce::Slider::textBoxOutlineColourId, kBorderDark);
+    preLeadSlider.setTooltip ("PRE lead offset before dry transient (0 ms to 100 ms)");
+    preLeadSlider.textFromValueFunction = [] (double v) { return juce::String (v, 1) + " ms"; };
+    addAndMakeVisible (preLeadSlider);
+    preLeadAtt = std::make_unique<SliderAtt> (proc.apvts, ids::preRollMs, preLeadSlider);
+    preLeadSlider.updateText();
 
     gridModeBtn.setButtonText ("Grid");
     gridModeBtn.onClick = [this] { overlay.setGridMode (true); updateViewVisibility(); };
@@ -922,7 +898,7 @@ void WaveLensEditor::setupCombo (juce::ComboBox& box, const char* paramId, std::
     att = std::make_unique<ComboAtt> (proc.apvts, paramId, box);
 }
 
-void WaveLensEditor::setupToggle (juce::TextButton& b, const juce::String& text, const char* paramId,
+void WaveLensEditor::setupToggle (juce::TextButton& b, const juce::String& text, const juce::String& paramId,
                                   std::unique_ptr<ButtonAtt>& att)
 {
     b.setButtonText (text);
@@ -1029,6 +1005,7 @@ void WaveLensEditor::updateViewVisibility()
 
 void WaveLensEditor::timerCallback()
 {
+    proc.collectSampleGarbage();
     updateEnabledStates();
     repaint (dividerArea);
 }
@@ -1052,8 +1029,10 @@ void WaveLensEditor::paint (juce::Graphics& g)
 
     g.setColour (kTextLight);
     g.setFont (juce::Font (11.0f));
+    const int bpmX = bpmDownBtn.getRight() + 2;
+    const int bpmW = juce::jmax (36, bpmUpBtn.getX() - bpmX - 2);
     g.drawText (juce::String ((int) bpm) + " BPM",
-                topHeaderArea.withTrimmedRight (68).removeFromRight (84),
+                bpmX, topHeaderArea.getY(), bpmW, topHeaderArea.getHeight(),
                 juce::Justification::centred);
 
     // Center Divider Bar
@@ -1066,12 +1045,18 @@ void WaveLensEditor::paint (juce::Graphics& g)
     g.setColour (kTextMuted);
     g.setFont (juce::Font (11.0f));
     g.drawText ("Limiter  " + formatDb (proc.peakNow.load (relaxed)),
-                dividerArea.withTrimmedLeft (14).removeFromLeft (180),
+                dividerArea.getX() + 14, dividerArea.getY(), 120, dividerArea.getHeight(),
                 juce::Justification::centredLeft);
+
+    g.setColour (kSnapbackHdr);
+    g.setFont (juce::Font (10.5f, juce::Font::bold));
+    g.drawText ("PRE", preLeadSlider.getX() - 30, dividerArea.getY(), 28, dividerArea.getHeight(),
+                juce::Justification::centredRight);
 
     // Dual Deck Containers
     auto drawDeck = [&] (juce::Rectangle<int> area, juce::Rectangle<int> hdr,
-                         const juce::String& title, juce::Colour titleCol, int selectedIdx)
+                         const juce::String& title, juce::Colour titleCol, int selectedIdx,
+                         const juce::TextButton& firstRightBtn)
     {
         g.setColour (kDeckBg);
         g.fillRoundedRectangle (area.toFloat(), 5.0f);
@@ -1094,15 +1079,25 @@ void WaveLensEditor::paint (juce::Graphics& g)
 
         const auto sampleName = proc.getSampleName (selectedIdx);
         const int stackNum = (selectedIdx < 3) ? (selectedIdx + 1) : (selectedIdx - 2);
-        const juce::String subtitle = sampleName.isEmpty() ? ("Stack " + juce::String (stackNum) + " (Empty)") : sampleName;
-        g.setColour (kTextMuted);
+        const bool isMissing = proc.isLayerSampleMissing (selectedIdx);
+        juce::String subtitle;
+        if (isMissing)
+            subtitle = "Missing: " + proc.getMissingSampleFileName (selectedIdx);
+        else if (sampleName.isEmpty())
+            subtitle = "Stack " + juce::String (stackNum) + " (Empty)";
+        else
+            subtitle = sampleName;
+
+        const int subX = hdr.getX() + 176;
+        const int subW = juce::jmax (30, firstRightBtn.getX() - subX - 6);
+        g.setColour (isMissing ? juce::Colour (0xffffb86c) : kTextMuted);
         g.setFont (juce::Font (11.0f));
-        g.drawText (subtitle, hdr.getX() + 178, hdr.getY(), juce::jmax (40, hdr.getWidth() - 360), hdr.getHeight(),
+        g.drawText (subtitle, subX, hdr.getY(), subW, hdr.getHeight(),
                     juce::Justification::centredLeft, true);
     };
 
-    drawDeck (snapbackDeckArea, snapbackHeaderArea, "SNAPBACK", kSnapbackHdr, selectedSnapback);
-    drawDeck (transientDeckArea, transientHeaderArea, "TRANSIENT", kTransientHdr, selectedTransient);
+    drawDeck (snapbackDeckArea, snapbackHeaderArea, "SNAPBACK", kSnapbackHdr, selectedSnapback, sbPrevBtn);
+    drawDeck (transientDeckArea, transientHeaderArea, "TRANSIENT", kTransientHdr, selectedTransient, trPrevBtn);
 }
 
 void WaveLensEditor::resized()
@@ -1120,7 +1115,7 @@ void WaveLensEditor::resized()
         holdBtn.setBounds (hdr.removeFromLeft (52));
     }
     bpmUpBtn.setBounds (hdr.removeFromRight (22));
-    hdr.removeFromRight (44);
+    hdr.removeFromRight (54);
     bpmDownBtn.setBounds (hdr.removeFromRight (22));
 
     const int bodyH = area.getHeight();
@@ -1155,7 +1150,13 @@ void WaveLensEditor::resized()
     }
 
     // Divider bar controls
-    triggerBtn.setBounds (dividerArea.getCentreX() - 58, dividerArea.getY() - 5, 116, 30);
+    const int trigX = dividerArea.getCentreX() - 58;
+    triggerBtn.setBounds (trigX, dividerArea.getY() - 5, 116, 30);
+
+    const int preX = dividerArea.getX() + 172;
+    const int preMaxW = juce::jmax (110, trigX - preX - 10);
+    preLeadSlider.setBounds (preX, dividerArea.getY() + 5, juce::jmin (164, preMaxW), 24);
+
     auto divRight = dividerArea.reduced (12, 6);
     outputBtn.setBounds (divRight.removeFromRight (58));
     divRight.removeFromRight (6);

@@ -37,6 +37,14 @@ public:
         bool loaded = false;
     };
 
+    struct VoiceTailSnapshot
+    {
+        bool active = false;
+        bool inRelease = false;
+        double remainingSeconds = 0.0;
+        double releaseRemainingSeconds = 0.0;
+    };
+
     struct LayerParameters
     {
         float gain = 1.0f;
@@ -67,8 +75,23 @@ public:
         float fadeOutMs = 0.0f;
     };
 
+    struct EnvelopeSchedule
+    {
+        float attackEndMs = 210.0f;
+        float holdEndMs = 210.0f;
+        float decayEndMs = 520.0f;
+        float releaseStartMs = 520.0f;
+        float releaseMs = 480.0f;
+    };
+
+    static EnvelopeSchedule computeEnvelopeSchedule (const LayerParameters& p, float totalDurationMs) noexcept;
+    static float envelopeLevelAtMs (const LayerParameters& p, const EnvelopeSchedule& sched, float ageMs) noexcept;
+    static float evaluateCompleteEnvelopeAtMs (const LayerParameters& p, const EnvelopeSchedule& sched, float ageMs) noexcept;
+    static float applyPowerTension (float u, float tension) noexcept;
+    static float flSegmentLevel (float progress, float y0, float y1, int mode, float tension) noexcept;
+
     LayeredSampleEngine();
-    ~LayeredSampleEngine() = default;
+    ~LayeredSampleEngine();
 
     void prepareToPlay (double sampleRate, int maximumBlockSize);
     void setTriggerMode (int mode, float threshold) noexcept;
@@ -79,6 +102,8 @@ public:
     juce::String getSampleName (int layer) const;
     WaveformPreview getWaveformPreview (int layer) const noexcept;
     void requestPreview (int layer) noexcept;
+    void requestTrigger() noexcept;
+    void collectRetiredSamples();
     int getLoadedMask() const noexcept;
 
     void setLayerParameters (int layer, const LayerParameters& parameters) noexcept;
@@ -89,9 +114,13 @@ public:
                        const juce::MidiBuffer& midi,
                        bool manualTrigger = false) noexcept;
 
-    int getMaximumDelaySamples() const noexcept { return maximumDelaySamples; }
-    int getPreRollSamples() const noexcept { return preRollSamples; }
-    double getSampleRate() const noexcept { return currentSampleRate; }
+    void processBypassed() noexcept;
+
+    int getMaximumDelaySamples() const noexcept { return maximumDelaySamples.load (std::memory_order_acquire); }
+    int getPreRollSamples() const noexcept { return preRollSamples.load (std::memory_order_acquire); }
+    double getSampleRate() const noexcept { return currentSampleRate.load (std::memory_order_acquire); }
+    double getTailLengthSeconds() const noexcept;
+    VoiceTailSnapshot getVoiceTailSnapshot (int layer, int voiceIndex) const noexcept;
     int getRetiredSampleCount (int layer);
     const juce::AudioBuffer<float>& getLayerBuffer (int layer) const noexcept;
 
@@ -103,7 +132,7 @@ private:
         juce::String displayName;
         WaveformPreview preview;
         std::atomic<int> activeVoices { 0 };
-        uint64_t retiredAfterBlock = 0;
+        uint64_t retiredAfterStartedBlock = 0;
     };
 
     struct Voice
@@ -117,25 +146,26 @@ private:
         bool active = false;
     };
 
-    struct EnvelopeSchedule
+    struct VoiceTailState
     {
-        float attackEndMs = 210.0f;
-        float holdEndMs = 210.0f;
-        float decayEndMs = 520.0f;
-        float releaseStartMs = 520.0f;
-        float releaseMs = 480.0f;
+        std::atomic<bool> active { false };
+        std::atomic<bool> inRelease { false };
+        std::atomic<double> remainingSeconds { 0.0 };
+        std::atomic<double> releaseRemainingSeconds { 0.0 };
     };
 
+    struct AudioBlockEpochGuard;
+
     static void assignVoiceSample (Voice& voice, SampleData* nextSample) noexcept;
+    static void resetVoice (Voice& voice) noexcept;
+    void publishVoiceTailState (int layer, int voiceIndex, bool active, bool inRelease,
+                                double remainingSeconds, double releaseRemainingSeconds) noexcept;
     void reclaimRetiredSamplesLocked();
+    double computeActiveTailSeconds() noexcept;
     bool isLayerAudible (int layer) const noexcept;
     void triggerAllLayers() noexcept;
     void startLayer (int layer, bool ignoreTimingShift = false) noexcept;
     float renderLayerSample (int layer, float& left, float& right) noexcept;
-    static EnvelopeSchedule computeEnvelopeSchedule (const LayerParameters& p, float totalDurationMs) noexcept;
-    static float envelopeLevelAtMs (const LayerParameters& p, const EnvelopeSchedule& sched, float ageMs) noexcept;
-    static float applyPowerTension (float u, float tension) noexcept;
-    static float flSegmentLevel (float progress, float y0, float y1, int mode, float tension) noexcept;
 
     juce::AudioFormatManager formatManager;
     mutable juce::CriticalSection sampleStateLock;
@@ -145,9 +175,13 @@ private:
     std::array<std::unique_ptr<SampleData>, kNumLayers> activeSamples;
     std::array<std::vector<std::unique_ptr<SampleData>>, kNumLayers> retiredSamples;
     std::array<juce::String, kNumLayers> sampleNames;
+    std::atomic<uint64_t> startedAudioBlocks { 0 };
     std::atomic<uint64_t> completedAudioBlocks { 0 };
+    std::atomic<bool> triggerRequested { false };
+    std::atomic<double> tailLengthSeconds { 0.0 };
     std::array<LayerParameters, kNumLayers> parameters {};
     std::array<std::array<Voice, kVoicesPerLayer>, kNumLayers> voices {};
+    std::array<std::array<VoiceTailState, kVoicesPerLayer>, kNumLayers> voiceTailStates {};
     std::array<int, kNumLayers> nextVoiceToSteal {};
     std::array<juce::AudioBuffer<float>, kNumLayers> layerBuffers;
     std::array<juce::dsp::LinkwitzRileyFilter<float>, kNumLayers> layerHighPass;
@@ -160,16 +194,16 @@ private:
 
     std::vector<float> delayLeft, delayRight;
     int delayWritePosition = 0;
-    int preRollSamples = 0;
-    int maximumDelaySamples = 0;
+    std::atomic<int> preRollSamples { 0 };
+    std::atomic<int> maximumDelaySamples { 0 };
     int refractorySamples = 0;
     int refractoryRemaining = 0;
 
-    double currentSampleRate = 44100.0;
-    double currentPreRollMs = kDefaultPreRollMilliseconds;
-    float threshold = 0.03f;
+    std::atomic<double> currentSampleRate { 44100.0 };
+    std::atomic<double> currentPreRollMs { kDefaultPreRollMilliseconds };
+    std::atomic<float> threshold { 0.03f };
     float previousInputLevel = 0.0f;
-    int triggerMode = 0; // 0 = Audio, 1 = MIDI, 2 = Both
+    std::atomic<int> triggerMode { 0 }; // 0 = Audio, 1 = MIDI, 2 = Both
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LayeredSampleEngine)
 };

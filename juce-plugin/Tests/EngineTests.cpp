@@ -1,5 +1,7 @@
 #include "LayeredSampleEngine.h"
+#include "StateMigration.h"
 
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -9,6 +11,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -796,6 +799,401 @@ void testIndependentAudioRouting (const fs::path& dir)
     check (std::abs (outSolo.masterL[(size_t) dMax] - markers[4]) < 1.0e-4f,
            "P3-Solo: Master receives only soloed layer");
 }
+
+void testTailLengthSeconds (const fs::path& dir)
+{
+    LayeredSampleEngine engine;
+    engine.prepareToPlay (44100.0, 256);
+    check (engine.getTailLengthSeconds() == 0.0, "Tail: initially zero before triggering");
+
+    std::vector<float> flat (22050, 0.5f); // 500 ms @ 44.1 kHz
+    const auto wav = writeWavFileFloat32 (dir / "tail.wav", 44100.0, { flat, flat });
+    juce::String err;
+    check (engine.loadSampleFromFile (3, juce::File (wav), err), "Tail: load wav");
+
+    LayeredSampleEngine::LayerParameters p;
+    p.pitchSemitones = 12.0f; // halves playback duration (500ms -> 250ms)
+    p.trimStart = 0.2f;
+    p.trimEnd = 0.8f;         // 60% of sample -> 150ms pitched
+    p.delayShiftMs = 20.0f;   // 100ms lookahead + 20ms shift = 120ms delay -> total ~270ms
+    p.envEnabled = true;
+    p.releaseMs = 40.0f;
+    engine.setLayerParameters (3, p);
+    engine.setTriggerMode (1, 0.05f);
+    engine.setPreRollMilliseconds (50.0f);
+
+    engine.requestTrigger();
+    std::vector<float> zero (256, 0.0f);
+    runBlocks (engine, 256, 256, zero, zero, {});
+
+    const double tailStart = engine.getTailLengthSeconds();
+    check (tailStart > 0.24 && tailStart < 0.30,
+           "Tail: accounts for delay, trim, pitch, and release immediately after trigger",
+           "tail=" + std::to_string (tailStart));
+
+    // With negative Pogo bend, effective playback stretches longer than unbent duration
+    LayeredSampleEngine enginePogo;
+    enginePogo.prepareToPlay (44100.0, 256);
+    enginePogo.loadSampleFromFile (3, juce::File (wav), err);
+    p.pogo = -0.8f;
+    enginePogo.setLayerParameters (3, p);
+    enginePogo.requestTrigger();
+    runBlocks (enginePogo, 256, 256, zero, zero, {});
+    check (enginePogo.getTailLengthSeconds() > tailStart,
+           "Tail: negative Pogo bend extends predicted tail duration");
+
+    // Advance well past end of playback -> tail must decay smoothly to exact zero
+    std::vector<float> longZero (22050, 0.0f);
+    runBlocks (engine, 22050, 256, longZero, longZero, {});
+    check (engine.getTailLengthSeconds() == 0.0,
+           "Tail: returns to zero after playback + release completes",
+           "tail=" + std::to_string (engine.getTailLengthSeconds()));
+}
+
+void testEnvelopeScheduleAndCurveParity (const fs::path& dir)
+{
+    // Both a short 25 ms sample (forcing proportional scaling) and a longer 400 ms sample
+    const int lengths[] = { 1103, 17640 };
+    const float pitches[] = { 0.0f, 7.0f };
+
+    for (int li = 0; li < 2; ++li)
+    {
+        const int len = lengths[li];
+        std::vector<float> unity (static_cast<size_t> (len), 1.0f);
+        const auto wav = writeWavFileFloat32 (dir / ("env_parity_" + std::to_string (len) + ".wav"),
+                                              44100.0, { unity, unity });
+
+        for (int mode = 0; mode <= 7; ++mode)
+        {
+            LayeredSampleEngine engine;
+            engine.prepareToPlay (44100.0, 256);
+            engine.setTriggerMode (1, 0.05f);
+            engine.setPreRollMilliseconds (0.0f);
+            juce::String err;
+            check (engine.loadSampleFromFile (3, juce::File (wav), err), "EnvParity: load sample");
+
+            LayeredSampleEngine::LayerParameters p;
+            p.envEnabled = true;
+            p.pitchSemitones = pitches[li];
+            p.trimStart = 0.10f;
+            p.trimEnd = 0.90f;
+            p.attackMs = 60.0f;
+            p.holdMs = 20.0f;
+            p.decayMs = 80.0f;
+            p.sustain = 0.62f;
+            p.releaseMs = 70.0f;
+            p.attackCurve = mode;
+            p.decayCurve = mode;
+            p.releaseCurve = mode;
+            p.attackTension = 0.65f;
+            p.decayTension = -0.55f;
+            p.releaseTension = -0.75f;
+            engine.setLayerParameters (3, p);
+
+            const int dMax = engine.getMaximumDelaySamples();
+            const int trimStartIdx = (int) std::floor ((double) p.trimStart * (double) len);
+            const int trimEndIdx = (int) std::ceil ((double) p.trimEnd * (double) len);
+            const int trimmedLen = trimEndIdx - trimStartIdx;
+            const double speed = std::pow (2.0, (double) p.pitchSemitones / 12.0);
+            const float totalDurationMs = (float) (((double) trimmedLen / speed) / 44100.0 * 1000.0);
+            const auto sched = LayeredSampleEngine::computeEnvelopeSchedule (p, totalDurationMs);
+
+            const int totalSim = dMax + (int) std::ceil ((double) trimmedLen / speed) + 512;
+            std::vector<float> zero ((size_t) totalSim, 0.0f);
+            auto out = runBlocks (engine, totalSim, 256, zero, zero,
+                                  { { 0, juce::MidiMessage::noteOn (1, 60, 127) } });
+
+            double maxDiff = 0.0;
+            const int numPlayed = (int) std::floor ((double) (trimmedLen - 1) / speed);
+            for (int k = 1; k < numPlayed - 1; ++k)
+            {
+                const float ageMs = (float) ((double) k / 44100.0 * 1000.0);
+                // Ignore the 1-sample boundary tick where release latches discrete sample remainingMs
+                if (std::abs (ageMs - sched.releaseStartMs) < 0.06f)
+                    continue;
+                const float expected = LayeredSampleEngine::evaluateCompleteEnvelopeAtMs (p, sched, ageMs);
+                const float actual = out.busL[3][(size_t) (dMax + k)];
+                maxDiff = std::max (maxDiff, (double) std::abs (expected - actual));
+            }
+            check (maxDiff < 0.025,
+                   "EnvParity: DSP output matches shared schedule+curve math for mode " + std::to_string (mode),
+                   "len=" + std::to_string (len) + " maxDiff=" + std::to_string (maxDiff));
+        }
+    }
+}
+
+void testStateVersionMigration()
+{
+    using wavelens::state::migratePreDelayMsForVersion;
+
+    // v1 default (-50ms PRE delay, 50ms ignored preRoll) -> net -50ms means new delay = 0ms
+    check (std::abs (migratePreDelayMsForVersion (1, 0, 3, -50.0f, 50.0f) - 0.0f) < 1.0e-5f,
+           "Migration: v1 default -50ms PRE shifts to 0ms under 50ms preRoll");
+
+    // v1 custom (-35ms PRE delay, 50ms preRoll) -> +15ms shift so -50 + 15 = -35ms
+    check (std::abs (migratePreDelayMsForVersion (1, 1, 3, -35.0f, 50.0f) - 15.0f) < 1.0e-5f,
+           "Migration: v1 custom -35ms PRE preserves net timing (+15ms)");
+
+    // v1 custom preRoll (80ms preRoll, -50ms delay) -> +30ms shift so -80 + 30 = -50ms
+    check (std::abs (migratePreDelayMsForVersion (1, 2, 3, -50.0f, 80.0f) - 30.0f) < 1.0e-5f,
+           "Migration: v1 respects restored preRollMs (+80ms)");
+
+    // v1 MAIN layer (index 3..5) must stay untouched
+    check (std::abs (migratePreDelayMsForVersion (1, 3, 3, 12.5f, 50.0f) - 12.5f) < 1.0e-5f,
+           "Migration: v1 MAIN layer untouched");
+
+    // v2 state must never be shifted again
+    check (std::abs (migratePreDelayMsForVersion (2, 0, 3, -20.0f, 50.0f) + 20.0f) < 1.0e-5f,
+           "Migration: v2 state not double-migrated");
+}
+
+void testChunkedOversizedBlockMonitoring (const fs::path& dir)
+{
+    LayeredSampleEngine engine;
+    const int hostPrepareChunk = 256;
+    const int oversizedHostBlock = 2048;
+    engine.prepareToPlay (44100.0, hostPrepareChunk);
+    engine.setTriggerMode (1, 0.05f);
+    engine.setPreRollMilliseconds (0.0f);
+
+    std::vector<float> pulse (2000, 0.45f);
+    const auto wav = writeWavFileFloat32 (dir / "oversized.wav", 44100.0, { pulse, pulse });
+    juce::String err;
+    check (engine.loadSampleFromFile (2, juce::File (wav), err), "OversizedBlock: load layer 2");
+
+    // Mirror WaveLensProcessor's per-chunk processing even when optional layer buses 1..6 are all disabled
+    const int dMax = engine.getMaximumDelaySamples();
+    int capturedNonZeroSamples = 0;
+    const int midiTriggerGlobalPos = 100;
+
+    for (int chunkStart = 0; chunkStart < dMax + oversizedHostBlock; chunkStart += hostPrepareChunk)
+    {
+        const int n = std::min (hostPrepareChunk, dMax + oversizedHostBlock - chunkStart);
+        juce::AudioBuffer<float> inBuf (2, n);
+        juce::AudioBuffer<float> masterBuf (2, n);
+        std::array<juce::AudioBuffer<float>*, LayeredSampleEngine::kNumLayers> disabledBuses {};
+        juce::MidiBuffer midi;
+        if (midiTriggerGlobalPos >= chunkStart && midiTriggerGlobalPos < chunkStart + n)
+            midi.addEvent (juce::MidiMessage::noteOn (1, 60, 127), midiTriggerGlobalPos - chunkStart);
+
+        engine.processBlock (inBuf, masterBuf, disabledBuses, midi, false);
+
+        const auto& monitorBuf = engine.getLayerBuffer (2);
+        for (int s = 0; s < n; ++s)
+            if (std::abs (monitorBuf.getSample (0, s)) > 0.2f)
+                ++capturedNonZeroSamples;
+    }
+
+    check (capturedNonZeroSamples > 1500,
+           "OversizedBlock: per-chunk layer buffer captures full waveform across all chunks even with buses disabled",
+           "captured=" + std::to_string (capturedNonZeroSamples));
+}
+
+void testConcurrentSampleReplacementStress (const fs::path& dir)
+{
+    LayeredSampleEngine engine;
+    engine.prepareToPlay (44100.0, 128);
+    engine.setTriggerMode (2, 0.05f);
+    engine.setPreRollMilliseconds (40.0f);
+
+    std::vector<float> toneA (2205, 0.5f);  // 50 ms
+    std::vector<float> toneB (6615, -0.4f); // 150 ms
+    const auto wavA = writeWavFileFloat32 (dir / "stressA.wav", 44100.0, { toneA, toneA });
+    const auto wavB = writeWavFileFloat32 (dir / "stressB.wav", 44100.0, { toneB, toneB });
+
+    juce::String err;
+    for (int l = 0; l < 6; ++l)
+        engine.loadSampleFromFile (l, juce::File (l % 2 == 0 ? wavA : wavB), err);
+
+    std::atomic<bool> stop { false };
+    std::atomic<int> blocksProcessed { 0 };
+    std::atomic<int> loadsCompleted { 0 };
+
+    std::thread audioThread ([&]
+    {
+        juce::AudioBuffer<float> inBuf (2, 128);
+        juce::AudioBuffer<float> masterBuf (2, 128);
+        std::array<juce::AudioBuffer<float>, 6> lBufs;
+        std::array<juce::AudioBuffer<float>*, 6> lPtrs {};
+        for (int l = 0; l < 6; ++l)
+        {
+            lBufs[(size_t) l].setSize (2, 128);
+            lPtrs[(size_t) l] = &lBufs[(size_t) l];
+        }
+
+        for (int iter = 0; iter < 2400; ++iter)
+        {
+            inBuf.clear();
+            juce::MidiBuffer midi;
+            if (iter % 7 == 0)
+                midi.addEvent (juce::MidiMessage::noteOn (1, 60, 127), (iter * 13) % 128);
+            if (iter % 11 == 0)
+                inBuf.setSample (0, 5, 0.8f);
+
+            engine.processBlock (inBuf, masterBuf, lPtrs, midi, (iter % 19) == 0);
+            blocksProcessed.fetch_add (1, std::memory_order_relaxed);
+        }
+        stop.store (true, std::memory_order_release);
+    });
+
+    std::thread uiThread ([&]
+    {
+        int step = 0;
+        while (! stop.load (std::memory_order_acquire) || step < 300)
+        {
+            const int layer = step % 6;
+            if (step % 5 == 0)
+                engine.clearSample (layer);
+            else
+            {
+                juce::String loadErr;
+                engine.loadSampleFromFile (layer, juce::File ((step % 2 == 0) ? wavA : wavB), loadErr);
+            }
+
+            if (step % 3 == 0)
+                engine.requestTrigger();
+            if (step % 4 == 0)
+                engine.requestPreview (layer);
+
+            (void) engine.getWaveformPreview (layer);
+            (void) engine.getSampleName (layer);
+            (void) engine.getLoadedMask();
+            (void) engine.getTailLengthSeconds();
+            engine.collectRetiredSamples();
+
+            loadsCompleted.fetch_add (1, std::memory_order_relaxed);
+            ++step;
+            if (step >= 500 && stop.load (std::memory_order_acquire))
+                break;
+        }
+    });
+
+    audioThread.join();
+    uiThread.join();
+
+    // Flush active voices completely after concurrent stress and ensure all retired buffers reclaim
+    std::vector<float> zeroLong (24000, 0.0f);
+    runBlocks (engine, 24000, 128, zeroLong, zeroLong, {});
+    engine.collectRetiredSamples();
+
+    int leftoverRetired = 0;
+    for (int l = 0; l < 6; ++l)
+        leftoverRetired += engine.getRetiredSampleCount (l);
+
+    check (blocksProcessed.load() == 2400 && loadsCompleted.load() >= 300 && leftoverRetired == 0,
+           "QSBR-Stress: concurrent audio + UI sample replacement/clear reclaims 100% cleanly",
+           "blocks=" + std::to_string (blocksProcessed.load())
+               + " ops=" + std::to_string (loadsCompleted.load())
+               + " leftover=" + std::to_string (leftoverRetired));
+}
+
+void testVoiceReleaseAndRemainingThreadSafety (const fs::path& dir)
+{
+    LayeredSampleEngine engine;
+    engine.prepareToPlay (44100.0, 256);
+    engine.setTriggerMode (1, 0.05f);
+    engine.setPreRollMilliseconds (50.0f);
+
+    std::vector<float> flat (7938, 0.5f); // 180 ms @ 44.1 kHz
+    const auto wav = writeWavFileFloat32 (dir / "release_track.wav", 44100.0, { flat, flat });
+    juce::String err;
+    check (engine.loadSampleFromFile (3, juce::File (wav), err), "VoiceTail: load wav");
+
+    LayeredSampleEngine::LayerParameters p;
+    p.envEnabled = true;
+    p.attackMs = 20.0f;
+    p.holdMs = 0.0f;
+    p.decayMs = 30.0f;
+    p.sustain = 0.7f;
+    p.releaseMs = 60.0f;
+    engine.setLayerParameters (3, p);
+
+    const auto initSnap = engine.getVoiceTailSnapshot (3, 0);
+    check (! initSnap.active && ! initSnap.inRelease
+        && initSnap.remainingSeconds == 0.0 && initSnap.releaseRemainingSeconds == 0.0,
+           "VoiceTail: initially inactive and zero");
+
+    engine.requestTrigger();
+    std::vector<float> zero256 (256, 0.0f);
+    runBlocks (engine, 256, 256, zero256, zero256, {});
+
+    const auto snapStart = engine.getVoiceTailSnapshot (3, 0);
+    check (snapStart.active && ! snapStart.inRelease,
+           "VoiceTail: active and not yet inRelease while in pre-release delay/attack");
+    check (snapStart.releaseRemainingSeconds > 0.055 && snapStart.releaseRemainingSeconds < 0.065,
+           "VoiceTail: reports scheduled ~60ms release before entering release phase",
+           "rel=" + std::to_string (snapStart.releaseRemainingSeconds));
+    check (std::abs (engine.getTailLengthSeconds() - snapStart.remainingSeconds) < 1.0e-9,
+           "VoiceTail: aggregate getTailLengthSeconds matches max active voice remainingSeconds");
+
+    // Advance 240 ms (100 ms delay + 140 ms playback -> 40 ms remaining, inside 60 ms release)
+    const int advanceSamples = (int) std::llround (0.240 * 44100.0) - 256;
+    std::vector<float> zeroAdv ((size_t) advanceSamples, 0.0f);
+    runBlocks (engine, advanceSamples, 256, zeroAdv, zeroAdv, {});
+
+    const auto snapRel = engine.getVoiceTailSnapshot (3, 0);
+    check (snapRel.active && snapRel.inRelease,
+           "VoiceTail: reports inRelease == true once playback crosses release threshold");
+    check (snapRel.releaseRemainingSeconds > 0.025 && snapRel.releaseRemainingSeconds < 0.050
+        && std::abs (snapRel.remainingSeconds - snapRel.releaseRemainingSeconds) < 1.0e-4,
+           "VoiceTail: during release phase, remainingSeconds tracks release countdown cleanly",
+           "rem=" + std::to_string (snapRel.remainingSeconds) + " rel=" + std::to_string (snapRel.releaseRemainingSeconds));
+
+    // Bypass resets active voices and zeros tail cleanly without lingering tail
+    engine.processBypassed();
+    const auto snapBypass = engine.getVoiceTailSnapshot (3, 0);
+    check (! snapBypass.active && ! snapBypass.inRelease
+        && snapBypass.remainingSeconds == 0.0 && engine.getTailLengthSeconds() == 0.0,
+           "VoiceTail: processBypassed clears voice release state and tail length to zero");
+
+    // Concurrent lock-free stress: audio thread triggering/releasing/bypassing vs host polling tail + snapshots
+    std::atomic<bool> stopPolling { false };
+    std::atomic<bool> sawInvalid { false };
+    std::atomic<int> polls { 0 };
+
+    std::thread pollThread ([&]
+    {
+        while (! stopPolling.load (std::memory_order_acquire))
+        {
+            const double t = engine.getTailLengthSeconds();
+            if (std::isnan (t) || t < 0.0 || t > 5.0)
+                sawInvalid.store (true, std::memory_order_relaxed);
+            for (int l = 0; l < LayeredSampleEngine::kNumLayers; ++l)
+            {
+                for (int v = 0; v < LayeredSampleEngine::kVoicesPerLayer; ++v)
+                {
+                    const auto s = engine.getVoiceTailSnapshot (l, v);
+                    if (std::isnan (s.remainingSeconds) || std::isnan (s.releaseRemainingSeconds)
+                        || s.remainingSeconds < 0.0 || s.releaseRemainingSeconds < 0.0)
+                        sawInvalid.store (true, std::memory_order_relaxed);
+                }
+            }
+            if ((polls.fetch_add (1, std::memory_order_relaxed) % 17) == 0)
+                engine.setPreRollMilliseconds ((float) (10 + (polls.load (std::memory_order_relaxed) % 80)));
+        }
+    });
+
+    juce::AudioBuffer<float> inBuf (2, 128), masterBuf (2, 128);
+    std::array<juce::AudioBuffer<float>*, 6> emptyPtrs {};
+    for (int iter = 0; iter < 1500; ++iter)
+    {
+        inBuf.clear();
+        juce::MidiBuffer midi;
+        if (iter % 12 == 0)
+            midi.addEvent (juce::MidiMessage::noteOn (1, 60, 127), 0);
+        if (iter % 97 == 96)
+            engine.processBypassed();
+        else
+            engine.processBlock (inBuf, masterBuf, emptyPtrs, midi, false);
+    }
+
+    stopPolling.store (true, std::memory_order_release);
+    pollThread.join();
+
+    check (! sawInvalid.load() && polls.load() > 0,
+           "VoiceTail-Concurrency: concurrent audio callback + non-blocking tail/snapshot polling has zero invalid states",
+           "polls=" + std::to_string (polls.load()));
+}
 } // namespace
 
 int main()
@@ -810,12 +1208,18 @@ int main()
     testTriggerModes (tempDir);
     testPreAndMainTimingAccuracy (tempDir);
     testIndependentAudioRouting (tempDir);
+    testTailLengthSeconds (tempDir);
+    testVoiceReleaseAndRemainingThreadSafety (tempDir);
+    testEnvelopeScheduleAndCurveParity (tempDir);
+    testStateVersionMigration();
+    testChunkedOversizedBlockMonitoring (tempDir);
+    testConcurrentSampleReplacementStress (tempDir);
 
     fs::remove_all (tempDir);
 
     if (gFailures == 0)
     {
-        std::cout << "[PASS] All Phase 1-3 C++17 engine, PRE/MAIN timing, and multi-bus routing tests passed.\n";
+        std::cout << "[PASS] All C++17 engine, tail, envelope parity, migration, timing, routing, and concurrency stress tests passed.\n";
         return 0;
     }
 

@@ -110,6 +110,8 @@ public:
     bool loadSampleFile (int layer, const juce::File& file, juce::String& error);
     void clearSample (int layer);
     juce::String getSampleName (int layer) const;
+    bool isLayerSampleMissing (int layer) const noexcept;
+    juce::String getMissingSampleFileName (int layer) const;
     LayeredSampleEngine::WaveformPreview getWaveformPreview (int layer) const noexcept;
     void requestPreview (int layer) noexcept;
 
@@ -127,6 +129,7 @@ public:
     std::atomic<int>  heldFrom { 0 }, heldTo { 0 };
     std::atomic<bool> heldValid { false };
     std::atomic<int>  connectedMask { 0 };
+    std::atomic<int>  missingSampleMask { 0 };
 
     std::atomic<float> peakNow { 0.0f }, rmsNow { 0.0f }, crestNow { 1.0f };
     std::atomic<float> peakHold { 0.0f }, rmsHold { 0.0f }, crestHold { 1.0f };

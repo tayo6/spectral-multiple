@@ -77,8 +77,7 @@ private:
     void beginGesture (Handle);
     void endGesture();
     void setParameter (const juce::String& parameterId, float value);
-    static float applyPowerTension (float u, float tension) noexcept;
-    static float flSegmentLevel (float progress, float y0, float y1, int mode, float tension) noexcept;
+    LayeredSampleEngine::LayerParameters readLayerParameters() const noexcept;
 
     WaveLensProcessor& processor;
     const int layer;
@@ -97,6 +96,7 @@ private:
     std::atomic<float>* pReleaseTension = nullptr;
     std::atomic<float>* pEnvEnabled = nullptr;
     std::atomic<float>* pReverse = nullptr;
+    std::atomic<float>* pPitch = nullptr;
     std::atomic<float>* pTrimStart = nullptr;
     std::atomic<float>* pTrimEnd = nullptr;
     std::atomic<float>* pFadeIn = nullptr;

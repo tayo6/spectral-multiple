@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include "StateMigration.h"
 
 namespace
 {
@@ -440,6 +441,7 @@ void WaveLensProcessor::pushSample (const float* v) noexcept
 void WaveLensProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
+    layerEngine.processBypassed();
 
     const int numSamples = buffer.getNumSamples();
     if (numSamples <= 0)
@@ -540,78 +542,20 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
                                 pThreshold->load (relaxed));
     layerEngine.setPreRollMilliseconds (pPreRollMs->load (relaxed));
 
-    const bool manualTrig = triggerAllRequest.exchange (false, std::memory_order_acq_rel);
     const int maxChunk = juce::jmax (1, triggerBuffer.getNumSamples());
     const int mainOutChannels = mainOutput.getNumChannels();
-
-    for (int chunkStart = 0; chunkStart < totalSamples; chunkStart += maxChunk)
-    {
-        const int chunkSamples = juce::jmin (maxChunk, totalSamples - chunkStart);
-
-        triggerBuffer.copyFrom (0, 0, mainInput, 0, chunkStart, chunkSamples);
-        if (inputChannels > 1)
-            triggerBuffer.copyFrom (1, 0, mainInput, 1, chunkStart, chunkSamples);
-        else
-            triggerBuffer.copyFrom (1, 0, mainInput, 0, chunkStart, chunkSamples);
-
-        float* trigPtrs[2] = { triggerBuffer.getWritePointer (0), triggerBuffer.getWritePointer (1) };
-        juce::AudioBuffer<float> triggerSlice (trigPtrs, 2, chunkSamples);
-
-        float* mainOutPtrs[2] = {
-            mainOutput.getWritePointer (0) + chunkStart,
-            mainOutChannels > 1 ? (mainOutput.getWritePointer (1) + chunkStart) : nullptr
-        };
-        juce::AudioBuffer<float> mainOutputSlice (mainOutPtrs, juce::jmin (2, mainOutChannels), chunkSamples);
-
-        std::array<juce::AudioBuffer<float>, kMaxSignals> sliceLayerBuffers;
-        std::array<juce::AudioBuffer<float>*, kMaxSignals> sliceLayerPointers {};
-        for (int layer = 0; layer < kMaxSignals; ++layer)
-        {
-            if (layerOutputActive[(size_t) layer])
-            {
-                auto& fullBus = layerOutputBuffers[(size_t) layer];
-                const int busCh = juce::jmin (2, fullBus.getNumChannels());
-                float* busPtrs[2] = {
-                    fullBus.getWritePointer (0) + chunkStart,
-                    busCh > 1 ? (fullBus.getWritePointer (1) + chunkStart) : nullptr
-                };
-                sliceLayerBuffers[(size_t) layer].setDataToReferTo (busPtrs, busCh, chunkSamples);
-                sliceLayerPointers[(size_t) layer] = &sliceLayerBuffers[(size_t) layer];
-            }
-        }
-
-        const juce::MidiBuffer* chunkMidi = &midi;
-        if (totalSamples > maxChunk)
-        {
-            sliceMidiBuffer.clear();
-            for (const auto metadata : midi)
-            {
-                const int pos = metadata.samplePosition;
-                if (pos >= chunkStart && pos < chunkStart + chunkSamples)
-                    sliceMidiBuffer.addEvent (metadata.getMessage(), pos - chunkStart);
-            }
-            chunkMidi = &sliceMidiBuffer;
-        }
-
-        layerEngine.processBlock (triggerSlice, mainOutputSlice, sliceLayerPointers, *chunkMidi,
-                                  manualTrig && chunkStart == 0);
-    }
-
-    const int numSamples = totalSamples;
-    const int mainChannels = mainOutput.getNumChannels();
     float* outL = mainOutput.getWritePointer (0);
-    float* outR = mainChannels > 1 ? mainOutput.getWritePointer (1) : outL;
-    connectedMask.store (layerEngine.getLoadedMask(), relaxed);
+    float* outR = mainOutChannels > 1 ? mainOutput.getWritePointer (1) : outL;
 
-    const auto inputMode = (InputMode) juce::jlimit (0, 4, juce::roundToInt (pInput->load()));
-    const int  modeIdx   = juce::jlimit (0, 2, juce::roundToInt (pCapture->load()));
-    const int  barsIdx   = juce::jlimit (0, 6, juce::roundToInt (pBars->load()));
-    const float timeMs   = pTimeMs->load();
-    const bool frozen    = pFreeze->load() > 0.5f;
-    const bool listen    = pListen->load() > 0.5f;
+    const auto inputMode = (InputMode) juce::jlimit (0, 4, juce::roundToInt (pInput->load (relaxed)));
+    const int  modeIdx   = juce::jlimit (0, 2, juce::roundToInt (pCapture->load (relaxed)));
+    const int  barsIdx   = juce::jlimit (0, 6, juce::roundToInt (pBars->load (relaxed)));
+    const float timeMs   = pTimeMs->load (relaxed);
+    const bool frozen    = pFreeze->load (relaxed) > 0.5f;
+    const bool listen    = pListen->load (relaxed) > 0.5f;
 
-    float rangeLo = pRangeLo->load();
-    float rangeHi = pRangeHi->load();
+    float rangeLo = pRangeLo->load (relaxed);
+    float rangeHi = pRangeHi->load (relaxed);
     rangeHi = juce::jmax (rangeHi, rangeLo * 1.05f);
     rangeHi = juce::jmin (rangeHi, 20000.0f, (float) (0.49 * sr));
     rangeLo = juce::jmin (rangeLo, rangeHi * 0.95f);
@@ -743,65 +687,106 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     const bool listenActive = listen && rangeActive;
     float v[kNumChan] {};
-    float blockPeakMax = peakHold.load (relaxed);
+    const float blockPeakMax = peakHold.load (relaxed);
 
-    const int lastChunkStart = ((numSamples - 1) / maxChunk) * maxChunk;
-
-    for (int i = 0; i < numSamples; ++i)
+    for (int chunkStart = 0; chunkStart < totalSamples; chunkStart += maxChunk)
     {
-        const float inputL = mainInput.getSample (0, i);
-        const float inputR = inputChannels > 1 ? mainInput.getSample (1, i) : inputL;
+        const int chunkSamples = juce::jmin (maxChunk, totalSamples - chunkStart);
 
-        const float inputLevel = pickSample (inputL, inputR, inputMode);
-        peakEnv = juce::jmax (std::abs (inputLevel), peakEnv * peakDecay);
-        meanSquare += msAlpha * (inputLevel * inputLevel - meanSquare);
+        triggerBuffer.copyFrom (0, 0, mainInput, 0, chunkStart, chunkSamples);
+        if (inputChannels > 1)
+            triggerBuffer.copyFrom (1, 0, mainInput, 1, chunkStart, chunkSamples);
+        else
+            triggerBuffer.copyFrom (1, 0, mainInput, 0, chunkStart, chunkSamples);
 
-        if (capturing)
+        float* trigPtrs[2] = { triggerBuffer.getWritePointer (0), triggerBuffer.getWritePointer (1) };
+        juce::AudioBuffer<float> triggerSlice (trigPtrs, 2, chunkSamples);
+
+        float* mainOutPtrs[2] = {
+            mainOutput.getWritePointer (0) + chunkStart,
+            mainOutChannels > 1 ? (mainOutput.getWritePointer (1) + chunkStart) : nullptr
+        };
+        juce::AudioBuffer<float> mainOutputSlice (mainOutPtrs, juce::jmin (2, mainOutChannels), chunkSamples);
+
+        std::array<juce::AudioBuffer<float>, kMaxSignals> sliceLayerBuffers;
+        std::array<juce::AudioBuffer<float>*, kMaxSignals> sliceLayerPointers {};
+        for (int layer = 0; layer < kMaxSignals; ++layer)
         {
-            const int sampleInLastChunk = i - lastChunkStart;
-            for (int layer = 0; layer < kMaxSignals; ++layer)
+            if (layerOutputActive[(size_t) layer])
             {
-                float y = 0.0f;
-                if (sampleInLastChunk >= 0 && sampleInLastChunk < layerEngine.getLayerBuffer (layer).getNumSamples())
-                {
-                    const auto& layerAudio = layerEngine.getLayerBuffer (layer);
-                    y = pickSample (layerAudio.getSample (0, sampleInLastChunk),
-                                    layerAudio.getSample (1, sampleInLastChunk), inputMode);
-                }
-                else if (layerOutputActive[(size_t) layer])
-                {
-                    const auto& busBuf = layerOutputBuffers[(size_t) layer];
-                    const float bl = busBuf.getSample (0, i);
-                    const float br = busBuf.getNumChannels() > 1 ? busBuf.getSample (1, i) : bl;
-                    y = pickSample (bl, br, inputMode);
-                }
-                float lo_ = 0.0f, hi_ = 0.0f;
-                if (loOn) { rangeHp[layer].processSample (0, y, lo_, hi_); y = hi_; }
-                if (hiOn) { rangeLp[layer].processSample (0, y, lo_, hi_); y = lo_; }
-                v[layer] = y;
+                auto& fullBus = layerOutputBuffers[(size_t) layer];
+                const int busCh = juce::jmin (2, fullBus.getNumChannels());
+                float* busPtrs[2] = {
+                    fullBus.getWritePointer (0) + chunkStart,
+                    busCh > 1 ? (fullBus.getWritePointer (1) + chunkStart) : nullptr
+                };
+                sliceLayerBuffers[(size_t) layer].setDataToReferTo (busPtrs, busCh, chunkSamples);
+                sliceLayerPointers[(size_t) layer] = &sliceLayerBuffers[(size_t) layer];
             }
-
-            pushSpectrumSamples (v);
-            pushSample (v);
         }
 
-        if (listenActive)
+        const juce::MidiBuffer* chunkMidi = &midi;
+        if (totalSamples > maxChunk)
         {
-            float lo_ = 0.0f, hi_ = 0.0f;
-            float a = outL[i];
-            if (loOn) { listenHp[0].processSample (0, a, lo_, hi_); a = hi_; }
-            if (hiOn) { listenLp[0].processSample (0, a, lo_, hi_); a = lo_; }
-            outL[i] = a;
-
-            if (mainChannels > 1)
+            sliceMidiBuffer.clear();
+            for (const auto metadata : midi)
             {
-                float b = outR[i];
-                if (loOn) { listenHp[1].processSample (0, b, lo_, hi_); b = hi_; }
-                if (hiOn) { listenLp[1].processSample (0, b, lo_, hi_); b = lo_; }
-                outR[i] = b;
+                const int pos = metadata.samplePosition;
+                if (pos >= chunkStart && pos < chunkStart + chunkSamples)
+                    sliceMidiBuffer.addEvent (metadata.getMessage(), pos - chunkStart);
+            }
+            chunkMidi = &sliceMidiBuffer;
+        }
+
+        layerEngine.processBlock (triggerSlice, mainOutputSlice, sliceLayerPointers, *chunkMidi, false);
+
+        for (int s = 0; s < chunkSamples; ++s)
+        {
+            const int i = chunkStart + s;
+            const float inputL = mainInput.getSample (0, i);
+            const float inputR = inputChannels > 1 ? mainInput.getSample (1, i) : inputL;
+
+            const float inputLevel = pickSample (inputL, inputR, inputMode);
+            peakEnv = juce::jmax (std::abs (inputLevel), peakEnv * peakDecay);
+            meanSquare += msAlpha * (inputLevel * inputLevel - meanSquare);
+
+            if (capturing)
+            {
+                for (int layer = 0; layer < kMaxSignals; ++layer)
+                {
+                    const auto& layerAudio = layerEngine.getLayerBuffer (layer);
+                    float y = pickSample (layerAudio.getSample (0, s),
+                                          layerAudio.getSample (1, s), inputMode);
+                    float lo_ = 0.0f, hi_ = 0.0f;
+                    if (loOn) { rangeHp[layer].processSample (0, y, lo_, hi_); y = hi_; }
+                    if (hiOn) { rangeLp[layer].processSample (0, y, lo_, hi_); y = lo_; }
+                    v[layer] = y;
+                }
+
+                pushSpectrumSamples (v);
+                pushSample (v);
+            }
+
+            if (listenActive)
+            {
+                float lo_ = 0.0f, hi_ = 0.0f;
+                float a = outL[i];
+                if (loOn) { listenHp[0].processSample (0, a, lo_, hi_); a = hi_; }
+                if (hiOn) { listenLp[0].processSample (0, a, lo_, hi_); a = lo_; }
+                outL[i] = a;
+
+                if (mainOutChannels > 1)
+                {
+                    float b = outR[i];
+                    if (loOn) { listenHp[1].processSample (0, b, lo_, hi_); b = hi_; }
+                    if (hiOn) { listenLp[1].processSample (0, b, lo_, hi_); b = lo_; }
+                    outR[i] = b;
+                }
             }
         }
     }
+
+    connectedMask.store (layerEngine.getLoadedMask(), relaxed);
 
     const float rms = std::sqrt (meanSquare);
     const float crest = juce::jlimit (1.0f, 1000.0f, peakEnv / juce::jmax (rms, 1.0e-6f));
@@ -821,7 +806,8 @@ bool WaveLensProcessor::loadSampleFile (int layer, const juce::File& file, juce:
         return false;
 
     samplePaths[(size_t) layer] = file.getFullPathName();
-    connectedMask.store (layerEngine.getLoadedMask(), std::memory_order_relaxed);
+    missingSampleMask.fetch_and (~(1 << layer), relaxed);
+    connectedMask.store (layerEngine.getLoadedMask(), relaxed);
     return true;
 }
 
@@ -832,12 +818,28 @@ void WaveLensProcessor::clearSample (int layer)
 
     layerEngine.clearSample (layer);
     samplePaths[(size_t) layer].clear();
-    connectedMask.store (layerEngine.getLoadedMask(), std::memory_order_relaxed);
+    missingSampleMask.fetch_and (~(1 << layer), relaxed);
+    connectedMask.store (layerEngine.getLoadedMask(), relaxed);
 }
 
 juce::String WaveLensProcessor::getSampleName (int layer) const
 {
     return layerEngine.getSampleName (layer);
+}
+
+bool WaveLensProcessor::isLayerSampleMissing (int layer) const noexcept
+{
+    if (! juce::isPositiveAndBelow (layer, kMaxSignals))
+        return false;
+    return (missingSampleMask.load (relaxed) & (1 << layer)) != 0;
+}
+
+juce::String WaveLensProcessor::getMissingSampleFileName (int layer) const
+{
+    if (! juce::isPositiveAndBelow (layer, kMaxSignals))
+        return {};
+    const auto& path = samplePaths[(size_t) layer];
+    return path.isNotEmpty() ? juce::File (path).getFileNameWithoutExtension() : juce::String();
 }
 
 LayeredSampleEngine::WaveformPreview WaveLensProcessor::getWaveformPreview (int layer) const noexcept
@@ -859,6 +861,7 @@ void WaveLensProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     if (auto xml = apvts.copyState().createXml())
     {
+        xml->setAttribute ("wavelensStateVersion", wavelens::state::kCurrentStateVersion);
         for (int i = 0; i < kMaxSignals; ++i)
             xml->setAttribute ("samplePath" + juce::String (i + 1), samplePaths[(size_t) i]);
         copyXmlToBinary (*xml, destData);
@@ -871,8 +874,25 @@ void WaveLensProcessor::setStateInformation (const void* data, int sizeInBytes)
     {
         if (xml->hasTagName (apvts.state.getType()))
         {
+            const int stateVersion = xml->getIntAttribute ("wavelensStateVersion", 1);
             apvts.replaceState (juce::ValueTree::fromXml (*xml));
 
+            if (stateVersion < wavelens::state::kCurrentStateVersion)
+            {
+                const float restoredPreRollMs = pPreRollMs->load (relaxed);
+                for (int i = 0; i < LayeredSampleEngine::kPreLayers; ++i)
+                {
+                    const float savedDelayMs = pLayerDelay[(size_t) i]->load (relaxed);
+                    const float migratedDelayMs = wavelens::state::migratePreDelayMsForVersion (
+                        stateVersion, i, LayeredSampleEngine::kPreLayers, savedDelayMs, restoredPreRollMs);
+
+                    if (std::abs (migratedDelayMs - savedDelayMs) > 1.0e-4f)
+                        if (auto* param = apvts.getParameter (ids::layerDelay (i)))
+                            param->setValueNotifyingHost (param->convertTo0to1 (migratedDelayMs));
+                }
+            }
+
+            int nextMissingMask = 0;
             for (int i = 0; i < kMaxSignals; ++i)
             {
                 const auto path = xml->getStringAttribute ("samplePath" + juce::String (i + 1));
@@ -881,14 +901,21 @@ void WaveLensProcessor::setStateInformation (const void* data, int sizeInBytes)
                 {
                     juce::String error;
                     if (! loadSampleFile (i, juce::File (path), error))
-                        samplePaths[(size_t) i].clear();
+                    {
+                        // Preserve path so re-saving doesn't erase user sample references if a drive is unmounted.
+                        layerEngine.clearSample (i);
+                        nextMissingMask |= (1 << i);
+                    }
                 }
                 else
+                {
                     layerEngine.clearSample (i);
+                }
             }
 
+            missingSampleMask.store (nextMissingMask, relaxed);
             layerEngine.setPreRollMilliseconds (pPreRollMs->load (relaxed));
-            connectedMask.store (layerEngine.getLoadedMask(), std::memory_order_relaxed);
+            connectedMask.store (layerEngine.getLoadedMask(), relaxed);
         }
     }
 }

@@ -8,7 +8,7 @@ namespace
     constexpr float kTensionRadius = 4.6f;
     constexpr int kCurveSteps = 96;
     constexpr int kFlBarHeight = 28;
-    constexpr int kControlStripHeight = 120;
+    constexpr int kControlStripHeight = 104;
     constexpr int kHeaderHeight = 22;
     constexpr float kRulerHeight = 16.0f;
     constexpr float kOverviewHeight = 14.0f;
@@ -50,6 +50,7 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     pReleaseTension = state.getRawParameterValue (ids::layerReleaseTension (layer));
     pEnvEnabled = state.getRawParameterValue (ids::layerEnvEnabled (layer));
     pReverse = state.getRawParameterValue (ids::layerReverse (layer));
+    pPitch = state.getRawParameterValue (ids::layerPitch (layer));
     pTrimStart = state.getRawParameterValue (ids::layerTrimStart (layer));
     pTrimEnd = state.getRawParameterValue (ids::layerTrimEnd (layer));
     pFadeIn = state.getRawParameterValue (ids::layerFadeIn (layer));
@@ -274,86 +275,28 @@ LayerEnvelopeComponent::~LayerEnvelopeComponent()
     endGesture();
 }
 
-float LayerEnvelopeComponent::applyPowerTension (float u, float tension) noexcept
+LayeredSampleEngine::LayerParameters LayerEnvelopeComponent::readLayerParameters() const noexcept
 {
-    const float t = juce::jlimit (0.0f, 1.0f, u);
-    const float ten = juce::jlimit (-1.0f, 1.0f, tension);
-    if (std::abs (ten) < 1.0e-4f)
-        return t;
-    const float expVal = std::pow (2.0f, std::abs (ten) * 3.0f);
-    return ten >= 0.0f ? (1.0f - std::pow (1.0f - t, expVal)) : std::pow (t, expVal);
-}
-
-float LayerEnvelopeComponent::flSegmentLevel (float progress, float y0, float y1, int mode, float tension) noexcept
-{
-    const float t = juce::jlimit (0.0f, 1.0f, progress);
-    const float ten = juce::jlimit (-1.0f, 1.0f, tension);
-    const int m = juce::jlimit (0, 7, mode);
-    const float dirTen = (y1 >= y0) ? ten : -ten;
-
-    float frac = t;
-    switch (m)
-    {
-        case 0:
-            frac = t >= 1.0f ? 1.0f : 0.0f;
-            break;
-        case 1:
-        {
-            const float s = applyPowerTension (t, dirTen);
-            frac = s * s * (3.0f - 2.0f * s);
-            break;
-        }
-        case 2:
-            frac = applyPowerTension (t, dirTen);
-            break;
-        case 3:
-        {
-            const float hs = 0.5f - 0.5f * std::cos (juce::MathConstants<float>::pi * t);
-            frac = applyPowerTension (hs, dirTen);
-            break;
-        }
-        case 4:
-        {
-            const float steps = juce::jmax (2.0f, std::round (2.0f + (ten + 1.0f) * 6.0f));
-            frac = t >= 1.0f ? 1.0f : std::floor (t * steps) / steps;
-            break;
-        }
-        case 5:
-        {
-            const float steps = juce::jmax (2.0f, std::round (2.0f + (ten + 1.0f) * 6.0f));
-            if (t >= 1.0f)
-                frac = 1.0f;
-            else
-            {
-                const float scaled = t * steps;
-                const float idx = std::floor (scaled);
-                const float f = scaled - idx;
-                const float smoothF = f * f * (3.0f - 2.0f * f);
-                frac = (idx + smoothF) / steps;
-            }
-            break;
-        }
-        case 6:
-        {
-            const float cycles = juce::jmax (1.0f, std::round (1.0f + (ten + 1.0f) * 5.0f));
-            if (t >= 1.0f)
-                frac = 1.0f;
-            else
-                frac = std::fmod (t * cycles, 1.0f) < 0.5f ? 0.0f : 1.0f;
-            break;
-        }
-        case 7:
-        {
-            const float cycles = juce::jmax (1.0f, std::round (1.0f + (ten + 1.0f) * 5.0f));
-            frac = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * (2.0f * cycles + 1.0f) * t));
-            break;
-        }
-        default:
-            frac = applyPowerTension (t, dirTen);
-            break;
-    }
-
-    return y0 + (y1 - y0) * frac;
+    LayeredSampleEngine::LayerParameters p;
+    p.pitchSemitones = pPitch != nullptr ? pPitch->load() : 0.0f;
+    p.attackMs = pAttack->load();
+    p.holdMs = pHold->load();
+    p.decayMs = pDecay->load();
+    p.sustain = pSustain->load();
+    p.releaseMs = pRelease->load();
+    p.attackCurve = juce::roundToInt (pAttackCurve->load());
+    p.decayCurve = juce::roundToInt (pDecayCurve->load());
+    p.releaseCurve = juce::roundToInt (pReleaseCurve->load());
+    p.attackTension = pAttackTension->load();
+    p.decayTension = pDecayTension->load();
+    p.releaseTension = pReleaseTension->load();
+    p.envEnabled = true; // Editor always previews and allows editing the FL envelope shape directly.
+    p.reverse = pReverse->load() > 0.5f;
+    p.trimStart = pTrimStart->load();
+    p.trimEnd = pTrimEnd->load();
+    p.fadeInMs = pFadeIn->load();
+    p.fadeOutMs = pFadeOut->load();
+    return p;
 }
 
 void LayerEnvelopeComponent::clampViewport (float nextViewStart, float nextZoom) noexcept
@@ -440,36 +383,28 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry (float tota
     Geometry result;
     const bool isZoomed = zoomFactor > 1.01f;
     auto bounds = getLocalBounds().toFloat();
-    bounds.removeFromBottom ((float) (kControlStripHeight + kFlBarHeight + 10));
+    bounds.removeFromBottom ((float) (kControlStripHeight + kFlBarHeight + 4));
     bounds.removeFromTop ((float) kHeaderHeight);
     bounds.removeFromBottom (kRulerHeight + (isZoomed ? kOverviewHeight : 0.0f));
     result.plot = bounds;
 
-    const float trimStart = juce::jlimit (0.0f, 0.99f, pTrimStart->load());
-    const float trimEnd = juce::jlimit (trimStart + 0.005f, 1.0f, pTrimEnd->load());
+    const auto layerParams = readLayerParameters();
+    const float trimStart = juce::jlimit (0.0f, 0.99f, layerParams.trimStart);
+    const float trimEnd = juce::jlimit (trimStart + 0.005f, 1.0f, layerParams.trimEnd);
     result.trimX0 = normToPlotX (trimStart, result.plot);
     result.trimX1 = normToPlotX (trimEnd, result.plot);
     result.trimW = juce::jmax (4.0f, result.trimX1 - result.trimX0);
 
     const float safeTotal = juce::jmax (1.0f, totalDurationMs);
-    result.trimmedDurationMs = juce::jmax (1.0f, safeTotal * (trimEnd - trimStart));
+    const float pitchSpeed = std::pow (2.0f, layerParams.pitchSemitones / 12.0f);
+    result.trimmedDurationMs = juce::jmax (1.0f, safeTotal * (trimEnd - trimStart) / juce::jmax (0.01f, pitchSpeed));
 
-    const float attack = juce::jmax (0.1f, pAttack->load());
-    const float hold = juce::jmax (0.0f, pHold->load());
-    const float decay = juce::jmax (0.1f, pDecay->load());
-    const float release = juce::jmin (pRelease->load(), result.trimmedDurationMs * 0.5f);
-    const float releaseStart = juce::jmax (0.0f, result.trimmedDurationMs - release);
-    const float attackEnd = juce::jmin (attack, releaseStart);
-    const float holdEnd = juce::jmin (attack + hold, releaseStart);
-    const float decayEnd = juce::jmin (attack + hold + decay, releaseStart);
-    const float sustain = juce::jlimit (0.0f, 1.0f, pSustain->load());
-
-    const int attMode = juce::roundToInt (pAttackCurve->load());
-    const int decMode = juce::roundToInt (pDecayCurve->load());
-    const int relMode = juce::roundToInt (pReleaseCurve->load());
-    const float attTen = pAttackTension->load();
-    const float decTen = pDecayTension->load();
-    const float relTen = pReleaseTension->load();
+    const auto sched = LayeredSampleEngine::computeEnvelopeSchedule (layerParams, result.trimmedDurationMs);
+    const float attackEnd = sched.attackEndMs;
+    const float holdEnd = sched.holdEndMs;
+    const float decayEnd = sched.decayEndMs;
+    const float releaseStart = sched.releaseStartMs;
+    const float sustain = juce::jlimit (0.0f, 1.0f, layerParams.sustain);
 
     auto xAt = [&] (float ms)
     {
@@ -484,14 +419,7 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry (float tota
     };
     auto levelAt = [&] (float ms)
     {
-        if (ms < attack)
-            return flSegmentLevel (ms / attack, 0.0f, 1.0f, attMode, attTen);
-        if (ms < attack + hold)
-            return 1.0f;
-        const float decayProgress = (ms - attack - hold) / decay;
-        if (decayProgress < 1.0f)
-            return flSegmentLevel (decayProgress, 1.0f, sustain, decMode, decTen);
-        return sustain;
+        return LayeredSampleEngine::envelopeLevelAtMs (layerParams, sched, ms);
     };
 
     result.attack = { xAt (attackEnd), yAt (levelAt (attackEnd)) };
@@ -508,21 +436,21 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry (float tota
     const float attMidMs = attackEnd * 0.5f;
     result.tensionAttack = {
         xAt (attMidMs),
-        yAt (flSegmentLevel (juce::jlimit (0.0f, 1.0f, attMidMs / attack), 0.0f, 1.0f, attMode, attTen))
+        yAt (LayeredSampleEngine::flSegmentLevel (0.5f, 0.0f, 1.0f, layerParams.attackCurve, layerParams.attackTension))
     };
     result.tensionAttackVisible = (result.attack.x - result.trimX0) >= 10.0f;
 
     const float decMidMs = holdEnd + (decayEnd - holdEnd) * 0.5f;
     result.tensionDecay = {
         xAt (decMidMs),
-        yAt (flSegmentLevel (juce::jlimit (0.0f, 1.0f, (decMidMs - attack - hold) / decay), 1.0f, sustain, decMode, decTen))
+        yAt (LayeredSampleEngine::flSegmentLevel (0.5f, 1.0f, sustain, layerParams.decayCurve, layerParams.decayTension))
     };
     result.tensionDecayVisible = (result.decay.x - result.hold.x) >= 10.0f;
 
-    const float relMidMs = releaseStart + release * 0.5f;
+    const float relMidMs = releaseStart + sched.releaseMs * 0.5f;
     result.tensionRelease = {
         xAt (relMidMs),
-        yAt (flSegmentLevel (0.5f, relStartLevel, 0.0f, relMode, relTen))
+        yAt (LayeredSampleEngine::flSegmentLevel (0.5f, relStartLevel, 0.0f, layerParams.releaseCurve, layerParams.releaseTension))
     };
     result.tensionReleaseVisible = (result.trimX1 - result.release.x) >= 10.0f;
 
@@ -531,7 +459,7 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry (float tota
 
 void LayerEnvelopeComponent::paint (juce::Graphics& g)
 {
-    auto waveBox = getLocalBounds().withTrimmedBottom (kControlStripHeight + kFlBarHeight + 10).toFloat();
+    auto waveBox = getLocalBounds().withTrimmedBottom (kControlStripHeight + kFlBarHeight + 4).toFloat();
     const bool isPre = layer < 3;
     const bool envEnabled = pEnvEnabled->load() > 0.5f;
     const juce::Colour bgTop (isPre ? 0xff251a3d : 0xff2b1938);
@@ -682,30 +610,9 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
             g.drawLine (geometry.trimX1 - fadeOutPx, plot.getY(), geometry.trimX1, plot.getBottom(), 1.25f);
         }
 
-        const float attack = juce::jmax (0.1f, pAttack->load());
-        const float hold = juce::jmax (0.0f, pHold->load());
-        const float decay = juce::jmax (0.1f, pDecay->load());
-        const float sustain = pSustain->load();
-        const float release = juce::jmin (pRelease->load(), geometry.trimmedDurationMs * 0.5f);
-        const float releaseStart = juce::jmax (0.0f, geometry.trimmedDurationMs - release);
-        const int attackCurve = juce::roundToInt (pAttackCurve->load());
-        const int decayCurve = juce::roundToInt (pDecayCurve->load());
-        const int releaseCurve = juce::roundToInt (pReleaseCurve->load());
-        const float attackTen = pAttackTension->load();
-        const float decayTen = pDecayTension->load();
-        const float releaseTen = pReleaseTension->load();
+        const auto layerParams = readLayerParameters();
+        const auto sched = LayeredSampleEngine::computeEnvelopeSchedule (layerParams, geometry.trimmedDurationMs);
 
-        auto envelopeLevel = [&] (float timeMs)
-        {
-            if (timeMs < attack)
-                return flSegmentLevel (timeMs / attack, 0.0f, 1.0f, attackCurve, attackTen);
-            if (timeMs < attack + hold)
-                return 1.0f;
-            const float p = (timeMs - attack - hold) / decay;
-            if (p < 1.0f)
-                return flSegmentLevel (p, 1.0f, sustain, decayCurve, decayTen);
-            return sustain;
-        };
         auto xAt = [&] (float timeMs)
         {
             return geometry.trimX0 + geometry.trimW * juce::jlimit (0.0f, geometry.trimmedDurationMs, timeMs) / geometry.trimmedDurationMs;
@@ -719,32 +626,29 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         };
 
         juce::Path envelope;
-        envelope.startNewSubPath (xAt (0.0f), yAt (0.0f));
+        envelope.startNewSubPath (xAt (0.0f), yAt (LayeredSampleEngine::evaluateCompleteEnvelopeAtMs (layerParams, sched, 0.0f)));
 
-        const float attackEnd = juce::jmin (attack, releaseStart);
         for (int i = 1; i <= kCurveSteps; ++i)
         {
-            const float timeMs = attackEnd * ((float) i / (float) kCurveSteps);
-            envelope.lineTo (xAt (timeMs), yAt (envelopeLevel (timeMs)));
+            const float timeMs = sched.attackEndMs * ((float) i / (float) kCurveSteps);
+            envelope.lineTo (xAt (timeMs), yAt (LayeredSampleEngine::envelopeLevelAtMs (layerParams, sched, timeMs)));
         }
 
-        const float holdEnd = juce::jmin (attack + hold, releaseStart);
-        envelope.lineTo (xAt (holdEnd), yAt (envelopeLevel (holdEnd)));
+        envelope.lineTo (xAt (sched.holdEndMs), yAt (LayeredSampleEngine::envelopeLevelAtMs (layerParams, sched, sched.holdEndMs)));
 
-        const float decayEnd = juce::jmin (attack + hold + decay, releaseStart);
         for (int i = 1; i <= kCurveSteps; ++i)
         {
-            const float timeMs = holdEnd + (decayEnd - holdEnd) * ((float) i / (float) kCurveSteps);
-            envelope.lineTo (xAt (timeMs), yAt (envelopeLevel (timeMs)));
+            const float timeMs = sched.holdEndMs + (sched.decayEndMs - sched.holdEndMs) * ((float) i / (float) kCurveSteps);
+            envelope.lineTo (xAt (timeMs), yAt (LayeredSampleEngine::envelopeLevelAtMs (layerParams, sched, timeMs)));
         }
 
-        envelope.lineTo (xAt (releaseStart), yAt (envelopeLevel (releaseStart)));
-        const float releaseStartLevel = envelopeLevel (releaseStart);
+        const float releaseStartLevel = LayeredSampleEngine::envelopeLevelAtMs (layerParams, sched, sched.releaseStartMs);
+        envelope.lineTo (xAt (sched.releaseStartMs), yAt (releaseStartLevel));
         for (int i = 1; i <= kCurveSteps; ++i)
         {
             const float t = (float) i / (float) kCurveSteps;
-            const float level = flSegmentLevel (t, releaseStartLevel, 0.0f, releaseCurve, releaseTen);
-            envelope.lineTo (xAt (releaseStart + release * t), yAt (level));
+            const float timeMs = sched.releaseStartMs + sched.releaseMs * t;
+            envelope.lineTo (xAt (timeMs), yAt (LayeredSampleEngine::evaluateCompleteEnvelopeAtMs (layerParams, sched, timeMs)));
         }
 
         // FL Section Markers ([D] Decay start, [S] Sustain/Release split)
@@ -893,11 +797,11 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
     auto drawFlBoxLabel = [&] (const juce::ComboBox& box, const juce::String& lbl, float tensionVal)
     {
         g.setColour (juce::Colour (0xff95a4b8));
-        g.drawText (lbl, box.getX() - 28, box.getY(), 26, box.getHeight(), juce::Justification::centredRight);
+        g.drawText (lbl, box.getX() - 25, box.getY(), 23, box.getHeight(), juce::Justification::centredRight);
         const int pct = juce::roundToInt (tensionVal * 100.0f);
         g.setColour (std::abs (pct) > 0 ? flCurveColour : juce::Colour (0xff8a96a6));
         g.drawText ((pct > 0 ? "+" : "") + juce::String (pct) + "%",
-                    box.getRight() + 3, box.getY(), 34, box.getHeight(), juce::Justification::centredLeft);
+                    box.getRight() + 3, box.getY(), 31, box.getHeight(), juce::Justification::centredLeft);
     };
     drawFlBoxLabel (attackCurveBox, "ATT", pAttackTension->load());
     drawFlBoxLabel (decayCurveBox, "DEC", pDecayTension->load());
@@ -914,7 +818,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
     auto drawKnobLabel = [&] (const juce::Slider& s, const juce::String& label)
     {
         const auto b = s.getBounds();
-        g.drawText (label, b.getX(), b.getY() - 12, b.getWidth(), 11, juce::Justification::centred);
+        g.drawText (label, b.getX(), b.getY() - 11, b.getWidth(), 10, juce::Justification::centred);
     };
     drawKnobLabel (gainSlider, "Gain");
     drawKnobLabel (pitchSlider, "Pitch");
@@ -955,43 +859,48 @@ void LayerEnvelopeComponent::resized()
         : juce::Rectangle<float>();
 
     auto flRow = flBarBounds.reduced (6, 3);
-    envEnableBtn.setBounds (flRow.removeFromLeft (44));
-    flRow.removeFromLeft (8);
+    envEnableBtn.setBounds (flRow.removeFromLeft (40));
+    flRow.removeFromLeft (6);
 
-    const int segSlotW = juce::jmin (164, juce::jmax (110, flRow.getWidth() / 3));
+    const int segSlotW = juce::jlimit (90, 164, (flRow.getWidth() - 12) / 3);
     auto placeSeg = [&] (juce::ComboBox& box)
     {
         auto slot = flRow.removeFromLeft (segSlotW);
-        slot.removeFromLeft (28); // ATT/DEC/REL label
-        slot.removeFromRight (38); // tension readout
+        slot.removeFromLeft (25); // ATT/DEC/REL label
+        slot.removeFromRight (34); // tension readout
         box.setBounds (slot);
-        flRow.removeFromLeft (6);
+        flRow.removeFromLeft (4);
     };
     placeSeg (attackCurveBox);
     placeSeg (decayCurveBox);
     placeSeg (releaseCurveBox);
 
-    auto strip = controlStripBounds.reduced (8, 5);
-    const int rowH = (strip.getHeight() - 4) / 2;
+    auto strip = controlStripBounds.reduced (8, 4);
+    const int rowH = (strip.getHeight() - 3) / 2;
     auto row1 = strip.removeFromTop (rowH);
-    strip.removeFromTop (4);
+    strip.removeFromTop (3);
     auto row2 = strip;
 
-    const int knobW = 54;
-    const int knobGap = 6;
+    const int revW = 40;
+    const int revGap = 6;
+    const int availW = juce::jmax (280, row1.getWidth() - revW - revGap);
+    const int step = availW / 7;
+    const int knobW = juce::jlimit (44, 62, step - 4);
+    const int knobGap = juce::jmax (2, step - knobW);
 
     // Row 1: [REV] [Gain] [Pitch] [Pogo] [Trim F] [Trim B] [Fade In] [Fade Out]
-    reverseBtn.setBounds (row1.removeFromLeft (42).withSizeKeepingCentre (42, 26));
-    row1.removeFromLeft (8);
-    row1.removeFromTop (11);
+    reverseBtn.setBounds (row1.removeFromLeft (revW).withSizeKeepingCentre (revW, 24));
+    row1.removeFromLeft (revGap);
+    row1.removeFromTop (10);
     for (auto* s : { &gainSlider, &pitchSlider, &pogoSlider, &trimStartSlider, &trimEndSlider, &fadeInSlider, &fadeOutSlider })
     {
         s->setBounds (row1.removeFromLeft (knobW));
         row1.removeFromLeft (knobGap);
     }
 
-    // Row 2: [Timing] [Pan] [HPF] [LPF]
-    row2.removeFromTop (11);
+    // Row 2: [Timing] [Pan] [HPF] [LPF] aligned cleanly under Row 1 columns
+    row2.removeFromLeft (revW + revGap);
+    row2.removeFromTop (10);
     for (auto* s : { &delaySlider, &panSlider, &highPassSlider, &lowPassSlider })
     {
         s->setBounds (row2.removeFromLeft (knobW));

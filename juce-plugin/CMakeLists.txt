@@ -48,7 +48,8 @@ target_sources(WaveLens PRIVATE
     Source/LayeredSampleEngine.cpp
     Source/LayeredSampleEngine.h
     Source/LayerEnvelopeComponent.cpp
-    Source/LayerEnvelopeComponent.h)
+    Source/LayerEnvelopeComponent.h
+    Source/StateMigration.h)
 
 target_compile_definitions(WaveLens PUBLIC
     JUCE_WEB_BROWSER=0
@@ -70,3 +71,33 @@ target_link_libraries(WaveLens
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+
+include(CTest)
+option(BUILD_ENGINE_TESTS "Build standalone C++17 engine unit tests" ON)
+
+if(BUILD_ENGINE_TESTS)
+    add_executable(SpectralMultipleEngineTests
+        Tests/EngineTests.cpp
+        Source/LayeredSampleEngine.cpp
+        Source/StateMigration.h)
+
+    # Keep test shim strictly private to SpectralMultipleEngineTests so it never shadows real JUCE headers on WaveLens.
+    target_include_directories(SpectralMultipleEngineTests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/Tests/juce_test_shim
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source)
+
+    target_compile_features(SpectralMultipleEngineTests PRIVATE cxx_std_17)
+
+    if(MSVC)
+        target_compile_options(SpectralMultipleEngineTests PRIVATE /W4)
+    else()
+        target_compile_options(SpectralMultipleEngineTests PRIVATE -Wall -Wextra)
+    endif()
+
+    if(UNIX AND NOT APPLE)
+        find_package(Threads REQUIRED)
+        target_link_libraries(SpectralMultipleEngineTests PRIVATE Threads::Threads)
+    endif()
+
+    add_test(NAME SpectralMultipleEngineTests COMMAND SpectralMultipleEngineTests)
+endif()

@@ -2,6 +2,23 @@
 
 #include <cmath>
 
+struct LayeredSampleEngine::AudioBlockEpochGuard
+{
+    explicit AudioBlockEpochGuard (LayeredSampleEngine& e) noexcept
+        : engine (e),
+          epoch (e.startedAudioBlocks.fetch_add (1, std::memory_order_seq_cst) + 1)
+    {
+    }
+
+    ~AudioBlockEpochGuard() noexcept
+    {
+        engine.completedAudioBlocks.store (epoch, std::memory_order_seq_cst);
+    }
+
+    LayeredSampleEngine& engine;
+    uint64_t epoch;
+};
+
 LayeredSampleEngine::LayeredSampleEngine()
 {
     formatManager.registerBasicFormats();
@@ -19,20 +36,62 @@ LayeredSampleEngine::LayeredSampleEngine()
     }
 }
 
+LayeredSampleEngine::~LayeredSampleEngine()
+{
+    for (auto& layerVoices : voices)
+        for (auto& voice : layerVoices)
+            resetVoice (voice);
+
+    const juce::ScopedLock lock (sampleStateLock);
+    for (int i = 0; i < kNumLayers; ++i)
+        currentSamples[(size_t) i].store (nullptr, std::memory_order_seq_cst);
+    for (auto& layerRetired : retiredSamples)
+        layerRetired.clear();
+    for (auto& active : activeSamples)
+        active.reset();
+}
+
 void LayeredSampleEngine::assignVoiceSample (Voice& voice, SampleData* nextSample) noexcept
 {
-    if (voice.sample != nullptr)
-        voice.sample->activeVoices.fetch_sub (1, std::memory_order_acq_rel);
+    auto* previousSample = voice.sample;
+    if (previousSample == nextSample)
+        return;
+
+    if (nextSample != nullptr)
+        nextSample->activeVoices.fetch_add (1, std::memory_order_acq_rel);
 
     voice.sample = nextSample;
 
-    if (voice.sample != nullptr)
-        voice.sample->activeVoices.fetch_add (1, std::memory_order_acq_rel);
+    if (previousSample != nullptr)
+        previousSample->activeVoices.fetch_sub (1, std::memory_order_acq_rel);
+}
+
+void LayeredSampleEngine::resetVoice (Voice& voice) noexcept
+{
+    voice.active = false;
+    voice.inRelease = false;
+    voice.delayRemaining = 0;
+    voice.position = 0.0;
+    voice.ageSamples = 0;
+    voice.releaseStartLevel = 1.0f;
+    assignVoiceSample (voice, nullptr);
+}
+
+void LayeredSampleEngine::publishVoiceTailState (int layer, int voiceIndex,
+                                                 bool active, bool inRelease,
+                                                 double remainingSeconds,
+                                                 double releaseRemainingSeconds) noexcept
+{
+    auto& state = voiceTailStates[(size_t) layer][(size_t) voiceIndex];
+    state.inRelease.store (inRelease, std::memory_order_relaxed);
+    state.remainingSeconds.store (remainingSeconds, std::memory_order_relaxed);
+    state.releaseRemainingSeconds.store (releaseRemainingSeconds, std::memory_order_relaxed);
+    state.active.store (active, std::memory_order_release);
 }
 
 void LayeredSampleEngine::reclaimRetiredSamplesLocked()
 {
-    const uint64_t currentBlock = completedAudioBlocks.load (std::memory_order_acquire);
+    const uint64_t completed = completedAudioBlocks.load (std::memory_order_acquire);
 
     for (auto& layerRetired : retiredSamples)
     {
@@ -41,7 +100,7 @@ void LayeredSampleEngine::reclaimRetiredSamplesLocked()
             const auto& candidate = layerRetired[i];
             if (candidate != nullptr
                 && candidate->activeVoices.load (std::memory_order_acquire) <= 0
-                && currentBlock > candidate->retiredAfterBlock)
+                && completed >= candidate->retiredAfterStartedBlock)
             {
                 layerRetired[i] = std::move (layerRetired.back());
                 layerRetired.pop_back();
@@ -52,6 +111,12 @@ void LayeredSampleEngine::reclaimRetiredSamplesLocked()
             }
         }
     }
+}
+
+void LayeredSampleEngine::collectRetiredSamples()
+{
+    const juce::ScopedLock lock (sampleStateLock);
+    reclaimRetiredSamplesLocked();
 }
 
 int LayeredSampleEngine::getRetiredSampleCount (int layer)
@@ -65,26 +130,29 @@ int LayeredSampleEngine::getRetiredSampleCount (int layer)
 
 void LayeredSampleEngine::prepareToPlay (double sampleRate, int maximumBlockSize)
 {
-    currentSampleRate = juce::jmax (1.0, sampleRate);
-    maximumDelaySamples = juce::jmax (1, juce::roundToInt (currentSampleRate * kMaximumPreRollMilliseconds * 0.001));
-    preRollSamples = juce::jlimit (0, maximumDelaySamples,
-                                   juce::roundToInt (currentSampleRate * currentPreRollMs * 0.001));
-    refractorySamples = juce::jmax (1, juce::roundToInt (currentSampleRate * 0.025));
+    const double sr = juce::jmax (1.0, sampleRate);
+    currentSampleRate.store (sr, std::memory_order_release);
+
+    const int maxDelay = juce::jmax (1, juce::roundToInt (sr * kMaximumPreRollMilliseconds * 0.001));
+    maximumDelaySamples.store (maxDelay, std::memory_order_release);
+    preRollSamples.store (juce::jlimit (0, maxDelay,
+                                        juce::roundToInt (sr * currentPreRollMs.load (std::memory_order_acquire) * 0.001)),
+                          std::memory_order_release);
+    refractorySamples = juce::jmax (1, juce::roundToInt (sr * 0.025));
     refractoryRemaining = 0;
     previousInputLevel = 0.0f;
 
-    const auto delaySize = (size_t) (maximumDelaySamples + 1);
+    const auto delaySize = (size_t) (maxDelay + 1);
     delayLeft.assign (delaySize, 0.0f);
     delayRight.assign (delaySize, 0.0f);
     delayWritePosition = 0;
 
     const int safeBlockSize = juce::jmax (1, maximumBlockSize);
-    const float defaultLpCutoff = (float) juce::jmin (20000.0, currentSampleRate * 0.45);
+    const float defaultLpCutoff = (float) juce::jmin (20000.0, sr * 0.45);
 
     for (int layer = 0; layer < kNumLayers; ++layer)
     {
-        juce::dsp::ProcessSpec filterSpec { currentSampleRate,
-                                            (juce::uint32) safeBlockSize, 2 };
+        juce::dsp::ProcessSpec filterSpec { sr, (juce::uint32) safeBlockSize, 2 };
         layerHighPass[(size_t) layer].prepare (filterSpec);
         layerHighPass[(size_t) layer].setType (juce::dsp::LinkwitzRileyFilterType::highpass);
         layerHighPass[(size_t) layer].setCutoffFrequency (20.0f);
@@ -108,17 +176,12 @@ void LayeredSampleEngine::prepareToPlay (double sampleRate, int maximumBlockSize
         buffer.clear();
     }
 
-    for (auto& layerVoices : voices)
+    for (int layer = 0; layer < kNumLayers; ++layer)
     {
-        for (auto& voice : layerVoices)
+        for (int v = 0; v < kVoicesPerLayer; ++v)
         {
-            assignVoiceSample (voice, nullptr);
-            voice.position = 0.0;
-            voice.delayRemaining = 0;
-            voice.ageSamples = 0;
-            voice.releaseStartLevel = 1.0f;
-            voice.inRelease = false;
-            voice.active = false;
+            resetVoice (voices[(size_t) layer][(size_t) v]);
+            publishVoiceTailState (layer, v, false, false, 0.0, 0.0);
         }
     }
     nextVoiceToSteal.fill (0);
@@ -126,19 +189,24 @@ void LayeredSampleEngine::prepareToPlay (double sampleRate, int maximumBlockSize
         request.store (false, std::memory_order_relaxed);
     for (auto& request : previewRequests)
         request.store (false, std::memory_order_relaxed);
+    triggerRequested.store (false, std::memory_order_relaxed);
+    tailLengthSeconds.store (0.0, std::memory_order_release);
 }
 
 void LayeredSampleEngine::setTriggerMode (int mode, float newThreshold) noexcept
 {
-    triggerMode = juce::jlimit (0, 2, mode);
-    threshold = juce::jlimit (0.001f, 1.0f, newThreshold);
+    triggerMode.store (juce::jlimit (0, 2, mode), std::memory_order_release);
+    threshold.store (juce::jlimit (0.001f, 1.0f, newThreshold), std::memory_order_release);
 }
 
 void LayeredSampleEngine::setPreRollMilliseconds (float milliseconds) noexcept
 {
-    currentPreRollMs = (double) juce::jlimit (0.0f, (float) kMaximumPreRollMilliseconds, milliseconds);
-    preRollSamples = juce::jlimit (0, maximumDelaySamples,
-                                   juce::roundToInt (currentSampleRate * currentPreRollMs * 0.001));
+    const double clampedMs = (double) juce::jlimit (0.0f, (float) kMaximumPreRollMilliseconds, milliseconds);
+    currentPreRollMs.store (clampedMs, std::memory_order_release);
+    const int maxDelay = maximumDelaySamples.load (std::memory_order_acquire);
+    const double sr = currentSampleRate.load (std::memory_order_acquire);
+    preRollSamples.store (juce::jlimit (0, maxDelay, juce::roundToInt (sr * clampedMs * 0.001)),
+                          std::memory_order_release);
 }
 
 bool LayeredSampleEngine::loadSampleFromFile (int layer, const juce::File& file, juce::String& error)
@@ -220,17 +288,20 @@ bool LayeredSampleEngine::loadSampleFromFile (int layer, const juce::File& file,
     auto* raw = data.get();
     {
         const juce::ScopedLock lock (sampleStateLock);
-        reclaimRetiredSamplesLocked();
-
-        if (activeSamples[(size_t) layer] != nullptr)
-        {
-            activeSamples[(size_t) layer]->retiredAfterBlock = completedAudioBlocks.load (std::memory_order_acquire);
-            retiredSamples[(size_t) layer].push_back (std::move (activeSamples[(size_t) layer]));
-        }
-
+        auto oldSample = std::move (activeSamples[(size_t) layer]);
         activeSamples[(size_t) layer] = std::move (data);
         sampleNames[(size_t) layer] = raw->displayName;
-        currentSamples[(size_t) layer].store (raw, std::memory_order_release);
+        // Publish new pointer BEFORE sampling startedAudioBlocks so any active block either sees newRaw
+        // or will increment activeVoices on oldSample before completing its current epoch.
+        currentSamples[(size_t) layer].store (raw, std::memory_order_seq_cst);
+
+        if (oldSample != nullptr)
+        {
+            oldSample->retiredAfterStartedBlock = startedAudioBlocks.load (std::memory_order_seq_cst);
+            retiredSamples[(size_t) layer].push_back (std::move (oldSample));
+        }
+
+        reclaimRetiredSamplesLocked();
     }
 
     error.clear();
@@ -243,13 +314,13 @@ void LayeredSampleEngine::clearSample (int layer)
         return;
 
     const juce::ScopedLock lock (sampleStateLock);
-    currentSamples[(size_t) layer].store (nullptr, std::memory_order_release);
+    currentSamples[(size_t) layer].store (nullptr, std::memory_order_seq_cst);
     clearRequests[(size_t) layer].store (true, std::memory_order_release);
     sampleNames[(size_t) layer].clear();
 
     if (activeSamples[(size_t) layer] != nullptr)
     {
-        activeSamples[(size_t) layer]->retiredAfterBlock = completedAudioBlocks.load (std::memory_order_acquire);
+        activeSamples[(size_t) layer]->retiredAfterStartedBlock = startedAudioBlocks.load (std::memory_order_seq_cst);
         retiredSamples[(size_t) layer].push_back (std::move (activeSamples[(size_t) layer]));
     }
     reclaimRetiredSamplesLocked();
@@ -282,6 +353,11 @@ void LayeredSampleEngine::requestPreview (int layer) noexcept
         previewRequests[(size_t) layer].store (true, std::memory_order_release);
 }
 
+void LayeredSampleEngine::requestTrigger() noexcept
+{
+    triggerRequested.store (true, std::memory_order_release);
+}
+
 int LayeredSampleEngine::getLoadedMask() const noexcept
 {
     int mask = 0;
@@ -298,7 +374,8 @@ void LayeredSampleEngine::setLayerParameters (int layer, const LayerParameters& 
         return;
 
     auto& target = parameters[(size_t) layer];
-    const float maxLp = (float) juce::jmax (1000.0, currentSampleRate * 0.45);
+    const double sr = currentSampleRate.load (std::memory_order_acquire);
+    const float maxLp = (float) juce::jmax (1000.0, sr * 0.45);
 
     target.gain = juce::jlimit (0.0f, 2.0f, p.gain);
     target.pan = juce::jlimit (-1.0f, 1.0f, p.pan);
@@ -433,14 +510,17 @@ void LayeredSampleEngine::startLayer (int layer, bool ignoreTimingShift) noexcep
     assignVoiceSample (voice, sample);
     voice.position = 0.0;
 
+    const int maxDelay = maximumDelaySamples.load (std::memory_order_acquire);
+    const int preRoll = preRollSamples.load (std::memory_order_acquire);
+    const double sr = currentSampleRate.load (std::memory_order_acquire);
     const int baseDelay = (layer < kPreLayers)
-        ? juce::jmax (0, maximumDelaySamples - preRollSamples)
-        : maximumDelaySamples;
-    const int shiftSamples = juce::roundToInt (parameters[(size_t) layer].delayShiftMs * (float) currentSampleRate * 0.001f);
+        ? juce::jmax (0, maxDelay - preRoll)
+        : maxDelay;
+    const int shiftSamples = juce::roundToInt (parameters[(size_t) layer].delayShiftMs * (float) sr * 0.001f);
 
     voice.delayRemaining = ignoreTimingShift
         ? 0
-        : juce::jlimit (0, maximumDelaySamples * 2, baseDelay + shiftSamples);
+        : juce::jlimit (0, maxDelay * 2, baseDelay + shiftSamples);
     voice.ageSamples = 0;
     voice.releaseStartLevel = 1.0f;
     voice.inRelease = false;
@@ -582,6 +662,22 @@ float LayeredSampleEngine::envelopeLevelAtMs (const LayerParameters& p,
     return p.sustain;
 }
 
+float LayeredSampleEngine::evaluateCompleteEnvelopeAtMs (const LayerParameters& p,
+                                                         const EnvelopeSchedule& sched,
+                                                         float ageMs) noexcept
+{
+    if (! p.envEnabled)
+        return 1.0f;
+
+    if (ageMs <= sched.releaseStartMs)
+        return envelopeLevelAtMs (p, sched, ageMs);
+
+    const float releaseStartLevel = envelopeLevelAtMs (p, sched, sched.releaseStartMs);
+    const float releaseProgress = juce::jlimit (0.0f, 1.0f,
+                                                (ageMs - sched.releaseStartMs) / juce::jmax (0.1f, sched.releaseMs));
+    return flSegmentLevel (releaseProgress, releaseStartLevel, 0.0f, p.releaseCurve, p.releaseTension);
+}
+
 float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& right) noexcept
 {
     left = right = 0.0f;
@@ -592,13 +688,12 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
     auto& layerVoices = voices[(size_t) layer];
     const bool audible = isLayerAudible (layer);
 
+    const double sr = currentSampleRate.load (std::memory_order_acquire);
+
     if (! audible)
     {
         for (auto& voice : layerVoices)
-        {
-            voice.active = false;
-            assignVoiceSample (voice, nullptr);
-        }
+            resetVoice (voice);
 
         if (layerWasAudible[(size_t) layer])
         {
@@ -618,8 +713,7 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
     {
         if (! voice.active || voice.sample == nullptr)
         {
-            voice.active = false;
-            assignVoiceSample (voice, nullptr);
+            resetVoice (voice);
             continue;
         }
 
@@ -634,8 +728,7 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
 
         if (length <= 0)
         {
-            voice.active = false;
-            assignVoiceSample (voice, nullptr);
+            resetVoice (voice);
             continue;
         }
 
@@ -647,13 +740,12 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
 
         if (trimmedLength <= 0 || voice.position >= (double) trimmedLength)
         {
-            voice.active = false;
-            assignVoiceSample (voice, nullptr);
+            resetVoice (voice);
             continue;
         }
 
         const double u = juce::jlimit (0.0, 1.0, voice.position / (double) trimmedLength);
-        const double baseSpeed = (voice.sample->sourceSampleRate / currentSampleRate)
+        const double baseSpeed = (voice.sample->sourceSampleRate / sr)
                                * std::pow (2.0, (double) p.pitchSemitones / 12.0);
         const double pogoSemitones = (double) p.pogo * 24.0 * std::pow (1.0 - u, 2.5);
         const double speed = baseSpeed * std::pow (2.0, pogoSemitones / 12.0);
@@ -677,9 +769,9 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
         const float totalOutputSamples = (float) trimmedLength / safeBaseSpeed;
         const float elapsedSamplesBase = (float) (voice.position / safeBaseSpeed);
         const float remainingSamplesBase = (float) (((double) trimmedLength - voice.position) / safeBaseSpeed);
-        const float totalDurationMs = (totalOutputSamples / (float) currentSampleRate) * 1000.0f;
-        const float elapsedMs = (elapsedSamplesBase / (float) currentSampleRate) * 1000.0f;
-        const float remainingMs = (remainingSamplesBase / (float) currentSampleRate) * 1000.0f;
+        const float totalDurationMs = (totalOutputSamples / (float) sr) * 1000.0f;
+        const float elapsedMs = (elapsedSamplesBase / (float) sr) * 1000.0f;
+        const float remainingMs = (remainingSamplesBase / (float) sr) * 1000.0f;
 
         float envelope = 1.0f;
         if (p.envEnabled)
@@ -702,9 +794,13 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
                 envelope = envelopeLevelAtMs (p, sched, elapsedMs);
             }
         }
+        else
+        {
+            voice.inRelease = false;
+        }
 
-        const float fadeInSamples = p.fadeInMs * 0.001f * (float) currentSampleRate;
-        const float fadeOutSamples = p.fadeOutMs * 0.001f * (float) currentSampleRate;
+        const float fadeInSamples = p.fadeInMs * 0.001f * (float) sr;
+        const float fadeOutSamples = p.fadeOutMs * 0.001f * (float) sr;
         const float fadeInGain = fadeInSamples > 0.5f
             ? juce::jlimit (0.0f, 1.0f, (float) voice.ageSamples / fadeInSamples)
             : 1.0f;
@@ -720,10 +816,7 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
         ++voice.ageSamples;
 
         if (voice.position >= (double) trimmedLength)
-        {
-            voice.active = false;
-            assignVoiceSample (voice, nullptr);
-        }
+            resetVoice (voice);
     }
 
     if (layerHighPassActive[(size_t) layer])
@@ -741,12 +834,149 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
     return (left + right) * 0.5f;
 }
 
+double LayeredSampleEngine::computeActiveTailSeconds() noexcept
+{
+    const double sr = juce::jmax (1.0, currentSampleRate.load (std::memory_order_acquire));
+    double maxTailSeconds = 0.0;
+
+    for (int layer = 0; layer < kNumLayers; ++layer)
+    {
+        const bool audible = isLayerAudible (layer);
+        const auto& p = parameters[(size_t) layer];
+        const auto& layerVoices = voices[(size_t) layer];
+
+        for (int v = 0; v < kVoicesPerLayer; ++v)
+        {
+            const auto& voice = layerVoices[(size_t) v];
+            if (! audible || ! voice.active || voice.sample == nullptr)
+            {
+                publishVoiceTailState (layer, v, false, false, 0.0, 0.0);
+                continue;
+            }
+
+            const int length = voice.sample->audio.getNumSamples();
+            if (length <= 0)
+            {
+                publishVoiceTailState (layer, v, false, false, 0.0, 0.0);
+                continue;
+            }
+
+            const int trimStartIdx = (length <= 1) ? 0
+                : juce::jlimit (0, length - 2, (int) std::floor ((double) p.trimStart * (double) length));
+            const int trimEndIdx = (length <= 1) ? 1
+                : juce::jlimit (trimStartIdx + 1, length, (int) std::ceil ((double) p.trimEnd * (double) length));
+            const int trimmedLength = trimEndIdx - trimStartIdx;
+            if (trimmedLength <= 0 || voice.position >= (double) trimmedLength)
+            {
+                publishVoiceTailState (layer, v, false, false, 0.0, 0.0);
+                continue;
+            }
+
+            const double baseSpeed = (voice.sample->sourceSampleRate / sr)
+                                   * std::pow (2.0, (double) p.pitchSemitones / 12.0);
+            const double safeBaseSpeed = juce::jmax (0.0001, baseSpeed);
+            const double u0 = juce::jlimit (0.0, 1.0, voice.position / (double) trimmedLength);
+            auto integratePogoSamples = [&] (double uStart, double uEnd) noexcept -> double
+            {
+                if (uEnd <= uStart)
+                    return 0.0;
+
+                if (std::abs (p.pogo) < 1.0e-4f)
+                    return ((uEnd - uStart) * (double) trimmedLength) / safeBaseSpeed;
+
+                constexpr int kQuadSteps = 4;
+                const double du = (uEnd - uStart) / (double) kQuadSteps;
+                double invSpeedSum = 0.0;
+                for (int step = 0; step < kQuadSteps; ++step)
+                {
+                    const double uMid = uStart + ((double) step + 0.5) * du;
+                    const double pogoSt = (double) p.pogo * 24.0 * std::pow (1.0 - uMid, 2.5);
+                    invSpeedSum += 1.0 / juce::jmax (0.0001, safeBaseSpeed * std::pow (2.0, pogoSt / 12.0));
+                }
+                return (double) trimmedLength * du * invSpeedSum;
+            };
+
+            const double playSamplesRemaining = integratePogoSamples (u0, 1.0);
+            const double remainingSeconds = ((double) juce::jmax (0, voice.delayRemaining) + playSamplesRemaining) / sr;
+
+            double releaseRemainingSeconds = 0.0;
+            bool inRelease = p.envEnabled && voice.inRelease;
+            if (p.envEnabled)
+            {
+                const float totalDurationMs = (float) (((double) trimmedLength / safeBaseSpeed) / sr * 1000.0);
+                const auto sched = computeEnvelopeSchedule (p, totalDurationMs);
+                const double schedRelNorm = juce::jlimit (0.0, 1.0,
+                                                          ((double) sched.releaseMs * 0.001 * sr * safeBaseSpeed)
+                                                          / (double) trimmedLength);
+                const double uRelStart = juce::jmax (u0, 1.0 - schedRelNorm);
+                if (u0 >= 1.0 - schedRelNorm)
+                    inRelease = true;
+
+                releaseRemainingSeconds = inRelease
+                    ? (playSamplesRemaining / sr)
+                    : (integratePogoSamples (uRelStart, 1.0) / sr);
+            }
+
+            publishVoiceTailState (layer, v, true, inRelease, remainingSeconds, releaseRemainingSeconds);
+            maxTailSeconds = juce::jmax (maxTailSeconds, remainingSeconds);
+        }
+    }
+
+    return maxTailSeconds;
+}
+
+double LayeredSampleEngine::getTailLengthSeconds() const noexcept
+{
+    return tailLengthSeconds.load (std::memory_order_acquire);
+}
+
+LayeredSampleEngine::VoiceTailSnapshot LayeredSampleEngine::getVoiceTailSnapshot (int layer, int voiceIndex) const noexcept
+{
+    VoiceTailSnapshot snapshot;
+    if (! juce::isPositiveAndBelow (layer, kNumLayers)
+        || ! juce::isPositiveAndBelow (voiceIndex, kVoicesPerLayer))
+        return snapshot;
+
+    const auto& state = voiceTailStates[(size_t) layer][(size_t) voiceIndex];
+    snapshot.active = state.active.load (std::memory_order_acquire);
+    if (! snapshot.active)
+        return snapshot;
+
+    snapshot.inRelease = state.inRelease.load (std::memory_order_relaxed);
+    snapshot.remainingSeconds = state.remainingSeconds.load (std::memory_order_relaxed);
+    snapshot.releaseRemainingSeconds = state.releaseRemainingSeconds.load (std::memory_order_relaxed);
+    return snapshot;
+}
+
+void LayeredSampleEngine::processBypassed() noexcept
+{
+    const AudioBlockEpochGuard epochGuard (*this);
+
+    for (int layer = 0; layer < kNumLayers; ++layer)
+    {
+        for (int v = 0; v < kVoicesPerLayer; ++v)
+        {
+            resetVoice (voices[(size_t) layer][(size_t) v]);
+            publishVoiceTailState (layer, v, false, false, 0.0, 0.0);
+        }
+        nextVoiceToSteal[(size_t) layer] = 0;
+        layerHighPass[(size_t) layer].reset();
+        layerLowPass[(size_t) layer].reset();
+    }
+
+    previousInputLevel = 0.0f;
+    refractoryRemaining = 0;
+    tailLengthSeconds.store (0.0, std::memory_order_release);
+}
+
 void LayeredSampleEngine::processBlock (const juce::AudioBuffer<float>& triggerInput,
                                         juce::AudioBuffer<float>& masterOutput,
                                         const std::array<juce::AudioBuffer<float>*, kNumLayers>& layerOutputs,
                                         const juce::MidiBuffer& midi,
                                         bool manualTrigger) noexcept
 {
+    const AudioBlockEpochGuard epochGuard (*this);
+
     const int numSamples = juce::jmin (triggerInput.getNumSamples(), masterOutput.getNumSamples());
     const int inputChannels = triggerInput.getNumChannels();
     const int outputChannels = masterOutput.getNumChannels();
@@ -754,7 +984,7 @@ void LayeredSampleEngine::processBlock (const juce::AudioBuffer<float>& triggerI
     if (numSamples <= 0 || inputChannels <= 0 || outputChannels <= 0
         || delayLeft.empty() || delayRight.empty())
     {
-        completedAudioBlocks.fetch_add (1, std::memory_order_release);
+        tailLengthSeconds.store (computeActiveTailSeconds(), std::memory_order_release);
         return;
     }
 
@@ -763,15 +993,7 @@ void LayeredSampleEngine::processBlock (const juce::AudioBuffer<float>& triggerI
         if (clearRequests[(size_t) layer].exchange (false, std::memory_order_acq_rel))
         {
             for (auto& voice : voices[(size_t) layer])
-            {
-                assignVoiceSample (voice, nullptr);
-                voice.position = 0.0;
-                voice.delayRemaining = 0;
-                voice.ageSamples = 0;
-                voice.releaseStartLevel = 1.0f;
-                voice.inRelease = false;
-                voice.active = false;
-            }
+                resetVoice (voice);
             nextVoiceToSteal[(size_t) layer] = 0;
         }
         if (previewRequests[(size_t) layer].exchange (false, std::memory_order_acq_rel))
@@ -782,7 +1004,7 @@ void LayeredSampleEngine::processBlock (const juce::AudioBuffer<float>& triggerI
     {
         if (numSamples > buffer.getNumSamples())
         {
-            completedAudioBlocks.fetch_add (1, std::memory_order_release);
+            tailLengthSeconds.store (computeActiveTailSeconds(), std::memory_order_release);
             return;
         }
 
@@ -794,19 +1016,24 @@ void LayeredSampleEngine::processBlock (const juce::AudioBuffer<float>& triggerI
         if (bus != nullptr)
             bus->clear (0, numSamples);
 
+    const bool pendingManualTrigger = triggerRequested.exchange (false, std::memory_order_acq_rel) || manualTrigger;
+
     juce::MidiBuffer::Iterator midiIterator (midi);
     juce::MidiMessage midiMessage;
     int midiPosition = 0;
     bool hasMidiEvent = midiIterator.getNextEvent (midiMessage, midiPosition);
 
-    const bool audioEnabled = triggerMode == 0 || triggerMode == 2;
-    const bool midiEnabled = triggerMode == 1 || triggerMode == 2;
+    const int trigMode = triggerMode.load (std::memory_order_acquire);
+    const float trigThreshold = threshold.load (std::memory_order_acquire);
+    const bool audioEnabled = trigMode == 0 || trigMode == 2;
+    const bool midiEnabled = trigMode == 1 || trigMode == 2;
+    const int maxDelay = maximumDelaySamples.load (std::memory_order_acquire);
 
     for (int sample = 0; sample < numSamples; ++sample)
     {
         bool externalTriggeredThisSample = false;
 
-        if (manualTrigger && sample == 0)
+        if (pendingManualTrigger && sample == 0)
         {
             triggerAllLayers();
             externalTriggeredThisSample = true;
@@ -828,7 +1055,7 @@ void LayeredSampleEngine::processBlock (const juce::AudioBuffer<float>& triggerI
         const float inputLevel = juce::jmax (std::abs (inputL), std::abs (inputR));
 
         if (audioEnabled && ! externalTriggeredThisSample && refractoryRemaining <= 0
-            && inputLevel >= threshold && previousInputLevel < threshold)
+            && inputLevel >= trigThreshold && previousInputLevel < trigThreshold)
         {
             triggerAllLayers();
             refractoryRemaining = refractorySamples;
@@ -840,7 +1067,7 @@ void LayeredSampleEngine::processBlock (const juce::AudioBuffer<float>& triggerI
 
         delayLeft[(size_t) delayWritePosition] = inputL;
         delayRight[(size_t) delayWritePosition] = inputR;
-        const int readPosition = (delayWritePosition + (int) delayLeft.size() - maximumDelaySamples)
+        const int readPosition = (delayWritePosition + (int) delayLeft.size() - maxDelay)
                                  % (int) delayLeft.size();
         const float dryL = delayLeft[(size_t) readPosition];
         const float dryR = delayRight[(size_t) readPosition];
@@ -878,7 +1105,7 @@ void LayeredSampleEngine::processBlock (const juce::AudioBuffer<float>& triggerI
             masterOutput.setSample (0, sample, 0.5f * (masterL + masterR));
     }
 
-    completedAudioBlocks.fetch_add (1, std::memory_order_release);
+    tailLengthSeconds.store (computeActiveTailSeconds(), std::memory_order_release);
 }
 
 const juce::AudioBuffer<float>& LayeredSampleEngine::getLayerBuffer (int layer) const noexcept
