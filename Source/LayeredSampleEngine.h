@@ -28,6 +28,8 @@ public:
     static constexpr double kMaximumPreRollMilliseconds = 100.0;
     static constexpr double kDefaultPreRollMilliseconds = 50.0;
     static constexpr int kPreviewPoints = 2048;
+    // Old sample versions are retained for safe audio-thread handover. Bound that history.
+    static constexpr size_t kMaximumRetainedSampleBytes = 512u * 1024u * 1024u;
 
     struct WaveformPreview
     {
@@ -80,6 +82,7 @@ public:
     WaveformPreview getWaveformPreview (int layer) const noexcept;
     void requestPreview (int layer) noexcept;
     int getLoadedMask() const noexcept;
+    double getTailLengthSeconds() const noexcept { return maximumTailSeconds.load (std::memory_order_relaxed); }
 
     void setLayerParameters (int layer, const LayerParameters& parameters) noexcept;
 
@@ -115,6 +118,7 @@ private:
     void startLayer (int layer, bool ignoreTimingShift = false) noexcept;
     float renderLayerSample (int layer, float& left, float& right) noexcept;
     float envelopeLevelAtAge (const LayerParameters& p, int age) const noexcept;
+    void updateTailEstimate (int layer) noexcept;
     static float applyPowerTension (float u, float tension) noexcept;
     static float flSegmentLevel (float progress, float y0, float y1, int mode, float tension) noexcept;
 
@@ -123,6 +127,9 @@ private:
     std::array<std::atomic<bool>, kNumLayers> clearRequests {};
     std::array<std::atomic<bool>, kNumLayers> previewRequests {};
     std::array<std::vector<std::unique_ptr<SampleData>>, kNumLayers> ownedSamples;
+    size_t retainedSampleBytes = 0;
+    std::array<std::atomic<float>, kNumLayers> layerTailSeconds {};
+    std::atomic<float> maximumTailSeconds { 0.0f };
     std::array<juce::String, kNumLayers> sampleNames;
     std::array<LayerParameters, kNumLayers> parameters {};
     std::array<std::array<Voice, kVoicesPerLayer>, kNumLayers> voices {};
