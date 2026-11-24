@@ -27,7 +27,9 @@ public:
     static constexpr int kVoicesPerLayer = 4;
     static constexpr double kMaximumPreRollMilliseconds = 100.0;
     static constexpr double kDefaultPreRollMilliseconds = 50.0;
-    static constexpr int kPreviewPoints = 256;
+    static constexpr int kPreviewPoints = 2048;
+    // Old sample versions are retained for safe audio-thread handover. Bound that history.
+    static constexpr size_t kMaximumRetainedSampleBytes = 512u * 1024u * 1024u;
 
     struct WaveformPreview
     {
@@ -47,13 +49,24 @@ public:
         float lowPassHz = 20000.0f;
         float attackMs = 2.0f;
         float holdMs = 20.0f;
-        float decayMs = 60.0f;
-        float sustain = 1.0f;
-        float releaseMs = 120.0f;
-        int attackCurve = 4;
-        int decayCurve = 4;
-        int releaseCurve = 4;
+        float decayMs = 140.0f;
+        float sustain = 0.78f;
+        float releaseMs = 200.0f;
+        int attackCurve = 2;   // 0..7 FL Studio modes (2 = Single curve)
+        int decayCurve = 2;
+        int releaseCurve = 2;
+        float attackTension = 0.25f;
+        float decayTension = -0.35f;
+        float releaseTension = -0.45f;
+        bool envEnabled = true;
         bool muted = false;
+        bool solo = false;
+        bool reverse = false;
+        float pogo = 0.0f;
+        float trimStart = 0.0f;
+        float trimEnd = 1.0f;
+        float fadeInMs = 0.0f;
+        float fadeOutMs = 0.0f;
     };
 
     LayeredSampleEngine();
@@ -69,6 +82,7 @@ public:
     WaveformPreview getWaveformPreview (int layer) const noexcept;
     void requestPreview (int layer) noexcept;
     int getLoadedMask() const noexcept;
+    double getTailLengthSeconds() const noexcept { return maximumTailSeconds.load (std::memory_order_relaxed); }
 
     void setLayerParameters (int layer, const LayerParameters& parameters) noexcept;
 
@@ -99,17 +113,24 @@ private:
         bool active = false;
     };
 
+    bool isLayerAudible (int layer) const noexcept;
     void triggerAllLayers() noexcept;
     void startLayer (int layer, bool ignoreTimingShift = false) noexcept;
     float renderLayerSample (int layer, float& left, float& right) noexcept;
     float envelopeLevelAtAge (const LayerParameters& p, int age) const noexcept;
-    float applyCurve (float progress, int curve) const noexcept;
+    void updateTailEstimate (int layer) noexcept;
+    static float applyPowerTension (float u, float tension) noexcept;
+    static float flSegmentLevel (float progress, float y0, float y1, int mode, float tension) noexcept;
 
     juce::AudioFormatManager formatManager;
     std::array<std::atomic<SampleData*>, kNumLayers> currentSamples {};
     std::array<std::atomic<bool>, kNumLayers> clearRequests {};
     std::array<std::atomic<bool>, kNumLayers> previewRequests {};
     std::array<std::vector<std::unique_ptr<SampleData>>, kNumLayers> ownedSamples;
+    size_t retainedSampleBytes = 0;
+    std::array<std::atomic<float>, kNumLayers> layerTailSeconds {};
+    std::array<std::atomic<bool>, kNumLayers> tailEstimateDirty {};
+    std::atomic<float> maximumTailSeconds { 0.0f };
     std::array<juce::String, kNumLayers> sampleNames;
     std::array<LayerParameters, kNumLayers> parameters {};
     std::array<std::array<Voice, kVoicesPerLayer>, kNumLayers> voices {};
@@ -117,7 +138,6 @@ private:
     std::array<juce::AudioBuffer<float>, kNumLayers> layerBuffers;
     std::array<juce::dsp::LinkwitzRileyFilter<float>, kNumLayers> layerHighPass;
     std::array<juce::dsp::LinkwitzRileyFilter<float>, kNumLayers> layerLowPass;
-    std::array<std::array<float, 257>, 7> curveTables {};
 
     std::vector<float> delayLeft, delayRight;
     int delayWritePosition = 0;

@@ -4,19 +4,21 @@ namespace
 {
     constexpr auto relaxed = std::memory_order_relaxed;
 
-    const juce::Colour kBackground { 0xff202428 };
-    const juce::Colour kPanel { 0xff292f35 }, kPanelEdge { 0xff424b54 };
-    const juce::Colour kText { 0xffaeb8c0 }, kTextBright { 0xffedf2f5 };
-    const juce::Colour kAccent { 0xffffb04a }, kCanvas { 0xff151a1f }, kCanvasText { 0xffe0e3e5 };
-    const juce::Colour kMeterHot   { 0xffff6b5e };
-    const juce::Colour kMeterCool  { 0xff7be07a };
-
-    juce::String formatHz (double hz)
-    {
-        if (hz >= 1000.0)
-            return juce::String (hz / 1000.0, hz >= 10000.0 ? 1 : 2) + " kHz";
-        return juce::String (juce::roundToInt (hz)) + " Hz";
-    }
+    const juce::Colour kRackGutter   { 0xff666666 };
+    const juce::Colour kDeviceBg     { 0xff8e8e8e };
+    const juce::Colour kDeviceHeader { 0xff868686 };
+    const juce::Colour kDeviceEdge   { 0xff343434 };
+    const juce::Colour kPadIdle      { 0xff8a8a8a };
+    const juce::Colour kPadEdge      { 0xff424242 };
+    const juce::Colour kTextDark     { 0xff151515 };
+    const juce::Colour kTextLight    { 0xfff0f0f0 };
+    const juce::Colour kAbletonYellow{ 0xffffd000 };
+    const juce::Colour kAbletonOrange{ 0xffff9800 };
+    const juce::Colour kAbletonCyan  { 0xff2cf0ff };
+    const juce::Colour kCanvas       { 0xff251a12 };
+    const juce::Colour kCanvasText   { 0xffe0e3e5 };
+    const juce::Colour kMeterHot     { 0xffff4e42 };
+    const juce::Colour kMeterCool    { 0xff58e058 };
 
     juce::String formatMs (double ms)
     {
@@ -35,127 +37,58 @@ namespace
 //==============================================================================
 WaveLensLookAndFeel::WaveLensLookAndFeel()
 {
-    setColour (juce::ResizableWindow::backgroundColourId, kBackground);
+    setColour (juce::ResizableWindow::backgroundColourId, kRackGutter);
 
-    setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff1b2229));
-    setColour (juce::ComboBox::textColourId, kTextBright);
-    setColour (juce::ComboBox::outlineColourId, kPanelEdge);
-    setColour (juce::ComboBox::arrowColourId, kText);
+    setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff9c9c9c));
+    setColour (juce::ComboBox::textColourId, kTextDark);
+    setColour (juce::ComboBox::outlineColourId, kPadEdge);
+    setColour (juce::ComboBox::arrowColourId, kTextDark);
 
-    setColour (juce::PopupMenu::backgroundColourId, juce::Colour (0xff1b2128));
-    setColour (juce::PopupMenu::textColourId, kTextBright);
-    setColour (juce::PopupMenu::highlightedBackgroundColourId, kAccent.withAlpha (0.35f));
-    setColour (juce::PopupMenu::highlightedTextColourId, juce::Colours::white);
+    setColour (juce::PopupMenu::backgroundColourId, juce::Colour (0xff3a3a3a));
+    setColour (juce::PopupMenu::textColourId, kTextLight);
+    setColour (juce::PopupMenu::highlightedBackgroundColourId, kAbletonOrange);
+    setColour (juce::PopupMenu::highlightedTextColourId, kTextDark);
 
-    setColour (juce::Slider::trackColourId, kAccent);
-    setColour (juce::Slider::backgroundColourId, juce::Colour (0xff303942));
-    setColour (juce::Slider::thumbColourId, kTextBright);
-    setColour (juce::Slider::textBoxTextColourId, kTextBright);
-    setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour (0xff1b2128));
-    setColour (juce::Slider::textBoxOutlineColourId, kPanelEdge);
-    setColour (juce::Slider::textBoxHighlightColourId, kAccent.withAlpha (0.4f));
+    setColour (juce::TextButton::buttonColourId, juce::Colour (0xff7d7d7d));
+    setColour (juce::TextButton::buttonOnColourId, kAbletonYellow);
+    setColour (juce::TextButton::textColourOffId, kTextDark);
+    setColour (juce::TextButton::textColourOnId, kTextDark);
 
-    setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1b2128));
-    setColour (juce::TextButton::buttonOnColourId, kAccent.withAlpha (0.85f));
-    setColour (juce::TextButton::textColourOffId, kText);
-    setColour (juce::TextButton::textColourOnId, juce::Colour (0xff04121a));
-
-    setColour (juce::Label::textColourId, kText);
+    setColour (juce::Label::textColourId, kTextDark);
 }
 
-void WaveLensLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,
-                                                const juce::Colour& backgroundColour,
-                                                bool isMouseOverButton, bool isButtonDown)
+void WaveLensLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
+                                            float sliderPos, float rotaryStartAngle,
+                                            float rotaryEndAngle, juce::Slider& slider)
 {
-    const auto componentId = button.getComponentID();
+    const float diameter = (float) juce::jmin (width, height) - 4.0f;
+    const float radius = diameter * 0.5f;
+    const float cx = (float) x + (float) width * 0.5f;
+    const float cy = (float) y + (float) height * 0.5f;
+    const float angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
 
-    if (componentId == "rack-master")
-    {
-        auto bounds = button.getLocalBounds().toFloat().reduced (1.0f);
-        const bool active = button.getToggleState();
-        const auto fill = active ? kAccent : juce::Colour (0xff20272e);
-        g.setColour (isButtonDown ? fill.brighter (0.12f) : fill);
-        g.fillRoundedRectangle (bounds, 6.0f);
-        g.setColour (active ? kAccent : kPanelEdge);
-        g.drawRoundedRectangle (bounds, 6.0f, active ? 1.6f : 1.0f);
-        return;
-    }
+    juce::Path bgArc;
+    bgArc.addCentredArc (cx, cy, radius, radius, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
+    g.setColour (slider.findColour (juce::Slider::rotarySliderOutlineColourId));
+    g.strokePath (bgArc, juce::PathStrokeType (2.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-    if (componentId != "rack-pad")
-    {
-        LookAndFeel_V4::drawButtonBackground (g, button, backgroundColour,
-                                              isMouseOverButton, isButtonDown);
-        return;
-    }
+    juce::Path valArc;
+    valArc.addCentredArc (cx, cy, radius, radius, 0.0f, rotaryStartAngle, angle, true);
+    g.setColour (slider.findColour (juce::Slider::rotarySliderFillColourId));
+    g.strokePath (valArc, juce::PathStrokeType (2.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
-    const auto accent = button.findColour (juce::TextButton::textColourOffId);
-    const bool selected = button.getToggleState();
-    auto bounds = button.getLocalBounds().toFloat().reduced (1.0f);
-    auto fill = selected ? accent.withAlpha (0.19f) : juce::Colour (0xff20272e);
+    const float innerR = juce::jmax (3.0f, radius - 3.5f);
+    g.setColour (juce::Colour (0xff7d7d7d));
+    g.fillEllipse (cx - innerR, cy - innerR, innerR * 2.0f, innerR * 2.0f);
+    g.setColour (juce::Colour (0xff2f2f2f));
+    g.drawEllipse (cx - innerR, cy - innerR, innerR * 2.0f, innerR * 2.0f, 1.0f);
 
-    if (! button.isEnabled())
-        fill = juce::Colour (0xff1a2026);
-    else if (isButtonDown)
-        fill = fill.brighter (0.14f);
-    else if (isMouseOverButton)
-        fill = fill.brighter (0.07f);
-
-    g.setColour (fill);
-    g.fillRoundedRectangle (bounds, 6.0f);
-    g.setColour (accent.withAlpha (selected ? 0.95f : 0.42f));
-    g.drawRoundedRectangle (bounds, 6.0f, selected ? 1.8f : 1.0f);
-
-    auto marker = bounds.removeFromLeft (3.0f).reduced (0.0f, 8.0f);
-    g.setColour (accent.withAlpha (selected ? 1.0f : 0.72f));
-    g.fillRoundedRectangle (marker, 1.5f);
+    const float px = cx + (innerR - 1.0f) * std::sin (angle);
+    const float py = cy - (innerR - 1.0f) * std::cos (angle);
+    g.setColour (juce::Colour (0xff191919));
+    g.drawLine (cx, cy, px, py, 2.0f);
 }
 
-void WaveLensLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button,
-                                          bool isMouseOverButton, bool isButtonDown)
-{
-    const auto componentId = button.getComponentID();
-
-    if (componentId == "rack-master")
-    {
-        g.setColour (button.getToggleState() ? juce::Colour (0xff10151a) : kTextBright);
-        g.setFont (juce::Font (12.0f, juce::Font::bold));
-        g.drawFittedText (button.getButtonText(), button.getLocalBounds().reduced (2),
-                          juce::Justification::centred, 1);
-        return;
-    }
-
-    if (componentId != "rack-pad")
-    {
-        LookAndFeel_V4::drawButtonText (g, button, isMouseOverButton, isButtonDown);
-        return;
-    }
-
-    const auto text = button.getButtonText();
-    const int separator = text.indexOfChar ('\n');
-    const auto title = separator >= 0 ? text.substring (0, separator) : text;
-    const auto detail = separator >= 0 ? text.substring (separator + 1) : juce::String();
-    auto bounds = button.getLocalBounds().reduced (9, 6);
-    const auto accent = button.findColour (juce::TextButton::textColourOffId);
-
-    g.setColour (button.isEnabled() ? kTextBright : kText.withAlpha (0.42f));
-    g.setFont (juce::Font (11.5f, juce::Font::bold));
-    g.drawFittedText (title, bounds.removeFromTop (18), juce::Justification::centredLeft, 1);
-
-    auto detailArea = button.getLocalBounds().reduced (9, 6).removeFromBottom (13);
-    detailArea = detailArea.withTrimmedRight (8);
-
-    const bool loaded = detail.isNotEmpty() && detail != "EMPTY SLOT";
-    g.setColour (loaded ? kText : kText.withAlpha (0.55f));
-    g.setFont (juce::Font (8.5f));
-    g.drawFittedText (detail, detailArea, juce::Justification::centredLeft, 1);
-
-    auto dot = juce::Rectangle<float> ((float) button.getWidth() - 13.0f, 8.0f, 5.0f, 5.0f);
-    g.setColour (loaded ? kMeterCool : accent.withAlpha (0.62f));
-    g.fillEllipse (dot);
-}
-
-//==============================================================================
-// LayerOverlayView
 //==============================================================================
 LayerOverlayView::LayerOverlayView (WaveLensProcessor& p)
     : processor (p)
@@ -168,18 +101,18 @@ void LayerOverlayView::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
     g.fillAll (kCanvas);
-    g.setColour (kPanelEdge);
-    g.drawRoundedRectangle (bounds.reduced (0.5f), 6.0f, 1.0f);
+    g.setColour (kDeviceEdge);
+    g.drawRoundedRectangle (bounds.reduced (0.5f), 3.0f, 1.0f);
 
-    auto header = bounds.reduced (18.0f, 12.0f).removeFromTop (24.0f);
-    g.setColour (kTextBright);
-    g.setFont (juce::Font (13.0f, juce::Font::bold));
-    g.drawText ("MASTER  /  ALL SOURCE LAYERS", header.removeFromLeft (260.0f),
+    auto header = bounds.reduced (14.0f, 8.0f).removeFromTop (22.0f);
+    g.setColour (juce::Colour (0xfff2e8df));
+    g.setFont (juce::Font (12.0f, juce::Font::bold));
+    g.drawText ("MASTER  /  ALL 6 WAVES STACKED", header.removeFromLeft (250.0f),
                 juce::Justification::centredLeft);
 
-    auto plot = bounds.reduced (22.0f, 14.0f);
-    plot.removeFromTop (38.0f);
-    plot.removeFromBottom (32.0f);
+    auto plot = bounds.reduced (16.0f, 10.0f);
+    plot.removeFromTop (28.0f);
+    plot.removeFromBottom (26.0f);
 
     if (plot.getWidth() < 40.0f || plot.getHeight() < 40.0f)
         return;
@@ -190,7 +123,7 @@ void LayerOverlayView::paint (juce::Graphics& g)
     g.saveState();
     g.reduceClipRegion (plot.toNearestInt());
 
-    g.setColour (juce::Colours::white.withAlpha (0.045f));
+    g.setColour (juce::Colours::white.withAlpha (0.05f));
     for (int i = 1; i < 8; ++i)
     {
         const float x = plot.getX() + plot.getWidth() * (float) i / 8.0f;
@@ -201,7 +134,7 @@ void LayerOverlayView::paint (juce::Graphics& g)
         const float y = plot.getY() + plot.getHeight() * (float) i / 4.0f;
         g.drawHorizontalLine (juce::roundToInt (y), plot.getX(), plot.getRight());
     }
-    g.setColour (juce::Colours::white.withAlpha (0.18f));
+    g.setColour (juce::Colours::white.withAlpha (0.16f));
     g.drawHorizontalLine (juce::roundToInt (centre), plot.getX(), plot.getRight());
 
     int loadedCount = 0;
@@ -212,14 +145,46 @@ void LayerOverlayView::paint (juce::Graphics& g)
             continue;
 
         ++loadedCount;
+        const bool reversed = processor.apvts.getRawParameterValue (ids::layerReverse (layer))->load() > 0.5f;
+        const float trimStart = juce::jlimit (0.0f, 0.98f,
+            processor.apvts.getRawParameterValue (ids::layerTrimStart (layer))->load());
+        const float trimEnd = juce::jlimit (trimStart + 0.01f, 1.0f,
+            processor.apvts.getRawParameterValue (ids::layerTrimEnd (layer))->load());
+        const float fadeInMs = processor.apvts.getRawParameterValue (ids::layerFadeIn (layer))->load();
+        const float fadeOutMs = processor.apvts.getRawParameterValue (ids::layerFadeOut (layer))->load();
+        const float gainScale = juce::jlimit (0.0f, 2.0f,
+            processor.apvts.getRawParameterValue (ids::layerGain (layer))->load());
+        const float trimmedMs = juce::jmax (1.0f, (float) preview.durationMs * (trimEnd - trimStart));
+
+        auto sampleAtPoint = [&] (int point, float& outMax, float& outMin)
+        {
+            const float norm = (float) point / (float) (LayeredSampleEngine::kPreviewPoints - 1);
+            const float posInWave = reversed
+                ? (trimEnd - norm * (trimEnd - trimStart))
+                : (trimStart + norm * (trimEnd - trimStart));
+            const int idx = juce::jlimit (0, LayeredSampleEngine::kPreviewPoints - 1,
+                juce::roundToInt (posInWave * (float) (LayeredSampleEngine::kPreviewPoints - 1)));
+
+            const float elapsedMs = norm * trimmedMs;
+            const float remainingMs = (1.0f - norm) * trimmedMs;
+            const float fadeInG = fadeInMs > 0.5f ? juce::jlimit (0.0f, 1.0f, elapsedMs / fadeInMs) : 1.0f;
+            const float fadeOutG = fadeOutMs > 0.5f ? juce::jlimit (0.0f, 1.0f, remainingMs / fadeOutMs) : 1.0f;
+            const float env = gainScale * fadeInG * fadeOutG;
+
+            outMax = juce::jlimit (-1.0f, 1.0f, preview.maximum[(size_t) idx] * env);
+            outMin = juce::jlimit (-1.0f, 1.0f, preview.minimum[(size_t) idx] * env);
+        };
+
         juce::Path area, upper, lower;
 
         for (int point = 0; point < LayeredSampleEngine::kPreviewPoints; ++point)
         {
+            float maxV = 0.0f, minV = 0.0f;
+            sampleAtPoint (point, maxV, minV);
             const float x = plot.getX()
                 + ((float) point / (float) (LayeredSampleEngine::kPreviewPoints - 1)) * plot.getWidth();
-            const float top = centre - preview.maximum[(size_t) point] * halfHeight;
-            const float bottom = centre - preview.minimum[(size_t) point] * halfHeight;
+            const float top = centre - maxV * halfHeight;
+            const float bottom = centre - minV * halfHeight;
 
             if (point == 0)
             {
@@ -237,34 +202,36 @@ void LayerOverlayView::paint (juce::Graphics& g)
 
         for (int point = LayeredSampleEngine::kPreviewPoints - 1; point >= 0; --point)
         {
+            float maxV = 0.0f, minV = 0.0f;
+            sampleAtPoint (point, maxV, minV);
             const float x = plot.getX()
                 + ((float) point / (float) (LayeredSampleEngine::kPreviewPoints - 1)) * plot.getWidth();
-            const float bottom = centre - preview.minimum[(size_t) point] * halfHeight;
+            const float bottom = centre - minV * halfHeight;
             area.lineTo (x, bottom);
         }
         area.closeSubPath();
 
         const auto colour = signalColour (layer);
-        g.setColour (colour.withAlpha (0.10f));
+        g.setColour (colour.withAlpha (0.16f));
         g.fillPath (area);
         g.setColour (colour.withAlpha (0.95f));
-        g.strokePath (upper, juce::PathStrokeType (1.7f));
-        g.setColour (colour.withAlpha (0.42f));
-        g.strokePath (lower, juce::PathStrokeType (0.9f));
+        g.strokePath (upper, juce::PathStrokeType (1.75f));
+        g.setColour (colour.withAlpha (0.45f));
+        g.strokePath (lower, juce::PathStrokeType (1.0f));
     }
 
     g.restoreState();
 
-    auto legend = bounds.reduced (18.0f, 8.0f).removeFromBottom (20.0f);
+    auto legend = bounds.reduced (16.0f, 6.0f).removeFromBottom (18.0f);
     float x = legend.getX();
     for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
     {
         const auto preview = processor.getWaveformPreview (layer);
-        const float itemWidth = 106.0f;
+        const float itemWidth = 92.0f;
         auto item = juce::Rectangle<float> (x, legend.getY(), itemWidth, legend.getHeight());
         g.setColour (signalColour (layer));
-        g.fillRoundedRectangle (item.removeFromLeft (8.0f).withSizeKeepingCentre (7.0f, 7.0f), 3.0f);
-        g.setColour (preview.loaded ? kTextBright : kText.withAlpha (0.45f));
+        g.fillRoundedRectangle (item.removeFromLeft (8.0f).withSizeKeepingCentre (7.0f, 7.0f), 2.0f);
+        g.setColour (preview.loaded ? juce::Colour (0xfff2e8df) : juce::Colour (0xff908479));
         g.setFont (juce::Font (10.0f, juce::Font::bold));
         const auto label = layer < 3 ? "PRE " + juce::String (layer + 1)
                                      : "MAIN " + juce::String (layer - 2);
@@ -274,23 +241,21 @@ void LayerOverlayView::paint (juce::Graphics& g)
 
     if (loadedCount == 0)
     {
-        g.setColour (kText);
-        g.setFont (juce::Font (15.0f));
-        g.drawText ("Load samples from the left rack to build your six-layer sound",
+        g.setColour (juce::Colour (0xffc4b8ad));
+        g.setFont (juce::Font (13.0f));
+        g.drawText ("Drop samples onto the 6 Drum Rack pads to view all waves stacked here",
                     plot.toNearestInt(), juce::Justification::centred);
     }
     else
     {
-        g.setColour (kText);
+        g.setColour (juce::Colour (0xffc4b8ad));
         g.setFont (juce::Font (10.5f));
-        g.drawText (juce::String (loadedCount) + " / 6 source layers loaded",
-                    header.withY (header.getY() + 2.0f).withX (header.getRight() - 150.0f).withWidth (150.0f),
+        g.drawText (juce::String (loadedCount) + " / 6 waves stacked",
+                    header.withX (header.getRight() - 120.0f).withWidth (120.0f),
                     juce::Justification::centredRight);
     }
 }
 
-//==============================================================================
-// ScopeView
 //==============================================================================
 ScopeView::ScopeView (WaveLensProcessor& p)
     : proc (p)
@@ -314,13 +279,11 @@ ScopeView::ScopeView (WaveLensProcessor& p)
 juce::String ScopeView::windowLabel() const
 {
     const int mode = juce::roundToInt (pCapture->load());
-
     if (mode == 0)
     {
         static const char* names[] = { "1/16 bar", "1/8 bar", "1/4 bar", "1/2 bar", "1 bar", "2 bars", "4 bars" };
         return juce::String ("Tempo  ") + names[juce::jlimit (0, 6, juce::roundToInt (pBars->load()))];
     }
-
     return juce::String (mode == 1 ? "Live  " : "Scroll  ") + formatMs (pTimeMs->load());
 }
 
@@ -331,19 +294,15 @@ void ScopeView::drawTrace (juce::Graphics& g, juce::Rectangle<float> lane, int c
     constexpr int N = WaveLensProcessor::kCols;
 
     int first = 0, count = 0;
-
     if (held)
     {
-        if (scroll || ! s.heldValid)
-            return;
+        if (scroll || ! s.heldValid) return;
         first = s.heldFrom;
         count = s.heldTo - s.heldFrom + 1;
     }
     else
     {
-        if (! s.has)
-            return;
-
+        if (! s.has) return;
         if (scroll)
         {
             count = juce::jlimit (0, N, s.filled);
@@ -371,7 +330,6 @@ void ScopeView::drawTrace (juce::Graphics& g, juce::Rectangle<float> lane, int c
     auto yOf = [&] (float v) { return centre - juce::jlimit (-1.0f, 1.0f, v * gain) * half; };
     auto colOf = [&] (int j) { return (first + j) % N; };
 
-    // The previous pass lives in its own pair of buffers.
     const auto& maxBuf = held ? proc.heldMax : proc.colMax;
     const auto& minBuf = held ? proc.heldMin : proc.colMin;
 
@@ -398,7 +356,6 @@ void ScopeView::drawLane (juce::Graphics& g, juce::Rectangle<float> lane, const 
     g.saveState();
     g.reduceClipRegion (lane.toNearestInt());
 
-    // Grid
     const int mode = juce::roundToInt (pCapture->load());
     int divisions = 10;
     if (mode == 0)
@@ -422,11 +379,8 @@ void ScopeView::drawLane (juce::Graphics& g, juce::Rectangle<float> lane, const 
     g.setColour (juce::Colours::white.withAlpha (0.14f));
     g.drawHorizontalLine (juce::roundToInt (centre), lane.getX(), lane.getRight());
 
-    // With several overlapping traces the fills are lighter so every trace stays readable.
     const float fillAlpha = traces.size() > 1 ? 0.10f : 0.30f;
 
-    // Previous pass first, so it sits behind the current one. Traces are drawn from the last
-    // to the first, which keeps signal 1 on top of the stack.
     if (showHeld)
         for (auto it = traces.rbegin(); it != traces.rend(); ++it)
             drawTrace (g, lane, it->ch, it->colour, s, gain, true, fillAlpha);
@@ -434,7 +388,6 @@ void ScopeView::drawLane (juce::Graphics& g, juce::Rectangle<float> lane, const 
     for (auto it = traces.rbegin(); it != traces.rend(); ++it)
         drawTrace (g, lane, it->ch, it->colour, s, gain, false, fillAlpha);
 
-    // Write cursor for the fixed-window modes.
     if (mode != 2 && s.has)
     {
         const float x = lane.getX() + ((float) s.head + 0.5f) * lane.getWidth() / (float) WaveLensProcessor::kCols;
@@ -444,7 +397,7 @@ void ScopeView::drawLane (juce::Graphics& g, juce::Rectangle<float> lane, const 
 
     if (title.isNotEmpty())
     {
-        g.setColour (kText);
+        g.setColour (kCanvasText);
         g.setFont (juce::Font (11.0f));
         g.drawText (title, lane.reduced (8.0f, 4.0f).removeFromTop (14.0f), juce::Justification::topLeft);
     }
@@ -464,11 +417,9 @@ void ScopeView::drawSpectrum (juce::Graphics& g, juce::Rectangle<float> lane, co
 void ScopeView::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
-    g.fillAll (kCanvas);
-    g.setColour (kCanvas);
-    g.fillRoundedRectangle (bounds.reduced (0.5f), 6.0f);
-    g.setColour (kPanelEdge);
-    g.drawRoundedRectangle (bounds.reduced (0.5f), 6.0f, 1.0f);
+    g.fillAll (juce::Colour (0xff151a1f));
+    g.setColour (kDeviceEdge);
+    g.drawRoundedRectangle (bounds.reduced (0.5f), 4.0f, 1.0f);
 
     Snapshot s;
     s.head      = proc.head.load();
@@ -483,23 +434,20 @@ void ScopeView::paint (juce::Graphics& g)
     const bool showHeld = pHold->load() > 0.5f;
     const int mask = proc.connectedMask.load (relaxed);
 
-    // Signals that are routed in the host and not hidden with their toggle.
     std::vector<int> active;
     for (int n = 0; n < WaveLensProcessor::kMaxSignals; ++n)
         if ((mask & (1 << n)) != 0 && pShowSig[n]->load() > 0.5f)
             active.push_back (n);
 
     const bool split = active.size() > 1 && juce::roundToInt (pLayout->load()) == 1;
-
     auto area = bounds.reduced (6.0f);
-    area.removeFromBottom (16.0f);          // room for the footer text
+    area.removeFromBottom (16.0f);
 
     const bool spectrum = juce::roundToInt (pView->load()) == 1;
     if (split)
     {
         const float gap = 4.0f;
         const float laneH = (area.getHeight() - gap * (float) (active.size() - 1)) / (float) active.size();
-
         for (int n : active)
         {
             auto lane = area.removeFromTop (laneH);
@@ -513,37 +461,17 @@ void ScopeView::paint (juce::Graphics& g)
         std::vector<Trace> traces;
         for (int n : active)
             traces.push_back ({ n, signalColour (n) });
-
         if (spectrum) drawSpectrum (g, area, traces, showHeld);
         else drawLane (g, area, traces, s, gain, showHeld, {});
-
-        // Colour key, so the overlapping traces can be told apart.
-        if (traces.size() > 1)
-        {
-            g.setFont (juce::Font (11.0f, juce::Font::bold));
-            float x = area.getRight() - 8.0f;
-            for (int k = (int) active.size() - 1; k >= 0; --k)
-            {
-                const int n = active[(size_t) k];
-                auto chip = juce::Rectangle<float> (x - 24.0f, area.getY() + 6.0f, 24.0f, 14.0f);
-                g.setColour (signalColour (n).withAlpha (0.9f));
-                g.fillRoundedRectangle (chip, 3.0f);
-                g.setColour (juce::Colour (0xff04121a));
-                g.drawText (n < 3 ? ("P" + juce::String (n + 1)) : ("M" + juce::String (n - 2)),
-                            chip, juce::Justification::centred);
-                x -= 28.0f;
-            }
-        }
     }
 
-    // Footer
     auto footer = bounds.reduced (10.0f, 3.0f).removeFromBottom (14.0f);
     g.setFont (juce::Font (11.0f));
-    g.setColour (kText);
+    g.setColour (juce::Colour (0xffaeb8c0));
     g.drawText (windowLabel(), footer, juce::Justification::centredLeft);
 
     if (mask == 0)
-        g.drawText ("Load samples into the PRE and MAIN slots below to view their waveforms and spectra",
+        g.drawText ("Load samples into the Drum Rack pads to view waveforms and spectra",
                     footer, juce::Justification::centred);
     else
         g.drawText (juce::String (active.size()) + (active.size() == 1 ? " layer" : " layers"),
@@ -551,13 +479,11 @@ void ScopeView::paint (juce::Graphics& g)
 
     if (pFreeze->load() > 0.5f)
     {
-        g.setColour (kAccent);
+        g.setColour (kAbletonOrange);
         g.drawText ("FROZEN", footer, juce::Justification::centredRight);
     }
 }
 
-//==============================================================================
-// MeterView
 //==============================================================================
 MeterView::MeterView (WaveLensProcessor& p)
     : proc (p)
@@ -582,67 +508,58 @@ void MeterView::mouseDown (const juce::MouseEvent&)
 void MeterView::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
-    g.fillAll (kBackground);
-    g.setColour (kPanel);
-    g.fillRoundedRectangle (bounds.reduced (0.5f), 6.0f);
-    g.setColour (kPanelEdge);
-    g.drawRoundedRectangle (bounds.reduced (0.5f), 6.0f, 1.0f);
+    g.fillAll (juce::Colour (0xff7b7b7b));
+    g.setColour (kDeviceEdge);
+    g.drawRoundedRectangle (bounds.reduced (0.5f), 4.0f, 1.0f);
 
     const int mode = juce::roundToInt (pMeter->load());
     static const char* names[] = { "PEAK", "RMS", "CREST" };
 
     float now = 0.0f, hold = 0.0f, lo = -60.0f, hi = 0.0f;
-    float nowDb = 0.0f, holdDb = 0.0f;
-
     auto toDb = [] (float v) { return 20.0f * std::log10 (juce::jmax (v, 1.0e-6f)); };
 
     if (mode == 0)      { now = proc.peakNow.load (relaxed);  hold = proc.peakHold.load (relaxed);  }
     else if (mode == 1) { now = proc.rmsNow.load (relaxed);   hold = proc.rmsHold.load (relaxed);   }
     else                { now = proc.crestNow.load (relaxed); hold = proc.crestHold.load (relaxed); lo = 0.0f; hi = 24.0f; }
 
-    nowDb = toDb (now);
-    holdDb = toDb (hold);
+    const float nowDb = toDb (now);
+    const float holdDb = toDb (hold);
 
-    auto area = bounds.reduced (8.0f);
-    g.setColour (kAccent);
-    g.setFont (juce::Font (12.0f, juce::Font::bold));
+    auto area = bounds.reduced (6.0f);
+    g.setColour (kTextDark);
+    g.setFont (juce::Font (11.0f, juce::Font::bold));
     g.drawText (names[juce::jlimit (0, 2, mode)], area.removeFromTop (16.0f), juce::Justification::centred);
 
-    auto textArea = area.removeFromBottom (40.0f);
-    auto bar = area.reduced (area.getWidth() * 0.3f, 4.0f);
+    auto textArea = area.removeFromBottom (36.0f);
+    auto bar = area.reduced (area.getWidth() * 0.28f, 4.0f);
 
-    g.setColour (juce::Colour (0xff1b2128));
-    g.fillRoundedRectangle (bar, 3.0f);
+    g.setColour (juce::Colour (0xff252525));
+    g.fillRoundedRectangle (bar, 2.0f);
 
     auto norm = [&] (float db) { return juce::jlimit (0.0f, 1.0f, (db - lo) / (hi - lo)); };
-
     const float h = bar.getHeight() * norm (nowDb);
+
     juce::ColourGradient grad (kMeterHot, 0.0f, bar.getY(), kMeterCool, 0.0f, bar.getBottom(), false);
     grad.addColour (0.25, juce::Colour (0xffffd24a));
     g.setGradientFill (grad);
-    g.fillRoundedRectangle (bar.withTrimmedTop (bar.getHeight() - h), 3.0f);
+    g.fillRoundedRectangle (bar.withTrimmedTop (bar.getHeight() - h), 2.0f);
 
     if (hold > 0.0f)
     {
         const float y = bar.getBottom() - bar.getHeight() * norm (holdDb);
-        g.setColour (kTextBright);
+        g.setColour (juce::Colours::white);
         g.fillRect (bar.getX() - 3.0f, y - 1.0f, bar.getWidth() + 6.0f, 2.0f);
     }
 
-    g.setColour (kTextBright);
-    g.setFont (juce::Font (13.0f, juce::Font::bold));
-    juce::String nowText = mode == 2 ? juce::String (nowDb, 1) + " dB"
-                                     : formatDb (now);
-    g.drawText (nowText, textArea.removeFromTop (20.0f), juce::Justification::centred);
+    g.setColour (kTextDark);
+    g.setFont (juce::Font (11.0f, juce::Font::bold));
+    g.drawText (mode == 2 ? juce::String (nowDb, 1) : formatDb (now), textArea.removeFromTop (18.0f), juce::Justification::centred);
 
-    g.setColour (kText);
-    g.setFont (juce::Font (11.0f));
-    juce::String holdText = mode == 2 ? juce::String (holdDb, 1) + " dB" : formatDb (hold);
-    g.drawText ("hold " + holdText, textArea, juce::Justification::centred);
+    g.setColour (juce::Colour (0xff262626));
+    g.setFont (juce::Font (10.0f));
+    g.drawText (mode == 2 ? juce::String (holdDb, 1) : formatDb (hold), textArea, juce::Justification::centred);
 }
 
-//==============================================================================
-// Editor
 //==============================================================================
 WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     : AudioProcessorEditor (&p), proc (p), scope (p), overlay (p), meter (p)
@@ -653,200 +570,136 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     addAndMakeVisible (overlay);
     addAndMakeVisible (meter);
 
-    setupCombo (viewBox,     ids::view,     viewAtt);
-    setupCombo (captureBox,  ids::capture,  captureAtt);
-    setupCombo (barsBox,     ids::bars,     barsAtt);
-    setupCombo (inputBox,    ids::input,    inputAtt);
-    setupCombo (layoutBox,   ids::layout,   layoutAtt);
-    setupCombo (triggerModeBox, ids::triggerMode, triggerModeAtt);
+    setupCombo (viewBox, ids::view, viewAtt);
+    setupCombo (layoutBox, ids::layout, layoutAtt);
+    setupToggle (freezeBtn, "Freeze", ids::freeze, freezeAtt);
+    setupToggle (holdBtn, "Hold", ids::hold, holdAtt);
 
-    setupToggle (listenBtn, "Listen",    ids::listen,   listenAtt);
-    setupToggle (freezeBtn, "Freeze",    ids::freeze,   freezeAtt);
-    setupToggle (holdBtn,   "Hold",      ids::hold,     holdAtt);
+    preRollSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    preRollSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 42, 16);
+    preRollSlider.setColour (juce::Slider::trackColourId, kAbletonOrange);
+    preRollSlider.setColour (juce::Slider::backgroundColourId, juce::Colour (0xff555555));
+    preRollSlider.setColour (juce::Slider::thumbColourId, kTextLight);
+    preRollSlider.setColour (juce::Slider::textBoxTextColourId, kTextDark);
+    preRollSlider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour (0xffb4b4b4));
+    preRollSlider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colour (0xff555555));
+    preRollSlider.setTooltip ("PRE lead: start PRE samples this many milliseconds before the aligned MAIN samples");
+    preRollSlider.textFromValueFunction = [] (double value) { return juce::String (value, 0) + " ms"; };
+    addAndMakeVisible (preRollSlider);
+    preRollAtt = std::make_unique<SliderAtt> (proc.apvts, ids::preRollMs, preRollSlider);
 
-    masterBtn.setButtonText ("M");
-    masterBtn.setComponentID ("rack-master");
-    masterBtn.setTooltip ("Master view: overlay all six loaded source waveforms");
-    masterBtn.setClickingTogglesState (false);
-    masterBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1b2229));
-    masterBtn.setColour (juce::TextButton::buttonOnColourId, kAccent);
-    masterBtn.setColour (juce::TextButton::textColourOffId, kTextBright);
-    masterBtn.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff10151a));
-    addAndMakeVisible (masterBtn);
+    resetBtn.setButtonText ("Reset");
+    resetBtn.onClick = [this] { proc.requestReset(); };
+    addAndMakeVisible (resetBtn);
+
+    masterBtn.setButtonText ("Master");
+    masterBtn.setTooltip ("Master view: stack all six loaded source waveforms");
     masterBtn.onClick = [this]
     {
         selectedLayer = -1;
         monitorMode = false;
         updateViewVisibility();
     };
+    addAndMakeVisible (masterBtn);
 
-    monitorBtn.setButtonText ("MONITOR / FFT");
-    monitorBtn.setTooltip ("Open the live waveform and multi-signal spectrum monitor");
-    monitorBtn.setClickingTogglesState (false);
-    monitorBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1b2229));
-    monitorBtn.setColour (juce::TextButton::buttonOnColourId, kAccent.withAlpha (0.85f));
-    monitorBtn.setColour (juce::TextButton::textColourOffId, kTextBright);
-    monitorBtn.setColour (juce::TextButton::textColourOnId, juce::Colour (0xff10151a));
-    addAndMakeVisible (monitorBtn);
+    oneShotBtn.setButtonText ("1-Shot");
+    oneShotBtn.setTooltip ("Edit selected layer sample, reverse, pogo, trim, fades, pitch & AHDSR");
+    oneShotBtn.onClick = [this]
+    {
+        if (selectedLayer < 0) selectedLayer = 0;
+        monitorMode = false;
+        updateViewVisibility();
+    };
+    addAndMakeVisible (oneShotBtn);
+
+    monitorBtn.setButtonText ("Monitor");
+    monitorBtn.setTooltip ("Open live waveform & FFT spectrum monitor");
     monitorBtn.onClick = [this]
     {
         monitorMode = true;
         updateViewVisibility();
     };
+    addAndMakeVisible (monitorBtn);
 
-    // One toggle per signal, in that signal's trace colour.
+    padMasterBtn.setButtonText ("7 . MASTER  (ALL WAVES)");
+    padMasterBtn.setTooltip ("Pad 7 - Master: view all six loaded waves stacked on each other");
+    padMasterBtn.onClick = [this]
+    {
+        selectedLayer = -1;
+        monitorMode = false;
+        updateViewVisibility();
+    };
+    addAndMakeVisible (padMasterBtn);
+
+    loadSampleBtn.setButtonText ("Load Sample...");
+    loadSampleBtn.onClick = [this]
+    {
+        const int layer = juce::jlimit (0, WaveLensProcessor::kMaxSignals - 1, selectedLayer);
+        auto chooser = std::make_shared<juce::FileChooser> (
+            "Load sample for layer " + juce::String (layer + 1),
+            juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg");
+        chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
+            [this, layer, chooser] (const juce::FileChooser& fc)
+            {
+                const auto file = fc.getResult();
+                if (file.existsAsFile())
+                    loadFileIntoLayer (layer, file);
+            });
+    };
+    addAndMakeVisible (loadSampleBtn);
+
+    clearSampleBtn.setButtonText ("x");
+    clearSampleBtn.setTooltip ("Clear sample from selected pad");
+    clearSampleBtn.onClick = [this]
+    {
+        if (selectedLayer >= 0)
+        {
+            proc.clearSample (selectedLayer);
+            updateEnabledStates();
+        }
+    };
+    addAndMakeVisible (clearSampleBtn);
+
     for (int n = 0; n < WaveLensProcessor::kMaxSignals; ++n)
     {
         setupToggle (sigBtn[n], n < 3 ? ("P" + juce::String (n + 1)) : ("M" + juce::String (n - 2)), ids::showSig[n], sigAtt[n]);
         sigBtn[n].setColour (juce::TextButton::buttonOnColourId, signalColour (n));
-        sigBtn[n].setColour (juce::TextButton::textColourOnId, juce::Colour (0xff04121a));
-    }
+        sigBtn[n].setColour (juce::TextButton::textColourOnId, kTextDark);
 
-    resetBtn.setButtonText ("Reset");
-    resetBtn.onClick = [this] { proc.requestReset(); };
-    addAndMakeVisible (resetBtn);
-
-    auto setupSlider = [this] (juce::Slider& s, const char* id, std::unique_ptr<SliderAtt>& att,
-                               std::function<juce::String (double)> fmt)
-    {
-        s.setSliderStyle (juce::Slider::LinearHorizontal);
-        s.setTextBoxStyle (juce::Slider::TextBoxRight, false, 72, 20);
-        addAndMakeVisible (s);
-        att = std::make_unique<SliderAtt> (proc.apvts, id, s);
-
-        // The attachment installs its own text conversion, so ours goes in afterwards.
-        s.textFromValueFunction = std::move (fmt);
-        s.updateText();
-    };
-
-    setupSlider (timeSlider, ids::timeMs,  timeAtt, [] (double v) { return formatMs (v); });
-    setupSlider (gainSlider, ids::gain,    gainAtt, [] (double v) { return juce::String (v, 1) + " dB"; });
-    setupSlider (loSlider,   ids::rangeLo, loAtt,   [] (double v) { return formatHz (v); });
-    setupSlider (hiSlider,   ids::rangeHi, hiAtt,   [] (double v) { return formatHz (v); });
-    setupSlider (thresholdSlider, ids::threshold, thresholdAtt,
-                 [] (double v) { return juce::String (v * 100.0, 0) + "%"; });
-    setupSlider (preRollSlider, ids::preRollMs, preRollAtt,
-                 [] (double v) { return formatMs (v); });
-
-    // Typing a value like "2k" or "250" should work in the Hz boxes.
-    auto hzFromText = [] (const juce::String& t)
-    {
-        auto s = t.trim().toLowerCase();
-        double mult = 1.0;
-        if (s.endsWithChar ('k') || s.contains ("khz")) mult = 1000.0;
-        return s.getDoubleValue() * mult;
-    };
-    loSlider.valueFromTextFunction = hzFromText;
-    hiSlider.valueFromTextFunction = hzFromText;
-
-    // The old global Time / Trigger / Range controls are intentionally removed from the UI.
-    // Trigger detection remains active internally with a low threshold and Audio + MIDI support.
-    captureBox.setVisible (false);
-    barsBox.setVisible (false);
-    inputBox.setVisible (false);
-    triggerModeBox.setVisible (false);
-    listenBtn.setVisible (false);
-    timeSlider.setVisible (false);
-    gainSlider.setVisible (false);
-    loSlider.setVisible (false);
-    hiSlider.setVisible (false);
-    thresholdSlider.setVisible (false);
-    preRollSlider.setVisible (false);
-
-    // Six sample slots: three amber PRE layers, followed by three cyan MAIN layers.
-    for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
-    {
-        const bool isPre = layer < 3;
-        const juce::String slot = (isPre ? "PRE " : "MAIN ") + juce::String (isPre ? layer + 1 : layer - 2);
-        layerHeader[layer].setText (slot + "  /  OUT " + juce::String (layer + 1),
-                                    juce::dontSendNotification);
-
-        layerSelectBtn[layer].setButtonText (slot + "\\nEMPTY SLOT");
-        layerSelectBtn[layer].setComponentID ("rack-pad");
-        layerSelectBtn[layer].setClickingTogglesState (false);
-        layerSelectBtn[layer].setTooltip ("Select " + slot + " sample and its envelope controls");
-        layerSelectBtn[layer].setColour (juce::TextButton::buttonColourId, juce::Colour (0xff20272e));
-        layerSelectBtn[layer].setColour (juce::TextButton::buttonOnColourId, signalColour (layer).withAlpha (0.88f));
-        layerSelectBtn[layer].setColour (juce::TextButton::textColourOffId, signalColour (layer));
-        layerSelectBtn[layer].setColour (juce::TextButton::textColourOnId, juce::Colour (0xff10151a));
-        addAndMakeVisible (layerSelectBtn[layer]);
-        layerSelectBtn[layer].onClick = [this, layer]
+        const juce::String slot = (n < 3 ? "PRE " : "MAIN ") + juce::String (n < 3 ? n + 1 : n - 2);
+        layerSelectBtn[n].setButtonText (slot);
+        layerSelectBtn[n].setColour (juce::TextButton::buttonColourId, kPadIdle);
+        layerSelectBtn[n].setColour (juce::TextButton::buttonOnColourId, n < 3 ? kAbletonOrange : kAbletonCyan);
+        layerSelectBtn[n].setColour (juce::TextButton::textColourOffId, kTextDark);
+        layerSelectBtn[n].setColour (juce::TextButton::textColourOnId, kTextDark);
+        addAndMakeVisible (layerSelectBtn[n]);
+        layerSelectBtn[n].onClick = [this, n]
         {
-            selectedLayer = layer;
+            selectedLayer = n;
             monitorMode = false;
             updateViewVisibility();
         };
-        layerHeader[layer].setFont (juce::Font (10.5f, juce::Font::bold));
-        layerHeader[layer].setColour (juce::Label::textColourId, signalColour (layer));
-        addAndMakeVisible (layerHeader[layer]);
 
-        envelopeComponents[(size_t) layer] = std::make_unique<LayerEnvelopeComponent> (proc, layer, signalColour (layer));
-        addAndMakeVisible (*envelopeComponents[(size_t) layer]);
+        setupToggle (mutePadBtn[n], "M", ids::layerMute (n), muteAtt[n]);
+        mutePadBtn[n].setColour (juce::TextButton::buttonColourId, juce::Colour (0xff7b7b7b));
+        mutePadBtn[n].setColour (juce::TextButton::buttonOnColourId, kAbletonOrange);
 
-        loadSampleBtn[layer].setButtonText ("Load sample...");
-        loadSampleBtn[layer].setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1b2229));
-        loadSampleBtn[layer].setColour (juce::TextButton::buttonOnColourId, signalColour (layer).withAlpha (0.85f));
-        loadSampleBtn[layer].setColour (juce::TextButton::textColourOffId, juce::Colour (0xffe7edf2));
-        addAndMakeVisible (loadSampleBtn[layer]);
+        auditionBtn[n].setButtonText (">");
+        auditionBtn[n].setColour (juce::TextButton::buttonColourId, juce::Colour (0xff7b7b7b));
+        auditionBtn[n].onClick = [this, n] { proc.requestPreview (n); };
+        addAndMakeVisible (auditionBtn[n]);
 
-        loadSampleBtn[layer].onClick = [this, layer]
-        {
-            auto chooser = std::make_shared<juce::FileChooser> (
-                "Load sample for " + layerHeader[layer].getText(),
-                juce::File(),
-                "*.wav;*.aif;*.aiff;*.flac;*.ogg");
+        setupToggle (soloPadBtn[n], "S", ids::layerSolo (n), soloAtt[n]);
+        soloPadBtn[n].setColour (juce::TextButton::buttonColourId, juce::Colour (0xff7b7b7b));
+        soloPadBtn[n].setColour (juce::TextButton::buttonOnColourId, kAbletonCyan);
 
-            chooser->launchAsync (juce::FileBrowserComponent::openMode
-                                  | juce::FileBrowserComponent::canSelectFiles,
-                [this, layer, chooser] (const juce::FileChooser& fc)
-                {
-                    const auto file = fc.getResult();
-                    if (file.existsAsFile())
-                    {
-                        juce::String error;
-                        if (! proc.loadSampleFile (layer, file, error))
-                            juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon,
-                                                                    "Sample load failed", error);
-                    }
-                    updateEnabledStates();
-                });
-        };
-
-        auditionBtn[layer].setButtonText (">");
-        auditionBtn[layer].setTooltip ("Audition this sample layer");
-        auditionBtn[layer].setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1b2229));
-        auditionBtn[layer].setColour (juce::TextButton::buttonOnColourId, signalColour (layer).withAlpha (0.9f));
-        auditionBtn[layer].setColour (juce::TextButton::textColourOffId, juce::Colour (0xffe7edf2));
-        addAndMakeVisible (auditionBtn[layer]);
-        auditionBtn[layer].onClick = [this, layer] { proc.requestPreview (layer); };
-
-        layerGainSlider[layer].setSliderStyle (juce::Slider::LinearHorizontal);
-        layerGainSlider[layer].setTextBoxStyle (juce::Slider::TextBoxRight, false, 42, 16);
-        layerGainSlider[layer].setColour (juce::Slider::trackColourId, signalColour (layer));
-        addAndMakeVisible (layerGainSlider[layer]);
-        layerGainAtt[layer] = std::make_unique<SliderAtt> (proc.apvts, ids::layerGain (layer), layerGainSlider[layer]);
-        layerGainSlider[layer].textFromValueFunction = [] (double value)
-        {
-            return juce::String (value * 100.0, 0) + "%";
-        };
-        layerGainSlider[layer].updateText();
-
-        layerDelaySlider[layer].setSliderStyle (juce::Slider::LinearHorizontal);
-        layerDelaySlider[layer].setTextBoxStyle (juce::Slider::TextBoxRight, false, 39, 16);
-        layerDelaySlider[layer].setColour (juce::Slider::trackColourId, signalColour (layer));
-        layerDelaySlider[layer].setTooltip ("Layer timing shift: negative advances the sample; positive delays it");
-        addAndMakeVisible (layerDelaySlider[layer]);
-        layerDelayAtt[layer] = std::make_unique<SliderAtt> (proc.apvts, ids::layerDelay (layer), layerDelaySlider[layer]);
-        layerDelaySlider[layer].textFromValueFunction = [] (double value)
-        {
-            return juce::String (value > 0.0 ? "+" : "") + juce::String (value, 1) + "ms";
-        };
-        layerDelaySlider[layer].updateText();
+        envelopeComponents[(size_t) n] = std::make_unique<LayerEnvelopeComponent> (proc, n, signalColour (n));
+        addAndMakeVisible (*envelopeComponents[(size_t) n]);
     }
 
     setResizable (true, true);
-    setResizeLimits (1000, 620, 1800, 1200);
-    setSize (1180, 720);
+    setResizeLimits (980, 580, 1800, 1100);
+    setSize (1200, 660);
 
     updateEnabledStates();
     updateViewVisibility();
@@ -863,12 +716,11 @@ void WaveLensEditor::setupCombo (juce::ComboBox& box, const char* paramId, std::
 {
     if (auto* choice = dynamic_cast<juce::AudioParameterChoice*> (proc.apvts.getParameter (paramId)))
         box.addItemList (choice->choices, 1);
-
     addAndMakeVisible (box);
     att = std::make_unique<ComboAtt> (proc.apvts, paramId, box);
 }
 
-void WaveLensEditor::setupToggle (juce::TextButton& b, const juce::String& text, const char* paramId,
+void WaveLensEditor::setupToggle (juce::TextButton& b, const juce::String& text, const juce::String& paramId,
                                   std::unique_ptr<ButtonAtt>& att)
 {
     b.setButtonText (text);
@@ -877,42 +729,66 @@ void WaveLensEditor::setupToggle (juce::TextButton& b, const juce::String& text,
     att = std::make_unique<ButtonAtt> (proc.apvts, paramId, b);
 }
 
+bool WaveLensEditor::isInterestedInFileDrag (const juce::StringArray& files)
+{
+    for (const auto& f : files)
+        if (f.endsWithIgnoreCase (".wav") || f.endsWithIgnoreCase (".aif") || f.endsWithIgnoreCase (".aiff")
+            || f.endsWithIgnoreCase (".flac") || f.endsWithIgnoreCase (".ogg"))
+            return true;
+    return false;
+}
+
+void WaveLensEditor::filesDropped (const juce::StringArray& files, int x, int y)
+{
+    if (files.isEmpty())
+        return;
+
+    int targetLayer = selectedLayer >= 0 ? selectedLayer : 0;
+    for (int i = 0; i < WaveLensProcessor::kMaxSignals; ++i)
+    {
+        if (padCellBounds[i].contains (x, y))
+        {
+            targetLayer = i;
+            break;
+        }
+    }
+
+    loadFileIntoLayer (targetLayer, juce::File (files[0]));
+    selectedLayer = targetLayer;
+    monitorMode = false;
+    updateViewVisibility();
+}
+
+void WaveLensEditor::loadFileIntoLayer (int layer, const juce::File& file)
+{
+    juce::String error;
+    if (! proc.loadSampleFile (layer, file, error))
+        juce::AlertWindow::showMessageBoxAsync (juce::AlertWindow::WarningIcon, "Sample load failed", error);
+    updateEnabledStates();
+}
+
 void WaveLensEditor::updateEnabledStates()
 {
-    const auto& a = proc.apvts;
     const int mask = proc.connectedMask.load();
-
-    // A layer's visibility toggle is enabled once its sample has been loaded.
+    int loadedCount = 0;
     for (int n = 0; n < WaveLensProcessor::kMaxSignals; ++n)
     {
         const bool loaded = (mask & (1 << n)) != 0;
+        if (loaded) ++loadedCount;
         sigBtn[n].setEnabled (loaded);
         auditionBtn[n].setEnabled (loaded);
-    }
 
-    int loadedLayerCount = 0;
-    for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
-        if ((mask & (1 << layer)) != 0)
-            ++loadedLayerCount;
-    layoutBox.setEnabled (loadedLayerCount > 1);
-
-    for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
-    {
-        const auto sampleName = proc.getSampleName (layer);
-        if (sampleName != displayedSampleNames[(size_t) layer])
+        const auto sampleName = proc.getSampleName (n);
+        if (sampleName != displayedSampleNames[(size_t) n])
         {
-            displayedSampleNames[(size_t) layer] = sampleName;
-            loadSampleBtn[layer].setButtonText (sampleName.isEmpty()
-                                                    ? "Load sample..."
-                                                    : sampleName.substring (0, 22));
-
-            const auto slot = layer < 3 ? "PRE " + juce::String (layer + 1)
-                                        : "MAIN " + juce::String (layer - 2);
-            const auto padName = sampleName.isEmpty() ? juce::String ("EMPTY SLOT")
-                                                       : sampleName.substring (0, 15).toUpperCase();
-            layerSelectBtn[layer].setButtonText (slot + "\\n" + padName);
+            displayedSampleNames[(size_t) n] = sampleName;
+            const juce::String slot = (n < 3 ? "PRE " : "MAIN ") + juce::String (n < 3 ? n + 1 : n - 2);
+            layerSelectBtn[n].setButtonText (sampleName.isEmpty() ? slot : sampleName.substring (0, 14));
         }
     }
+    layoutBox.setEnabled (loadedCount > 1);
+    padMasterBtn.setButtonText ("7 . MASTER (" + juce::String (loadedCount) + "/6 WAVES)");
+    clearSampleBtn.setEnabled (selectedLayer >= 0 && (mask & (1 << selectedLayer)) != 0);
 }
 
 void WaveLensEditor::updateViewVisibility()
@@ -920,29 +796,32 @@ void WaveLensEditor::updateViewVisibility()
     const bool showMaster = selectedLayer < 0 && ! monitorMode;
     const bool showLayer = selectedLayer >= 0 && ! monitorMode;
 
-    masterBtn.setToggleState (showMaster, juce::dontSendNotification);
-    monitorBtn.setToggleState (monitorMode, juce::dontSendNotification);
+    masterBtn.setColour (juce::TextButton::buttonColourId, showMaster ? kAbletonOrange : juce::Colour (0xff4a4a4a));
+    masterBtn.setColour (juce::TextButton::textColourOffId, showMaster ? kTextDark : kTextLight);
+    oneShotBtn.setColour (juce::TextButton::buttonColourId, showLayer ? kAbletonOrange : juce::Colour (0xff4a4a4a));
+    oneShotBtn.setColour (juce::TextButton::textColourOffId, showLayer ? kTextDark : kTextLight);
+    monitorBtn.setColour (juce::TextButton::buttonColourId, monitorMode ? kAbletonCyan : juce::Colour (0xff4a4a4a));
+    monitorBtn.setColour (juce::TextButton::textColourOffId, monitorMode ? kTextDark : kTextLight);
+    padMasterBtn.setColour (juce::TextButton::buttonColourId, showMaster ? kAbletonYellow : kPadIdle);
 
     overlay.setVisible (showMaster);
     scope.setVisible (monitorMode);
     meter.setVisible (monitorMode);
-
     viewBox.setVisible (monitorMode);
     layoutBox.setVisible (monitorMode);
+    loadSampleBtn.setVisible (showLayer);
+    clearSampleBtn.setVisible (showLayer);
+
     for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
     {
         sigBtn[layer].setVisible (monitorMode);
         const bool selected = showLayer && selectedLayer == layer;
         layerSelectBtn[layer].setToggleState (selected, juce::dontSendNotification);
-        layerHeader[layer].setVisible (selected);
-        loadSampleBtn[layer].setVisible (selected);
-        auditionBtn[layer].setVisible (selected);
-        layerGainSlider[layer].setVisible (selected);
-        layerDelaySlider[layer].setVisible (selected);
         if (envelopeComponents[(size_t) layer] != nullptr)
             envelopeComponents[(size_t) layer]->setVisible (selected);
     }
 
+    updateEnabledStates();
     resized();
     repaint();
 }
@@ -954,241 +833,181 @@ void WaveLensEditor::timerCallback()
 
 void WaveLensEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (kBackground);
+    g.fillAll (kRackGutter);
 
-    g.setColour (kTextBright);
-    g.setFont (juce::Font (20.0f, juce::Font::bold));
-    g.drawText ("WaveLens", 14, 7, 150, 28, juce::Justification::centredLeft);
-
-    g.setColour (kText);
-    g.setFont (juce::Font (11.5f));
-    g.drawText ("SIX-LAYER TRANSIENT SAMPLER", 164, 11, 260, 20,
-                juce::Justification::centredLeft);
-
-    g.setColour (kPanel);
-    g.fillRoundedRectangle (rackArea.toFloat(), 7.0f);
-    g.setColour (kPanelEdge);
-    g.drawRoundedRectangle (rackArea.toFloat().reduced (0.5f), 7.0f, 1.0f);
-
-    g.setColour (kPanel);
-    g.fillRoundedRectangle (workspaceArea.toFloat(), 7.0f);
-    g.setColour (kPanelEdge);
-    g.drawRoundedRectangle (workspaceArea.toFloat().reduced (0.5f), 7.0f, 1.0f);
-
-    g.setColour (kPanel.withBrightness (1.05f));
-    g.fillRoundedRectangle (workspaceToolbarArea.toFloat().reduced (1.0f), 5.0f);
-
-    g.setColour (kTextBright);
-    g.setFont (juce::Font (12.0f, juce::Font::bold));
-    g.drawText ("DRUM RACK", rackArea.getX() + 12, rackArea.getY() + 8,
-                rackArea.getWidth() - 58, 20, juce::Justification::centredLeft);
-
-    g.setColour (signalColour (0));
+    // Top bar title
+    g.setColour (kTextLight);
+    g.setFont (juce::Font (14.0f, juce::Font::bold));
+    g.drawText ("WaveLens", 12, 5, 100, 22, juce::Justification::centredLeft);
+    g.setColour (juce::Colour (0xffdcdcdc));
+    g.setFont (juce::Font (10.5f));
+    g.drawText ("SIX-LAYER TRANSIENT SAMPLER", 96, 6, 240, 20, juce::Justification::centredLeft);
+    g.setColour (kTextLight.withAlpha (0.9f));
     g.setFont (juce::Font (9.5f, juce::Font::bold));
-    g.drawText ("PRE-SAMPLE BANK", rackArea.getX() + 12, layerSelectBtn[0].getY() - 18,
-                rackArea.getWidth() - 24, 14, juce::Justification::centredLeft);
+    g.drawText ("PRE LEAD", preRollSlider.getX() - 62, preRollSlider.getY(), 58, preRollSlider.getHeight(),
+                juce::Justification::centredRight);
 
-    g.setColour (signalColour (3));
-    g.drawText ("MAIN-SAMPLE BANK", rackArea.getX() + 12, layerSelectBtn[3].getY() - 18,
-                rackArea.getWidth() - 24, 14, juce::Justification::centredLeft);
+    auto drawDeviceFrame = [&] (juce::Rectangle<int> area, juce::Rectangle<int> hdr, const juce::String& title)
+    {
+        g.setColour (kDeviceBg);
+        g.fillRoundedRectangle (area.toFloat(), 5.0f);
+        g.setColour (kDeviceEdge);
+        g.drawRoundedRectangle (area.toFloat().reduced (0.5f), 5.0f, 1.0f);
+
+        g.setColour (kDeviceHeader);
+        g.fillRect (hdr);
+        g.setColour (juce::Colour (0xff4a4a4a));
+        g.drawHorizontalLine (hdr.getBottom(), (float) hdr.getX(), (float) hdr.getRight());
+
+        // Ableton yellow (I) power circle
+        auto circle = juce::Rectangle<float> ((float) hdr.getX() + 7.0f, (float) hdr.getCentreY() - 6.5f, 13.0f, 13.0f);
+        g.setColour (kAbletonYellow);
+        g.fillEllipse (circle);
+        g.setColour (kDeviceEdge);
+        g.drawEllipse (circle, 1.0f);
+        g.setColour (kTextDark);
+        g.setFont (juce::Font (8.5f, juce::Font::bold));
+        g.drawText ("I", circle, juce::Justification::centred);
+
+        g.setFont (juce::Font (12.0f, juce::Font::bold | juce::Font::italic));
+        g.drawText (title, hdr.withTrimmedLeft (25), juce::Justification::centredLeft);
+    };
+
+    drawDeviceFrame (drumRackDeviceArea, drumRackHeaderArea, "Drum Rack");
+
+    juce::String rightTitle = "Master - All Source Layers";
+    if (monitorMode)
+        rightTitle = "Monitor / FFT Spectrum";
+    else if (selectedLayer >= 0)
+    {
+        const auto name = proc.getSampleName (selectedLayer);
+        const juce::String slot = (selectedLayer < 3 ? "PRE " : "MAIN ")
+                                  + juce::String (selectedLayer < 3 ? selectedLayer + 1 : selectedLayer - 2);
+        rightTitle = name.isEmpty() ? slot + " (Empty)" : slot + " - " + name;
+    }
+    drawDeviceFrame (simplerDeviceArea, simplerHeaderArea, rightTitle);
+
+    // Pad grid background
+    g.setColour (juce::Colour (0xff7d7d7d));
+    g.fillRoundedRectangle (padGridArea.toFloat(), 3.0f);
+    g.setColour (juce::Colour (0xff525252));
+    g.drawRoundedRectangle (padGridArea.toFloat().reduced (0.5f), 3.0f, 1.0f);
 
     if (monitorMode)
     {
-        g.setColour (kText);
-        g.setFont (juce::Font (9.0f, juce::Font::bold));
-        g.drawText ("DISPLAY", viewBox.getX(), workspaceToolbarArea.getY() + 4,
-                    viewBox.getWidth(), 12, juce::Justification::centredLeft);
-        g.drawText ("LAYOUT", layoutBox.getX(), workspaceToolbarArea.getY() + 4,
-                    layoutBox.getWidth(), 12, juce::Justification::centredLeft);
-        if (sigBtn[0].isVisible())
-            g.drawText ("VISIBLE TRACES", sigBtn[0].getX(), workspaceToolbarArea.getY() + 4,
-                        sigBtn[5].getRight() - sigBtn[0].getX(), 12,
-                        juce::Justification::centredLeft);
-    }
-    else if (selectedLayer >= 0)
-    {
-        const int layer = juce::jlimit (0, WaveLensProcessor::kMaxSignals - 1, selectedLayer);
-        g.setColour (signalColour (layer));
-        g.setFont (juce::Font (9.5f, juce::Font::bold));
-        g.drawText ("SAMPLE", loadSampleBtn[layer].getX(), workspaceToolbarArea.getY() + 5,
-                    loadSampleBtn[layer].getWidth(), 12, juce::Justification::centredLeft);
-        g.drawText ("LEVEL", layerGainSlider[layer].getX(), workspaceToolbarArea.getY() + 5,
-                    layerGainSlider[layer].getWidth(), 12, juce::Justification::centredLeft);
-        g.drawText ("TIMING SHIFT", layerDelaySlider[layer].getX(), workspaceToolbarArea.getY() + 5,
-                    layerDelaySlider[layer].getWidth(), 12, juce::Justification::centredLeft);
-    }
-    else
-    {
-        g.setColour (kText);
-        g.setFont (juce::Font (10.0f, juce::Font::bold));
-        g.drawText ("MASTER WAVEFORM OVERLAY  /  ALL LOADED SAMPLES",
-                    workspaceToolbarArea.reduced (12, 0), juce::Justification::centredLeft);
-    }
-}
-
-void WaveLensEditor::paintOverChildren (juce::Graphics& g)
-{
-    // A compact source waveform makes each rack cell read like a sample pad,
-    // while the full-size waveform and envelope remain in the editor workspace.
-    constexpr int displayBars = 40;
-
-    for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
-    {
-        const auto& pad = layerSelectBtn[layer];
-        if (! pad.isVisible())
-            continue;
-
-        const auto preview = proc.getWaveformPreview (layer);
-        if (! preview.loaded)
-            continue;
-
-        auto plot = pad.getBounds().toFloat().reduced (8.0f, 0.0f);
-        plot.removeFromTop (23.0f);
-        plot.removeFromBottom (22.0f);
-        if (plot.getWidth() < 16.0f || plot.getHeight() < 8.0f)
-            continue;
-
-        const float centre = plot.getCentreY();
-        const float amplitude = plot.getHeight() * 0.46f;
-        const float barWidth = plot.getWidth() / (float) displayBars;
-
-        g.setColour (signalColour (layer).withAlpha (0.20f));
-        g.drawHorizontalLine (juce::roundToInt (centre), plot.getX(), plot.getRight());
-
-        g.setColour (signalColour (layer).withAlpha (0.88f));
-        for (int bar = 0; bar < displayBars; ++bar)
-        {
-            const int index = bar * (LayeredSampleEngine::kPreviewPoints - 1)
-                              / (displayBars - 1);
-            const float x = plot.getX() + ((float) bar + 0.5f) * barWidth;
-            const float top = centre - preview.maximum[(size_t) index] * amplitude;
-            const float bottom = centre - preview.minimum[(size_t) index] * amplitude;
-            g.drawLine (x, top, x, bottom, 1.35f);
-        }
+        g.setColour (juce::Colour (0xff7f7f7f));
+        g.fillRoundedRectangle (monitorToolbarArea.toFloat(), 3.0f);
+        g.setColour (juce::Colour (0xff4d4d4d));
+        g.drawRoundedRectangle (monitorToolbarArea.toFloat().reduced (0.5f), 3.0f, 1.0f);
     }
 }
 
 void WaveLensEditor::resized()
 {
-    auto area = getLocalBounds().reduced (12, 7);
+    auto area = getLocalBounds().reduced (8, 6);
 
-    auto header = area.removeFromTop (32);
-    resetBtn.setBounds (header.removeFromRight (62).withHeight (24).withY (header.getY() + 3));
-    header.removeFromRight (5);
-    holdBtn.setBounds (header.removeFromRight (62).withHeight (24).withY (header.getY() + 3));
-    header.removeFromRight (5);
-    freezeBtn.setBounds (header.removeFromRight (62).withHeight (24).withY (header.getY() + 3));
+    auto topBar = area.removeFromTop (24);
+    resetBtn.setBounds (topBar.removeFromRight (56));
+    topBar.removeFromRight (4);
+    holdBtn.setBounds (topBar.removeFromRight (56));
+    topBar.removeFromRight (4);
+    freezeBtn.setBounds (topBar.removeFromRight (56));
+    topBar.removeFromRight (8);
+    preRollSlider.setBounds (topBar.removeFromRight (120).withHeight (22));
 
-    area.removeFromTop (7);
-    rackArea = area.removeFromLeft (236);
-    area.removeFromLeft (10);
-    workspaceArea = area;
+    area.removeFromTop (5);
+    drumRackDeviceArea = area.removeFromLeft (juce::jmax (210, juce::roundToInt ((float) area.getWidth() * 0.25f)));
+    area.removeFromLeft (6);
+    simplerDeviceArea = area;
 
-    auto rack = rackArea.reduced (10, 9);
-    auto rackHeader = rack.removeFromTop (30);
-    masterBtn.setBounds (rackHeader.removeFromRight (34).withHeight (28)
-                                      .withY (rackHeader.getY() + 1));
+    auto leftInner = drumRackDeviceArea;
+    drumRackHeaderArea = leftInner.removeFromTop (24);
+    leftInner = leftInner.reduced (6);
+    padGridArea = leftInner;
 
-    rack.removeFromTop (12);
-    rack.removeFromTop (16);
-    rack.removeFromTop (5);
+    // 7-Pad Drum Rack Grid: 2 cols x 4 rows (6 sample pads + full-width 7th Master pad)
+    auto grid = padGridArea.reduced (4);
+    const int cols = 2, rows = 4, gap = 5;
+    const int cellW = (grid.getWidth() - gap * (cols - 1)) / cols;
+    const int cellH = (grid.getHeight() - gap * (rows - 1)) / rows;
 
-    constexpr int padGap = 6;
-    constexpr int padHeight = 76;
-    const int padWidth = (rack.getWidth() - padGap * 2) / 3;
-    auto preRow = rack.removeFromTop (padHeight);
-    for (int column = 0; column < 3; ++column)
+    auto cellAt = [&] (int row, int col)
     {
-        const int x = rack.getX() + column * (padWidth + padGap);
-        const int width = column == 2 ? rack.getRight() - x : padWidth;
-        layerSelectBtn[column].setBounds (x, preRow.getY(), width, preRow.getHeight());
+        return juce::Rectangle<int> (grid.getX() + col * (cellW + gap),
+                                     grid.getY() + row * (cellH + gap),
+                                     cellW, cellH);
+    };
+
+    auto layoutSamplePad = [&] (int layer, int row, int col)
+    {
+        auto cell = cellAt (row, col);
+        padCellBounds[layer] = cell;
+        auto bar = cell.removeFromBottom (18);
+        layerSelectBtn[layer].setBounds (cell);
+        const int bw = bar.getWidth() / 3;
+        mutePadBtn[layer].setBounds (bar.removeFromLeft (bw));
+        auditionBtn[layer].setBounds (bar.removeFromLeft (bw));
+        soloPadBtn[layer].setBounds (bar);
+    };
+
+    // Rows 0..2: PRE 1..3 (left col) & MAIN 1..3 (right col)
+    for (int r = 0; r < 3; ++r)
+    {
+        layoutSamplePad (r, r, 0);
+        layoutSamplePad (r + 3, r, 1);
     }
 
-    rack.removeFromTop (15);
-    rack.removeFromTop (16);
-    rack.removeFromTop (5);
-    auto mainRow = rack.removeFromTop (padHeight);
-    for (int column = 0; column < 3; ++column)
-    {
-        const int x = rack.getX() + column * (padWidth + padGap);
-        const int width = column == 2 ? rack.getRight() - x : padWidth;
-        layerSelectBtn[column + 3].setBounds (x, mainRow.getY(), width, mainRow.getHeight());
-    }
+    // Row 3: 7th Pad (MASTER) spanning full width
+    padMasterBtn.setBounds (juce::Rectangle<int> (grid.getX(),
+                                                  grid.getY() + 3 * (cellH + gap),
+                                                  grid.getWidth(),
+                                                  grid.getBottom() - (grid.getY() + 3 * (cellH + gap))));
 
-    monitorBtn.setBounds (rack.removeFromBottom (36));
+    // Right Simpler / Monitor Device
+    auto rightInner = simplerDeviceArea;
+    simplerHeaderArea = rightInner.removeFromTop (24);
 
-    auto workspace = workspaceArea.reduced (8, 8);
-    workspaceToolbarArea = workspace.removeFromTop (62);
-    workspace.removeFromTop (8);
-    canvasArea = workspace;
+    auto hdrBtns = simplerHeaderArea.reduced (4, 3);
+    clearSampleBtn.setBounds (hdrBtns.removeFromRight (22));
+    hdrBtns.removeFromRight (4);
+    loadSampleBtn.setBounds (hdrBtns.removeFromRight (100));
+
+    auto body = rightInner.reduced (6);
+    modeRailArea = body.removeFromLeft (54);
+    body.removeFromLeft (6);
+
+    const int modeH = modeRailArea.getHeight() / 3;
+    auto rail = modeRailArea;
+    masterBtn.setBounds (rail.removeFromTop (modeH));
+    oneShotBtn.setBounds (rail.removeFromTop (modeH));
+    monitorBtn.setBounds (rail);
 
     if (monitorMode)
     {
-        auto monitorArea = canvasArea.reduced (2);
-        meter.setBounds (monitorArea.removeFromRight (68));
-        monitorArea.removeFromRight (7);
-        scope.setBounds (monitorArea);
-    }
-    else
-    {
-        scope.setBounds (canvasArea.reduced (2));
-        meter.setBounds (juce::Rectangle<int>());
-    }
-
-    overlay.setBounds (canvasArea.reduced (2));
-    for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
-        envelopeComponents[(size_t) layer]->setBounds (canvasArea.reduced (2));
-
-    if (monitorMode)
-    {
-        auto controls = workspaceToolbarArea.reduced (10, 0);
-        controls.removeFromTop (18);
-        viewBox.setBounds (controls.removeFromLeft (110).withHeight (25));
-        controls.removeFromLeft (8);
-        layoutBox.setBounds (controls.removeFromLeft (100).withHeight (25));
-        controls.removeFromLeft (18);
-        const int gap = 5;
-        const int toggleWidth = juce::jlimit (34, 48,
-            (controls.getWidth() - gap * 5) / 6);
-        for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
+        monitorToolbarArea = body.removeFromTop (34);
+        body.removeFromTop (6);
+        auto tb = monitorToolbarArea.reduced (8, 5);
+        viewBox.setBounds (tb.removeFromLeft (105));
+        tb.removeFromLeft (8);
+        layoutBox.setBounds (tb.removeFromLeft (95));
+        tb.removeFromLeft (12);
+        for (int n = 0; n < WaveLensProcessor::kMaxSignals; ++n)
         {
-            sigBtn[layer].setBounds (controls.removeFromLeft (toggleWidth).withHeight (25));
-            if (layer != WaveLensProcessor::kMaxSignals - 1)
-                controls.removeFromLeft (gap);
+            sigBtn[n].setBounds (tb.removeFromLeft (32));
+            tb.removeFromLeft (4);
         }
-    }
-    else if (selectedLayer >= 0)
-    {
-        const int layer = juce::jlimit (0, WaveLensProcessor::kMaxSignals - 1, selectedLayer);
-        auto controls = workspaceToolbarArea.reduced (10, 0);
-        controls.removeFromTop (19);
 
-        const int available = controls.getWidth();
-        const int headerWidth = juce::jlimit (88, 108, (int) (available * 0.14f));
-        const int sampleWidth = juce::jlimit (170, 225, (int) (available * 0.29f));
-        const int levelWidth = juce::jlimit (145, 180, (int) (available * 0.22f));
-        constexpr int gap = 8;
-
-        layerHeader[layer].setBounds (controls.removeFromLeft (headerWidth).withHeight (25));
-        controls.removeFromLeft (gap);
-
-        auto sampleArea = controls.removeFromLeft (sampleWidth);
-        auditionBtn[layer].setBounds (sampleArea.removeFromRight (28).withHeight (25));
-        sampleArea.removeFromRight (4);
-        loadSampleBtn[layer].setBounds (sampleArea.withHeight (25));
-        controls.removeFromLeft (gap);
-
-        auto levelArea = controls.removeFromLeft (levelWidth);
-        layerGainSlider[layer].setBounds (levelArea.withHeight (24));
-        controls.removeFromLeft (gap);
-
-        layerDelaySlider[layer].setBounds (controls.withHeight (24));
+        meter.setBounds (body.removeFromRight (64));
+        body.removeFromRight (6);
+        scope.setBounds (body);
     }
     else
     {
-        viewBox.setBounds (juce::Rectangle<int>());
-        layoutBox.setBounds (juce::Rectangle<int>());
-        for (auto& button : sigBtn)
-            button.setBounds (juce::Rectangle<int>());
+        monitorToolbarArea = {};
+        canvasArea = body;
+        overlay.setBounds (canvasArea);
+        for (int layer = 0; layer < WaveLensProcessor::kMaxSignals; ++layer)
+            if (envelopeComponents[(size_t) layer] != nullptr)
+                envelopeComponents[(size_t) layer]->setBounds (canvasArea);
     }
 }
