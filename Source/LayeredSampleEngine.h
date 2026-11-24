@@ -129,6 +129,7 @@ private:
     std::array<std::vector<std::unique_ptr<SampleData>>, kNumLayers> ownedSamples;
     size_t retainedSampleBytes = 0;
     std::array<std::atomic<float>, kNumLayers> layerTailSeconds {};
+    std::array<std::atomic<bool>, kNumLayers> tailEstimateDirty {};
     std::atomic<float> maximumTailSeconds { 0.0f };
     std::array<juce::String, kNumLayers> sampleNames;
     std::array<LayerParameters, kNumLayers> parameters {};
