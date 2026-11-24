@@ -133,6 +133,7 @@ private:
     MeterView meter;
 
     juce::ComboBox viewBox, layoutBox;
+    juce::Slider preRollSlider;
     juce::TextButton freezeBtn, holdBtn, resetBtn;
     juce::TextButton masterBtn, oneShotBtn, monitorBtn;
     juce::TextButton padMasterBtn;
@@ -154,6 +155,7 @@ private:
     juce::Rectangle<int> padCellBounds[WaveLensProcessor::kMaxSignals];
 
     std::unique_ptr<ComboAtt>  viewAtt, layoutAtt;
+    std::unique_ptr<SliderAtt> preRollAtt;
     std::unique_ptr<ButtonAtt> freezeAtt, holdAtt;
     std::unique_ptr<ButtonAtt> sigAtt[WaveLensProcessor::kMaxSignals];
     std::unique_ptr<ButtonAtt> muteAtt[WaveLensProcessor::kMaxSignals];
