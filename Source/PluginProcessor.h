@@ -40,7 +40,18 @@ namespace ids
     inline juce::String layerAttackCurve (int n) { return "layerAttackCurve" + juce::String (n + 1); }
     inline juce::String layerDecayCurve (int n) { return "layerDecayCurve" + juce::String (n + 1); }
     inline juce::String layerReleaseCurve (int n) { return "layerReleaseCurve" + juce::String (n + 1); }
+    inline juce::String layerAttackTension (int n) { return "layerAttackTension" + juce::String (n + 1); }
+    inline juce::String layerDecayTension (int n) { return "layerDecayTension" + juce::String (n + 1); }
+    inline juce::String layerReleaseTension (int n) { return "layerReleaseTension" + juce::String (n + 1); }
+    inline juce::String layerEnvEnabled (int n) { return "layerEnvEnabled" + juce::String (n + 1); }
     inline juce::String layerMute (int n)    { return "layerMute" + juce::String (n + 1); }
+    inline juce::String layerSolo (int n)    { return "layerSolo" + juce::String (n + 1); }
+    inline juce::String layerReverse (int n) { return "layerReverse" + juce::String (n + 1); }
+    inline juce::String layerPogo (int n)    { return "layerPogo" + juce::String (n + 1); }
+    inline juce::String layerTrimStart (int n) { return "layerTrimStart" + juce::String (n + 1); }
+    inline juce::String layerTrimEnd (int n) { return "layerTrimEnd" + juce::String (n + 1); }
+    inline juce::String layerFadeIn (int n)  { return "layerFadeIn" + juce::String (n + 1); }
+    inline juce::String layerFadeOut (int n) { return "layerFadeOut" + juce::String (n + 1); }
 }
 
 enum class CaptureMode { Tempo = 0, Live, Scroll };
@@ -57,7 +68,6 @@ inline double barsFromIndex (int index)
 class WaveLensProcessor final : public juce::AudioProcessor
 {
 public:
-    // Number of display columns and the six sample layers captured per column.
     static constexpr int kCols = 1024;
     static constexpr int kMaxSignals = 6;
     static constexpr int kFFTOrder = 12, kFFTSize = 1 << kFFTOrder, kSpectrumBins = 512, kSpectrumHop = 1024;
@@ -92,7 +102,6 @@ public:
     void setStateInformation (const void*, int) override;
 
     //==========================================================================
-    /** Asks the audio thread to clear the capture, the held pass and the meter holds. */
     void requestReset() noexcept { resetRequest.store (true); }
     bool loadSampleFile (int layer, const juce::File& file, juce::String& error);
     void clearSample (int layer);
@@ -102,23 +111,19 @@ public:
 
     juce::AudioProcessorValueTreeState apvts;
 
-    //==========================================================================
-    // Data shared with the editor. Written by the audio thread, read by the UI.
-    // Tearing between a min and a max is harmless for a display.
     using AF = std::atomic<float>;
-    std::array<AF, kCols * kNumChan> colMin, colMax;     // current pass
-    std::array<AF, kCols * kNumChan> heldMin, heldMax;   // previous pass
+    std::array<AF, kCols * kNumChan> colMin, colMax;
+    std::array<AF, kCols * kNumChan> heldMin, heldMax;
     std::array<std::array<AF, kSpectrumBins>, kMaxSignals> spectrumDb, heldSpectrumDb;
 
-    std::atomic<int>  head { 0 };          // column being written
-    std::atomic<int>  passStartCol { 0 };  // first valid column of the current pass
-    std::atomic<int>  filled { 0 };        // columns written since reset (scroll mode)
+    std::atomic<int>  head { 0 };
+    std::atomic<int>  passStartCol { 0 };
+    std::atomic<int>  filled { 0 };
     std::atomic<bool> hasData { false };
     std::atomic<int>  heldFrom { 0 }, heldTo { 0 };
     std::atomic<bool> heldValid { false };
-    std::atomic<int>  connectedMask { 0 };   // bit n set = sample layer n+1 is loaded
+    std::atomic<int>  connectedMask { 0 };
 
-    // Meter values (linear).
     std::atomic<float> peakNow { 0.0f }, rmsNow { 0.0f }, crestNow { 1.0f };
     std::atomic<float> peakHold { 0.0f }, rmsHold { 0.0f }, crestHold { 1.0f };
 
@@ -128,7 +133,6 @@ private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     static BusesProperties makeBuses();
 
-    // Capture engine (audio thread only) --------------------------------------
     void resetCapture (bool clearHeld);
     void startNewPass (bool copyToHeld, double startColumn);
     void copyPassToHeld();
@@ -140,7 +144,7 @@ private:
     void processSpectrumFrame() noexcept;
 
     CaptureMode mode = CaptureMode::Tempo;
-    double colF = 0.0;          // fractional column position
+    double colF = 0.0;
     double colsPerSample = 1.0;
     int    curCol = 0;
     int    passStart = 0;
@@ -153,9 +157,8 @@ private:
     int    lastModeIdx = -1, lastBarsIdx = -1;
     float  lastTimeMs = -1.0f;
 
-    // DSP ---------------------------------------------------------------------
     double sr = 44100.0;
-    juce::dsp::LinkwitzRileyFilter<float> rangeHp[kMaxSignals], rangeLp[kMaxSignals];   // one pair per signal
+    juce::dsp::LinkwitzRileyFilter<float> rangeHp[kMaxSignals], rangeLp[kMaxSignals];
     juce::dsp::LinkwitzRileyFilter<float> listenHp[2], listenLp[2];
     juce::dsp::FFT spectrumFft { kFFTOrder };
     std::array<float, kFFTSize> fftWindow {};
@@ -174,7 +177,6 @@ private:
 
     std::atomic<bool> resetRequest { false };
 
-    // Cached parameter pointers.
     std::atomic<float>* pView = nullptr;
     std::atomic<float>* pCapture = nullptr;
     std::atomic<float>* pBars = nullptr;
@@ -201,9 +203,19 @@ private:
     std::array<std::atomic<float>*, kMaxSignals> pLayerAttackCurve {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerDecayCurve {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerReleaseCurve {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerAttackTension {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerDecayTension {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerReleaseTension {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerEnvEnabled {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerMute {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerSolo {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerReverse {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerPogo {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerTrimStart {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerTrimEnd {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerFadeIn {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerFadeOut {};
 
-    // Six immutable sample layers and a separate copy of the trigger input.
     LayeredSampleEngine layerEngine;
     juce::AudioBuffer<float> triggerBuffer;
     std::array<juce::String, kMaxSignals> samplePaths;
