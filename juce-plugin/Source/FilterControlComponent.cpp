@@ -134,26 +134,29 @@ void FilterControlComponent::paint (juce::Graphics& g)
         return;
 
     const float cy = track.getCentreY();
-    juce::Rectangle<float> groove (track.getX(), cy - 2.0f, track.getWidth(), 4.0f);
-    g.setColour (ui::kControlBg);
-    g.fillRoundedRectangle (groove, 2.0f);
+    const float barH = juce::jmax (10.0f, track.getHeight() - 8.0f);
+    juce::Rectangle<float> groove (track.getX(), cy - barH * 0.5f, track.getWidth(), barH);
+    g.setColour (ui::kControlBg.darker (0.25f));
+    g.fillRoundedRectangle (groove, 2.5f);
 
     const float xHp = track.getX() + hzToNorm (hp) * track.getWidth();
     const float xLp = juce::jmax (xHp + 6.0f, track.getX() + hzToNorm (lp) * track.getWidth());
 
-    // Active passband fill
-    g.setColour (accent.withAlpha (0.72f));
-    g.fillRoundedRectangle (xHp, cy - 2.0f, juce::jmax (2.0f, xLp - xHp), 4.0f, 2.0f);
+    // Active passband fill inside bar
+    g.setColour (accent.withAlpha (0.24f));
+    g.fillRoundedRectangle (xHp, groove.getY(), juce::jmax (2.0f, xLp - xHp), groove.getHeight(), 2.0f);
+    g.setColour (accent.withAlpha (0.80f));
+    g.fillRect (xHp, groove.getY(), juce::jmax (2.0f, xLp - xHp), 1.5f);
 
     auto drawHandle = [&] (float hx, bool highlighted)
     {
-        const float r = highlighted ? 5.6f : 4.8f;
-        g.setColour (ui::kMainBg);
-        g.fillEllipse (hx - r - 1.0f, cy - r - 1.0f, 2.0f * (r + 1.0f), 2.0f * (r + 1.0f));
+        const float w = highlighted ? 4.5f : 3.2f;
+        const float h = groove.getHeight() + 4.0f;
+        juce::Rectangle<float> tab (hx - w * 0.5f, cy - h * 0.5f, w, h);
         g.setColour (accent);
-        g.fillEllipse (hx - r, cy - r, 2.0f * r, 2.0f * r);
-        g.setColour (ui::kMainText);
-        g.fillEllipse (hx - 1.7f, cy - 1.7f, 3.4f, 3.4f);
+        g.fillRoundedRectangle (tab, 1.5f);
+        g.setColour (ui::kMainText.withAlpha (highlighted ? 0.95f : 0.70f));
+        g.drawRoundedRectangle (tab, 1.5f, 0.75f);
     };
 
     drawHandle (xHp, activeHandle == DragHandle::HighPass || hoveredHandle == DragHandle::HighPass);

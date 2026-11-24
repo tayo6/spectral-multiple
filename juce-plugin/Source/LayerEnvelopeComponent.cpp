@@ -10,7 +10,7 @@ namespace
     constexpr float kTensionRadius = 4.6f;
     constexpr int kCurveSteps = 96;
     constexpr int kFlBarHeight = 26;
-    constexpr int kControlStripHeight = 110;
+    constexpr int kControlStripHeight = 96;
     constexpr int kHeaderHeight = 22;
     constexpr float kRulerHeight = 16.0f;
     constexpr float kOverviewHeight = 14.0f;
@@ -101,33 +101,42 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     gainSlider.setSliderStyle (juce::Slider::LinearVertical);
     gainSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 48, 13);
     gainSlider.setColour (juce::Slider::trackColourId, colour);
-    gainSlider.setTooltip ("Layer volume (-inf to +6.0 dB)");
+    gainSlider.setDoubleClickReturnValue (true, 1.0);
+    gainSlider.getProperties().set ("unityTick", true);
+    gainSlider.setTooltip ("Layer volume (-inf to +6.0 dB). Double-click to reset to 0.0 dB.");
     gainSlider.textFromValueFunction = [] (double v) { return formatLayerDb (v); };
     addAndMakeVisible (gainSlider);
     gainAttachment = std::make_unique<SliderAtt> (state, ids::layerGain (layer), gainSlider);
 
-    auto prepareRotary = [&] (juce::Slider& slider, const juce::String& tooltip, juce::Colour fill, bool bipolar)
+    auto prepareBar = [&] (juce::Slider& slider,
+                           const juce::String& label,
+                           const juce::String& tooltip,
+                           juce::Colour fill,
+                           bool bipolar,
+                           double defaultVal)
     {
-        slider.setSliderStyle (juce::Slider::RotaryVerticalDrag);
-        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 48, 12);
-        slider.setColour (juce::Slider::rotarySliderFillColourId, fill);
-        slider.setColour (juce::Slider::rotarySliderOutlineColourId, ui::kBorder);
-        slider.setColour (juce::Slider::thumbColourId, ui::kMainText);
-        slider.setColour (juce::Slider::textBoxTextColourId, ui::kSecondaryText);
-        slider.setTooltip (tooltip);
+        slider.setName (label);
+        slider.setSliderStyle (juce::Slider::LinearHorizontal);
+        slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        slider.setSliderSnapsToMousePosition (false);
+        slider.setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
+        slider.setDoubleClickReturnValue (true, defaultVal);
+        slider.setColour (juce::Slider::trackColourId, fill);
+        slider.setTooltip (tooltip + " (Double-click to reset)");
+        slider.getProperties().set ("inlineBar", true);
         slider.getProperties().set ("bipolar", bipolar);
         addAndMakeVisible (slider);
     };
 
     const juce::Colour secondaryFill = colour.interpolatedWith (ui::kMainText, 0.16f);
-    prepareRotary (delaySlider,     "Timing shift (-100 ms to +100 ms)",                   colour,        true);
-    prepareRotary (pitchSlider,     "Layer pitch (-24 to +24 semitones)",                  colour,        true);
-    prepareRotary (panSlider,       "Stereo pan (Left / Centre / Right)",                  colour,        true);
-    prepareRotary (pogoSlider,      "FL Sampler style pitch-bend envelope (-100% to +100%)", secondaryFill, true);
-    prepareRotary (fadeInSlider,    "Sample fade-in duration (0 ms to 2000 ms)",            colour,        false);
-    prepareRotary (fadeOutSlider,   "Sample fade-out duration (0 ms to 5000 ms)",           colour,        false);
-    prepareRotary (trimStartSlider, "Sample front trim (0% to 99%)",                       secondaryFill, false);
-    prepareRotary (trimEndSlider,   "Sample back trim (0.5% to 100%)",                    secondaryFill, false);
+    prepareBar (delaySlider,     "TIMING",   "Timing shift (-100 ms to +100 ms)",                   colour,        true,  0.0);
+    prepareBar (pitchSlider,     "PITCH",    "Layer pitch (-24 to +24 semitones)",                  colour,        true,  0.0);
+    prepareBar (panSlider,       "PAN",      "Stereo pan (Left / Centre / Right)",                  colour,        true,  0.0);
+    prepareBar (pogoSlider,      "POGO",     "FL Sampler style pitch-bend envelope (-100% to +100%)", secondaryFill, true,  0.0);
+    prepareBar (fadeInSlider,    "FADE IN",  "Sample fade-in duration (0 ms to 2000 ms)",            colour,        false, 0.0);
+    prepareBar (fadeOutSlider,   "FADE OUT", "Sample fade-out duration (0 ms to 5000 ms)",           colour,        false, 0.0);
+    prepareBar (trimStartSlider, "TRIM F",   "Sample front trim (0% to 99%)",                       secondaryFill, false, 0.0);
+    prepareBar (trimEndSlider,   "TRIM B",   "Sample back trim (0.5% to 100%)",                    secondaryFill, false, 1.0);
 
     delayAttachment     = std::make_unique<SliderAtt> (state, ids::layerDelay (layer),     delaySlider);
     pitchAttachment     = std::make_unique<SliderAtt> (state, ids::layerPitch (layer),     pitchSlider);
@@ -763,31 +772,15 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
     g.setColour (ui::kBorder);
     g.drawRoundedRectangle (controlStripBounds.toFloat().reduced (0.5f), 4.0f, 1.0f);
 
-    // Subtle divider between vertical Volume fader and rotary/filter deck
-    const int divX = gainSlider.getRight() + 5;
+    // Subtle divider between vertical Volume fader and flat bar parameter deck
+    const int divX = gainSlider.getRight() + 6;
     g.setColour (ui::kBorder.withAlpha (0.8f));
     g.drawVerticalLine (divX, (float) controlStripBounds.getY() + 6.0f, (float) controlStripBounds.getBottom() - 6.0f);
 
-    g.setFont (juce::Font (9.5f, juce::Font::bold));
+    g.setFont (juce::Font (9.0f, juce::Font::bold));
     g.setColour (ui::kSecondaryText);
-    auto drawControlLabel = [&] (const juce::Component& c, const juce::String& label)
-    {
-        const auto b = c.getBounds();
-        g.drawText (label, b.getX() - 4, b.getY() - 12, b.getWidth() + 8, 11, juce::Justification::centred);
-    };
-    drawControlLabel (gainSlider,      "Vol");
-    drawControlLabel (delaySlider,     "Timing");
-    drawControlLabel (pitchSlider,     "Pitch");
-    drawControlLabel (panSlider,       "Pan");
-    drawControlLabel (pogoSlider,      "Pogo");
-    drawControlLabel (fadeInSlider,    "Fade In");
-    drawControlLabel (fadeOutSlider,   "Fade Out");
-    drawControlLabel (trimStartSlider, "Trim F");
-    drawControlLabel (trimEndSlider,   "Trim B");
-
-    g.setColour (ui::kSecondaryText);
-    g.drawText ("FILTER", filterBar.getX(), filterBar.getY() - 12, filterBar.getWidth(), 11,
-                juce::Justification::centredLeft);
+    const auto gb = gainSlider.getBounds();
+    g.drawText ("VOL", gb.getX(), gb.getY() - 12, gb.getWidth(), 11, juce::Justification::centred);
 }
 
 void LayerEnvelopeComponent::resized()
@@ -833,45 +826,44 @@ void LayerEnvelopeComponent::resized()
     placeSeg (decayCurveBox);
     placeSeg (releaseCurveBox);
 
-    auto strip = controlStripBounds.reduced (8, 5);
+    auto strip = controlStripBounds.reduced (8, 6);
 
     // Left vertical Volume fader
     auto volArea = strip.removeFromLeft (46);
     volArea.removeFromTop (11);
     gainSlider.setBounds (volArea);
 
-    strip.removeFromLeft (10);
+    strip.removeFromLeft (12);
 
-    // Remaining right area split into two balanced rows
-    const int row1H = 50;
-    auto row1 = strip.removeFromTop (row1H);
-    strip.removeFromTop (3);
-    auto row2 = strip;
+    // 3 sleek Snapback horizontal bar rows (zero rotary knobs)
+    const int rowGap = 4;
+    const int barH = juce::jlimit (20, 26, (strip.getHeight() - rowGap * 2) / 3);
+    auto row1 = strip.removeFromTop (barH);
+    strip.removeFromTop (rowGap);
+    auto row2 = strip.removeFromTop (barH);
+    strip.removeFromTop (rowGap);
+    auto row3 = strip.removeFromTop (barH);
 
-    // Row 1: [Timing] [Pitch] [Pan] [Pogo] [Fade In] [Fade Out] [REV]
-    const int revW = 38;
-    const int revGap = 6;
-    const int topKnobsW = juce::jmax (240, row1.getWidth() - revW - revGap);
-    const int colStep = topKnobsW / 6;
-    const int knobW = juce::jlimit (40, 62, colStep - 4);
-    const int knobGap = juce::jmax (2, colStep - knobW);
-
-    auto row1Knobs = row1.withTrimmedTop (11);
-    reverseBtn.setBounds (row1Knobs.removeFromRight (revW).withSizeKeepingCentre (revW, 24));
-    row1Knobs.removeFromRight (revGap);
-    for (auto* s : { &delaySlider, &pitchSlider, &panSlider, &pogoSlider, &fadeInSlider, &fadeOutSlider })
+    auto placeRowOf4 = [] (juce::Rectangle<int> row,
+                           juce::Slider& s0, juce::Slider& s1, juce::Slider& s2, juce::Slider& s3)
     {
-        s->setBounds (row1Knobs.removeFromLeft (knobW));
-        row1Knobs.removeFromLeft (knobGap);
-    }
+        const int colGap = 5;
+        const int w = (row.getWidth() - colGap * 3) / 4;
+        s0.setBounds (row.removeFromLeft (w));
+        row.removeFromLeft (colGap);
+        s1.setBounds (row.removeFromLeft (w));
+        row.removeFromLeft (colGap);
+        s2.setBounds (row.removeFromLeft (w));
+        row.removeFromLeft (colGap);
+        s3.setBounds (row);
+    };
 
-    // Row 2: [Trim F] [Trim B] + wide horizontal dual-handle [FilterControlComponent]
-    auto row2Area = row2.withTrimmedTop (11);
-    trimStartSlider.setBounds (row2Area.removeFromLeft (knobW));
-    row2Area.removeFromLeft (knobGap);
-    trimEndSlider.setBounds (row2Area.removeFromLeft (knobW));
-    row2Area.removeFromLeft (knobGap + 6);
-    filterBar.setBounds (row2Area.withSizeKeepingCentre (row2Area.getWidth(), 26));
+    placeRowOf4 (row1, delaySlider, pitchSlider, panSlider, pogoSlider);
+    placeRowOf4 (row2, fadeInSlider, fadeOutSlider, trimStartSlider, trimEndSlider);
+
+    reverseBtn.setBounds (row3.removeFromLeft (48));
+    row3.removeFromLeft (6);
+    filterBar.setBounds (row3);
 }
 
 LayerEnvelopeComponent::Handle LayerEnvelopeComponent::hitTestHandle (juce::Point<float> pos,

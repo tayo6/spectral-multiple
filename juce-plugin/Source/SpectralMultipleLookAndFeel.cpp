@@ -34,56 +34,6 @@ SpectralMultipleLookAndFeel::SpectralMultipleLookAndFeel()
     setColour (juce::TextEditor::focusedOutlineColourId, ui::kPurpleAccent);
 }
 
-void SpectralMultipleLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
-                                                    float sliderPos, float rotaryStartAngle,
-                                                    float rotaryEndAngle, juce::Slider& slider)
-{
-    const float diameter = (float) juce::jmin (width, height) - 4.0f;
-    if (diameter < 8.0f)
-        return;
-
-    const float radius = diameter * 0.5f;
-    const float cx = (float) x + (float) width * 0.5f;
-    const float cy = (float) y + (float) height * 0.5f;
-    const float angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
-
-    const bool isBipolar = static_cast<bool> (slider.getProperties().getWithDefault ("bipolar", false));
-    const float zeroAngle = rotaryStartAngle + 0.5f * (rotaryEndAngle - rotaryStartAngle);
-    const auto accent = slider.findColour (juce::Slider::rotarySliderFillColourId);
-
-    // Outer recessed track
-    juce::Path bgArc;
-    bgArc.addCentredArc (cx, cy, radius, radius, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
-    g.setColour (ui::kBorder.brighter (0.12f));
-    g.strokePath (bgArc, juce::PathStrokeType (2.4f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-
-    // Active value arc
-    const float arcStart = isBipolar ? juce::jmin (zeroAngle, angle) : rotaryStartAngle;
-    const float arcEnd   = isBipolar ? juce::jmax (zeroAngle, angle) : angle;
-    if (std::abs (arcEnd - arcStart) > 0.01f)
-    {
-        juce::Path valArc;
-        valArc.addCentredArc (cx, cy, radius, radius, 0.0f, arcStart, arcEnd, true);
-        g.setColour (slider.isEnabled() ? accent : ui::kDisabledText);
-        g.strokePath (valArc, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    }
-
-    // Inner dark cap
-    const float innerR = juce::jmax (3.5f, radius - 3.6f);
-    g.setColour (ui::kControlBg);
-    g.fillEllipse (cx - innerR, cy - innerR, innerR * 2.0f, innerR * 2.0f);
-    g.setColour (ui::kBorder);
-    g.drawEllipse (cx - innerR, cy - innerR, innerR * 2.0f, innerR * 2.0f, 1.0f);
-
-    // Pointer line
-    const float px0 = cx + (innerR * 0.25f) * std::sin (angle);
-    const float py0 = cy - (innerR * 0.25f) * std::cos (angle);
-    const float px1 = cx + (innerR - 1.5f) * std::sin (angle);
-    const float py1 = cy - (innerR - 1.5f) * std::cos (angle);
-    g.setColour (slider.isEnabled() ? ui::kMainText : ui::kDisabledText);
-    g.drawLine (px0, py0, px1, py1, 1.8f);
-}
-
 void SpectralMultipleLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, int y, int width, int height,
                                                     float sliderPos, float /*minSliderPos*/, float /*maxSliderPos*/,
                                                     juce::Slider::SliderStyle style, juce::Slider& slider)
@@ -91,76 +41,124 @@ void SpectralMultipleLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, in
     const auto accent = slider.findColour (juce::Slider::trackColourId).isTransparent()
         ? ui::kPurpleAccent
         : slider.findColour (juce::Slider::trackColourId);
+    const bool hovered = slider.isMouseOverOrDragging();
+    const bool isBipolar = static_cast<bool> (slider.getProperties().getWithDefault ("bipolar", false));
 
     if (style == juce::Slider::LinearVertical)
     {
         auto b = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height);
-        const float trackW = 5.0f;
-        const float cx = b.getCentreX();
-        const float top = b.getY() + 6.0f;
-        const float bot = b.getBottom() - 6.0f;
-        const float trackH = juce::jmax (8.0f, bot - top);
+        const float barW = juce::jlimit (14.0f, 22.0f, b.getWidth() - 10.0f);
+        const float top = b.getY() + 2.0f;
+        const float bot = b.getBottom() - 2.0f;
+        const float barH = juce::jmax (12.0f, bot - top);
+        juce::Rectangle<float> bar (b.getCentreX() - barW * 0.5f, top, barW, barH);
 
-        // Scale ticks
-        g.setColour (ui::kBorder);
-        for (int i = 0; i <= 4; ++i)
+        g.setColour (juce::Colour (0xff100f17));
+        g.fillRoundedRectangle (bar, 3.0f);
+
+        // Subtle unity (0 dB) reference tick at 50%
+        if (static_cast<bool> (slider.getProperties().getWithDefault ("unityTick", true)))
         {
-            const float ty = top + trackH * ((float) i / 4.0f);
-            g.drawHorizontalLine (juce::roundToInt (ty), cx - 8.5f, cx - 4.5f);
-            g.drawHorizontalLine (juce::roundToInt (ty), cx + 4.5f, cx + 8.5f);
+            const float unityY = bar.getCentreY();
+            g.setColour (ui::kBorder.brighter (0.25f));
+            g.drawHorizontalLine (juce::roundToInt (unityY), bar.getX() - 3.0f, bar.getRight() + 3.0f);
         }
 
-        // Groove
-        juce::Rectangle<float> groove (cx - trackW * 0.5f, top, trackW, trackH);
-        g.setColour (ui::kMainBg);
-        g.fillRoundedRectangle (groove, 2.0f);
-        g.setColour (ui::kBorder);
-        g.drawRoundedRectangle (groove, 2.0f, 1.0f);
-
-        // Fill
-        const float clampedPos = juce::jlimit (top, bot, sliderPos);
-        juce::Rectangle<float> fillRect (cx - trackW * 0.5f + 0.5f, clampedPos,
-                                         trackW - 1.0f, bot - clampedPos);
-        if (fillRect.getHeight() > 0.5f)
+        const float clampedPos = juce::jlimit (bar.getY() + 1.0f, bar.getBottom() - 1.0f, sliderPos);
+        const float fillH = bar.getBottom() - clampedPos;
+        if (fillH > 0.5f)
         {
-            g.setColour (accent.withAlpha (0.85f));
-            g.fillRoundedRectangle (fillRect, 1.5f);
+            g.setColour (accent.withAlpha (hovered ? 0.34f : 0.24f));
+            g.fillRoundedRectangle (bar.getX() + 1.0f, clampedPos, bar.getWidth() - 2.0f, fillH - 0.5f, 2.0f);
+
+            g.setColour (accent);
+            g.fillRect (bar.getX() + 1.0f, clampedPos, bar.getWidth() - 2.0f, 2.0f);
         }
 
-        // Compact Snapback fader cap
-        juce::Rectangle<float> cap (cx - 9.0f, clampedPos - 4.5f, 18.0f, 9.0f);
-        g.setColour (ui::kHoverBg.brighter (0.14f));
-        g.fillRoundedRectangle (cap, 2.0f);
-        g.setColour (accent.withAlpha (0.9f));
-        g.drawRoundedRectangle (cap, 2.0f, 1.0f);
-        g.setColour (ui::kMainText);
-        g.drawHorizontalLine (juce::roundToInt (clampedPos), cap.getX() + 2.5f, cap.getRight() - 2.5f);
+        g.setColour (hovered ? accent.withAlpha (0.75f) : ui::kBorder);
+        g.drawRoundedRectangle (bar, 3.0f, 1.0f);
         return;
     }
 
-    // Horizontal dark bar slider
+    if (static_cast<bool> (slider.getProperties().getWithDefault ("inlineBar", false)))
+    {
+        auto bar = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height).reduced (0.5f);
+        g.setColour (hovered ? ui::kHoverBg.darker (0.25f) : juce::Colour (0xff12111a));
+        g.fillRoundedRectangle (bar, 3.0f);
+
+        const float innerL = bar.getX() + 1.0f;
+        const float innerR = bar.getRight() - 1.0f;
+        const float innerW = juce::jmax (4.0f, innerR - innerL);
+        const float prop = (float) slider.valueToProportionOfLength (slider.getValue());
+        const float valX = innerL + prop * innerW;
+
+        if (isBipolar)
+        {
+            const float midX = innerL + innerW * 0.5f;
+            g.setColour (ui::kBorder.withAlpha (0.7f));
+            g.drawVerticalLine (juce::roundToInt (midX), bar.getY() + 3.0f, bar.getBottom() - 3.0f);
+
+            const float fX = juce::jmin (midX, valX);
+            const float fW = std::abs (valX - midX);
+            if (fW > 0.5f)
+            {
+                g.setColour (accent.withAlpha (hovered ? 0.32f : 0.22f));
+                g.fillRect (fX, bar.getY() + 1.0f, fW, bar.getHeight() - 2.0f);
+            }
+        }
+        else
+        {
+            const float fW = valX - innerL;
+            if (fW > 0.5f)
+            {
+                g.setColour (accent.withAlpha (hovered ? 0.30f : 0.20f));
+                g.fillRoundedRectangle (innerL, bar.getY() + 1.0f, fW, bar.getHeight() - 2.0f, 2.0f);
+            }
+        }
+
+        // Crisp Snapback value indicator edge
+        g.setColour (slider.isEnabled() ? accent : ui::kDisabledText);
+        g.fillRect (juce::jlimit (innerL, innerR - 2.0f, valX - 1.0f),
+                    bar.getY() + 1.0f, 2.0f, bar.getHeight() - 2.0f);
+
+        g.setColour (hovered ? accent.withAlpha (0.75f) : ui::kBorder);
+        g.drawRoundedRectangle (bar, 3.0f, 1.0f);
+
+        // Label (left) + Value readout (right) inside the bar
+        auto textBox = bar.reduced (6.0f, 0.0f);
+        g.setFont (juce::Font (9.0f, juce::Font::bold));
+        g.setColour (ui::kSecondaryText);
+        g.drawFittedText (slider.getName(), textBox.toNearestInt(), juce::Justification::centredLeft, 1);
+
+        g.setFont (juce::Font (10.0f, juce::Font::bold));
+        g.setColour (slider.isEnabled() ? ui::kMainText : ui::kDisabledText);
+        g.drawFittedText (slider.getTextFromValue (slider.getValue()),
+                          textBox.toNearestInt(), juce::Justification::centredRight, 1);
+        return;
+    }
+
+    // Standard slim flat Snapback horizontal fill bar (with external TextBoxRight)
     auto b = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height);
-    const float trackH = 4.0f;
-    const float cy = b.getCentreY();
-    const float left = b.getX() + 4.0f;
-    const float right = b.getRight() - 4.0f;
+    const float barH = juce::jmin (14.0f, b.getHeight() - 4.0f);
+    juce::Rectangle<float> track (b.getX() + 2.0f, b.getCentreY() - barH * 0.5f,
+                                  juce::jmax (10.0f, b.getWidth() - 4.0f), barH);
+    g.setColour (juce::Colour (0xff100f17));
+    g.fillRoundedRectangle (track, 3.0f);
 
-    juce::Rectangle<float> track (left, cy - trackH * 0.5f, juce::jmax (8.0f, right - left), trackH);
-    g.setColour (ui::kMainBg);
-    g.fillRoundedRectangle (track, 2.0f);
-    g.setColour (ui::kBorder);
-    g.drawRoundedRectangle (track, 2.0f, 1.0f);
+    const float clampedX = juce::jlimit (track.getX() + 1.0f, track.getRight() - 1.0f, sliderPos);
+    const float fillW = clampedX - track.getX();
+    if (fillW > 0.5f)
+    {
+        g.setColour (accent.withAlpha (hovered ? 0.35f : 0.25f));
+        g.fillRoundedRectangle (track.getX() + 1.0f, track.getY() + 1.0f,
+                                juce::jmax (1.0f, fillW - 1.0f), track.getHeight() - 2.0f, 2.0f);
+        g.setColour (accent);
+        g.fillRect (juce::jlimit (track.getX() + 1.0f, track.getRight() - 3.0f, clampedX - 1.0f),
+                    track.getY() + 1.0f, 2.0f, track.getHeight() - 2.0f);
+    }
 
-    const float clampedX = juce::jlimit (track.getX(), track.getRight(), sliderPos);
-    g.setColour (accent);
-    g.fillRoundedRectangle (track.withWidth (juce::jmax (2.0f, clampedX - track.getX())), 2.0f);
-
-    // Thumb handle
-    juce::Rectangle<float> thumb (clampedX - 3.5f, cy - 6.0f, 7.0f, 12.0f);
-    g.setColour (ui::kMainText);
-    g.fillRoundedRectangle (thumb, 2.0f);
-    g.setColour (accent.darker (0.25f));
-    g.drawRoundedRectangle (thumb, 2.0f, 1.0f);
+    g.setColour (hovered ? accent.withAlpha (0.7f) : ui::kBorder);
+    g.drawRoundedRectangle (track, 3.0f, 1.0f);
 }
 
 void SpectralMultipleLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,
