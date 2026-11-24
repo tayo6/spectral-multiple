@@ -122,7 +122,7 @@ private:
     using ButtonAtt = juce::AudioProcessorValueTreeState::ButtonAttachment;
 
     void setupCombo (juce::ComboBox&, const char* paramId, std::unique_ptr<ComboAtt>&);
-    void setupToggle (juce::TextButton&, const juce::String& text, const char* paramId,
+    void setupToggle (juce::TextButton&, const juce::String& text, const juce::String& paramId,
                       std::unique_ptr<ButtonAtt>&);
 
     WaveLensProcessor& proc;
