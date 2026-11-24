@@ -314,7 +314,10 @@ void LayeredSampleEngine::updateTailEstimate (int layer) noexcept
     }
 
     layerTailSeconds[(size_t) layer].store ((float) estimateSeconds, std::memory_order_relaxed);
-    float maximum = 0.0f;
+    // The delayed dry-through path still has this fixed latency even with no samples loaded.
+    float maximum = maximumDelaySamples > 0
+        ? (float) ((double) maximumDelaySamples / juce::jmax (1.0, currentSampleRate))
+        : 0.0f;
     for (const auto& value : layerTailSeconds)
         maximum = juce::jmax (maximum, value.load (std::memory_order_relaxed));
     maximumTailSeconds.store (maximum, std::memory_order_relaxed);
