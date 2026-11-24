@@ -81,7 +81,9 @@ public:
     void releaseResources() override {}
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+    void processBlockBypassed (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
     using AudioProcessor::processBlock;
+    using AudioProcessor::processBlockBypassed;
 
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
@@ -220,6 +222,7 @@ private:
 
     LayeredSampleEngine layerEngine;
     juce::AudioBuffer<float> triggerBuffer;
+    juce::MidiBuffer sliceMidiBuffer;
     std::array<juce::String, kMaxSignals> samplePaths;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaveLensProcessor)

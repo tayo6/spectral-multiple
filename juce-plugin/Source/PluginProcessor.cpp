@@ -111,18 +111,18 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
                                                            NormalisableRange<float> (1000.0f, 20000.0f, 1.0f, 0.35f), 20000.0f,
                                                            AudioParameterFloatAttributes().withLabel ("Hz")));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerAttack (i), 1 }, "Layer " + suffix + " attack",
-                                                           NormalisableRange<float> (0.1f, 2000.0f, 0.1f), i < 3 ? 18.0f : 2.0f,
+                                                           NormalisableRange<float> (0.1f, 2000.0f, 0.1f), 210.0f,
                                                            AudioParameterFloatAttributes().withLabel ("ms")));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerHold (i), 1 }, "Layer " + suffix + " hold",
-                                                           NormalisableRange<float> (0.0f, 2000.0f, 0.1f), 20.0f,
+                                                           NormalisableRange<float> (0.0f, 2000.0f, 0.1f), 0.0f,
                                                            AudioParameterFloatAttributes().withLabel ("ms")));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerDecay (i), 1 }, "Layer " + suffix + " decay",
-                                                           NormalisableRange<float> (0.1f, 5000.0f, 0.1f), 140.0f,
+                                                           NormalisableRange<float> (0.1f, 5000.0f, 0.1f), 310.0f,
                                                            AudioParameterFloatAttributes().withLabel ("ms")));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerSustain (i), 1 }, "Layer " + suffix + " sustain",
-                                                           NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.78f));
+                                                           NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.76f));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerRelease (i), 1 }, "Layer " + suffix + " release",
-                                                           NormalisableRange<float> (0.1f, 10000.0f, 0.1f), 200.0f,
+                                                           NormalisableRange<float> (0.1f, 10000.0f, 0.1f), 480.0f,
                                                            AudioParameterFloatAttributes().withLabel ("ms")));
         const StringArray curveNames { "Hold", "Smooth", "Single curve", "Half sine", "Stairs", "Smooth stairs", "Pulse", "Wave" };
         layout.add (std::make_unique<AudioParameterChoice> (PID { ids::layerAttackCurve (i), 1 },
@@ -132,21 +132,21 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
         layout.add (std::make_unique<AudioParameterChoice> (PID { ids::layerReleaseCurve (i), 1 },
                                                            "Layer " + suffix + " release curve", curveNames, 2));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerAttackTension (i), 1 }, "Layer " + suffix + " attack tension",
-                                                           NormalisableRange<float> (-1.0f, 1.0f, 0.01f), 0.25f));
+                                                           NormalisableRange<float> (-1.0f, 1.0f, 0.01f), 0.35f));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerDecayTension (i), 1 }, "Layer " + suffix + " decay tension",
                                                            NormalisableRange<float> (-1.0f, 1.0f, 0.01f), -0.35f));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerReleaseTension (i), 1 }, "Layer " + suffix + " release tension",
                                                            NormalisableRange<float> (-1.0f, 1.0f, 0.01f), -0.45f));
-        layout.add (std::make_unique<AudioParameterBool> (PID { ids::layerEnvEnabled (i), 1 }, "Layer " + suffix + " env enabled", true));
+        layout.add (std::make_unique<AudioParameterBool> (PID { ids::layerEnvEnabled (i), 1 }, "Layer " + suffix + " env enabled", false));
         layout.add (std::make_unique<AudioParameterBool> (PID { ids::layerMute (i), 1 }, "Layer " + suffix + " mute", false));
         layout.add (std::make_unique<AudioParameterBool> (PID { ids::layerSolo (i), 1 }, "Layer " + suffix + " solo", false));
         layout.add (std::make_unique<AudioParameterBool> (PID { ids::layerReverse (i), 1 }, "Layer " + suffix + " reverse", false));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerPogo (i), 1 }, "Layer " + suffix + " pogo",
                                                            NormalisableRange<float> (-1.0f, 1.0f, 0.01f), 0.0f));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerTrimStart (i), 1 }, "Layer " + suffix + " front trim",
-                                                           NormalisableRange<float> (0.0f, 0.98f, 0.001f), 0.0f));
+                                                           NormalisableRange<float> (0.0f, 0.99f, 0.001f), 0.0f));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerTrimEnd (i), 1 }, "Layer " + suffix + " back trim",
-                                                           NormalisableRange<float> (0.02f, 1.0f, 0.001f), 1.0f));
+                                                           NormalisableRange<float> (0.005f, 1.0f, 0.001f), 1.0f));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerFadeIn (i), 1 }, "Layer " + suffix + " fade in",
                                                            NormalisableRange<float> (0.0f, 2000.0f, 1.0f, 0.4f), 0.0f,
                                                            AudioParameterFloatAttributes().withLabel ("ms")));
@@ -256,8 +256,11 @@ bool WaveLensProcessor::isBusesLayoutSupported (const BusesLayout& layouts) cons
 void WaveLensProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     sr = sampleRate;
-    layerEngine.prepareToPlay (sampleRate, samplesPerBlock);
-    triggerBuffer.setSize (2, juce::jmax (1, samplesPerBlock), false, true, false);
+    const int safeBlockSize = juce::jmax (1, samplesPerBlock);
+    layerEngine.prepareToPlay (sampleRate, safeBlockSize);
+    layerEngine.setPreRollMilliseconds (pPreRollMs->load (relaxed));
+    triggerBuffer.setSize (2, safeBlockSize, false, true, false);
+    sliceMidiBuffer.ensureSize (2048);
     setLatencySamples (juce::jmax (1, juce::roundToInt (sampleRate * LayeredSampleEngine::kMaximumPreRollMilliseconds * 0.001)));
 
     juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) juce::jmax (1, samplesPerBlock), 1 };
@@ -434,45 +437,72 @@ void WaveLensProcessor::pushSample (const float* v) noexcept
 }
 
 //==============================================================================
-void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+void WaveLensProcessor::processBlockBypassed (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
 
     const int numSamples = buffer.getNumSamples();
+    if (numSamples <= 0)
+        return;
+
     auto mainInput = getBusBuffer (buffer, true, 0);
     auto mainOutput = getBusBuffer (buffer, false, 0);
-    const int inputChannels = mainInput.getNumChannels();
+    const int inCh = mainInput.getNumChannels();
+    const int outCh = mainOutput.getNumChannels();
 
-    if (inputChannels == 0 || numSamples == 0)
-        return;
-
-    if (numSamples > triggerBuffer.getNumSamples())
+    if (inCh > 0 && outCh > 0)
     {
-        const int copyChannels = juce::jmin (mainInput.getNumChannels(), mainOutput.getNumChannels());
-        for (int ch = 0; ch < copyChannels; ++ch)
-            mainOutput.copyFrom (ch, 0, mainInput, ch, 0, numSamples);
-        return;
+        for (int ch = 0; ch < outCh; ++ch)
+        {
+            const int srcCh = juce::jmin (ch, inCh - 1);
+            if (mainOutput.getWritePointer (ch) != mainInput.getReadPointer (srcCh))
+                mainOutput.copyFrom (ch, 0, mainInput, srcCh, 0, numSamples);
+        }
     }
-
-    triggerBuffer.copyFrom (0, 0, mainInput, 0, 0, numSamples);
-    if (inputChannels > 1)
-        triggerBuffer.copyFrom (1, 0, mainInput, 1, 0, numSamples);
     else
-        triggerBuffer.copyFrom (1, 0, mainInput, 0, 0, numSamples);
-
-    std::array<juce::AudioBuffer<float>, kMaxSignals> layerOutputBuffers;
-    std::array<juce::AudioBuffer<float>*, kMaxSignals> layerOutputPointers {};
+    {
+        mainOutput.clear (0, numSamples);
+    }
 
     for (int layer = 0; layer < kMaxSignals; ++layer)
     {
         const int outputBusIndex = layer + 1;
-        if (outputBusIndex < getBusCount (false))
+        if (outputBusIndex < getBusCount (false)
+            && getChannelIndexInProcessBlockBuffer (false, outputBusIndex, 0) >= 0)
+        {
+            auto* bus = getBus (false, outputBusIndex);
+            if (bus != nullptr && bus->isEnabled())
+                getBusBuffer (buffer, false, outputBusIndex).clear (0, numSamples);
+        }
+    }
+}
+
+void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+{
+    juce::ScopedNoDenormals noDenormals;
+
+    const int totalSamples = buffer.getNumSamples();
+    auto mainInput = getBusBuffer (buffer, true, 0);
+    auto mainOutput = getBusBuffer (buffer, false, 0);
+    const int inputChannels = mainInput.getNumChannels();
+
+    if (inputChannels == 0 || totalSamples == 0)
+        return;
+
+    std::array<juce::AudioBuffer<float>, kMaxSignals> layerOutputBuffers;
+    std::array<bool, kMaxSignals> layerOutputActive {};
+
+    for (int layer = 0; layer < kMaxSignals; ++layer)
+    {
+        const int outputBusIndex = layer + 1;
+        if (outputBusIndex < getBusCount (false)
+            && getChannelIndexInProcessBlockBuffer (false, outputBusIndex, 0) >= 0)
         {
             auto* bus = getBus (false, outputBusIndex);
             if (bus != nullptr && bus->isEnabled())
             {
                 layerOutputBuffers[(size_t) layer] = getBusBuffer (buffer, false, outputBusIndex);
-                layerOutputPointers[(size_t) layer] = &layerOutputBuffers[(size_t) layer];
+                layerOutputActive[(size_t) layer] = layerOutputBuffers[(size_t) layer].getNumChannels() > 0;
             }
         }
 
@@ -509,8 +539,65 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     layerEngine.setTriggerMode (juce::roundToInt (pTriggerMode->load (relaxed)),
                                 pThreshold->load (relaxed));
     layerEngine.setPreRollMilliseconds (pPreRollMs->load (relaxed));
-    layerEngine.processBlock (triggerBuffer, mainOutput, layerOutputPointers, midi);
 
+    const bool manualTrig = triggerAllRequest.exchange (false, std::memory_order_acq_rel);
+    const int maxChunk = juce::jmax (1, triggerBuffer.getNumSamples());
+    const int mainOutChannels = mainOutput.getNumChannels();
+
+    for (int chunkStart = 0; chunkStart < totalSamples; chunkStart += maxChunk)
+    {
+        const int chunkSamples = juce::jmin (maxChunk, totalSamples - chunkStart);
+
+        triggerBuffer.copyFrom (0, 0, mainInput, 0, chunkStart, chunkSamples);
+        if (inputChannels > 1)
+            triggerBuffer.copyFrom (1, 0, mainInput, 1, chunkStart, chunkSamples);
+        else
+            triggerBuffer.copyFrom (1, 0, mainInput, 0, chunkStart, chunkSamples);
+
+        float* trigPtrs[2] = { triggerBuffer.getWritePointer (0), triggerBuffer.getWritePointer (1) };
+        juce::AudioBuffer<float> triggerSlice (trigPtrs, 2, chunkSamples);
+
+        float* mainOutPtrs[2] = {
+            mainOutput.getWritePointer (0) + chunkStart,
+            mainOutChannels > 1 ? (mainOutput.getWritePointer (1) + chunkStart) : nullptr
+        };
+        juce::AudioBuffer<float> mainOutputSlice (mainOutPtrs, juce::jmin (2, mainOutChannels), chunkSamples);
+
+        std::array<juce::AudioBuffer<float>, kMaxSignals> sliceLayerBuffers;
+        std::array<juce::AudioBuffer<float>*, kMaxSignals> sliceLayerPointers {};
+        for (int layer = 0; layer < kMaxSignals; ++layer)
+        {
+            if (layerOutputActive[(size_t) layer])
+            {
+                auto& fullBus = layerOutputBuffers[(size_t) layer];
+                const int busCh = juce::jmin (2, fullBus.getNumChannels());
+                float* busPtrs[2] = {
+                    fullBus.getWritePointer (0) + chunkStart,
+                    busCh > 1 ? (fullBus.getWritePointer (1) + chunkStart) : nullptr
+                };
+                sliceLayerBuffers[(size_t) layer].setDataToReferTo (busPtrs, busCh, chunkSamples);
+                sliceLayerPointers[(size_t) layer] = &sliceLayerBuffers[(size_t) layer];
+            }
+        }
+
+        const juce::MidiBuffer* chunkMidi = &midi;
+        if (totalSamples > maxChunk)
+        {
+            sliceMidiBuffer.clear();
+            for (const auto metadata : midi)
+            {
+                const int pos = metadata.samplePosition;
+                if (pos >= chunkStart && pos < chunkStart + chunkSamples)
+                    sliceMidiBuffer.addEvent (metadata.getMessage(), pos - chunkStart);
+            }
+            chunkMidi = &sliceMidiBuffer;
+        }
+
+        layerEngine.processBlock (triggerSlice, mainOutputSlice, sliceLayerPointers, *chunkMidi,
+                                  manualTrig && chunkStart == 0);
+    }
+
+    const int numSamples = totalSamples;
     const int mainChannels = mainOutput.getNumChannels();
     float* outL = mainOutput.getWritePointer (0);
     float* outR = mainChannels > 1 ? mainOutput.getWritePointer (1) : outL;
@@ -658,10 +745,12 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     float v[kNumChan] {};
     float blockPeakMax = peakHold.load (relaxed);
 
+    const int lastChunkStart = ((numSamples - 1) / maxChunk) * maxChunk;
+
     for (int i = 0; i < numSamples; ++i)
     {
-        const float inputL = triggerBuffer.getSample (0, i);
-        const float inputR = triggerBuffer.getSample (1, i);
+        const float inputL = mainInput.getSample (0, i);
+        const float inputR = inputChannels > 1 ? mainInput.getSample (1, i) : inputL;
 
         const float inputLevel = pickSample (inputL, inputR, inputMode);
         peakEnv = juce::jmax (std::abs (inputLevel), peakEnv * peakDecay);
@@ -669,10 +758,23 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
         if (capturing)
         {
+            const int sampleInLastChunk = i - lastChunkStart;
             for (int layer = 0; layer < kMaxSignals; ++layer)
             {
-                const auto& layerAudio = layerEngine.getLayerBuffer (layer);
-                float y = pickSample (layerAudio.getSample (0, i), layerAudio.getSample (1, i), inputMode);
+                float y = 0.0f;
+                if (sampleInLastChunk >= 0 && sampleInLastChunk < layerEngine.getLayerBuffer (layer).getNumSamples())
+                {
+                    const auto& layerAudio = layerEngine.getLayerBuffer (layer);
+                    y = pickSample (layerAudio.getSample (0, sampleInLastChunk),
+                                    layerAudio.getSample (1, sampleInLastChunk), inputMode);
+                }
+                else if (layerOutputActive[(size_t) layer])
+                {
+                    const auto& busBuf = layerOutputBuffers[(size_t) layer];
+                    const float bl = busBuf.getSample (0, i);
+                    const float br = busBuf.getNumChannels() > 1 ? busBuf.getSample (1, i) : bl;
+                    y = pickSample (bl, br, inputMode);
+                }
                 float lo_ = 0.0f, hi_ = 0.0f;
                 if (loOn) { rangeHp[layer].processSample (0, y, lo_, hi_); y = hi_; }
                 if (hiOn) { rangeLp[layer].processSample (0, y, lo_, hi_); y = lo_; }
@@ -715,7 +817,6 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
 bool WaveLensProcessor::loadSampleFile (int layer, const juce::File& file, juce::String& error)
 {
-    layerEngine.collectRetiredSamples();
     if (! layerEngine.loadSampleFromFile (layer, file, error))
         return false;
 
@@ -758,7 +859,6 @@ void WaveLensProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     if (auto xml = apvts.copyState().createXml())
     {
-        xml->setAttribute ("wavelensStateVersion", 2);
         for (int i = 0; i < kMaxSignals; ++i)
             xml->setAttribute ("samplePath" + juce::String (i + 1), samplePaths[(size_t) i]);
         copyXmlToBinary (*xml, destData);
@@ -771,15 +871,7 @@ void WaveLensProcessor::setStateInformation (const void* data, int sizeInBytes)
     {
         if (xml->hasTagName (apvts.state.getType()))
         {
-            const int savedVersion = xml->getIntAttribute ("wavelensStateVersion", 1);
             apvts.replaceState (juce::ValueTree::fromXml (*xml));
-
-            // In the older builds PRE timing came from each PRE layer's delay
-            // value because the global PRE lead control was not connected.
-            // Keep that effective timing when opening an old session.
-            if (savedVersion < 2)
-                if (auto* parameter = dynamic_cast<juce::RangedAudioParameter*> (apvts.getParameter (ids::preRollMs)))
-                    parameter->setValueNotifyingHost (parameter->convertTo0to1 (0.0f));
 
             for (int i = 0; i < kMaxSignals; ++i)
             {
@@ -795,6 +887,7 @@ void WaveLensProcessor::setStateInformation (const void* data, int sizeInBytes)
                     layerEngine.clearSample (i);
             }
 
+            layerEngine.setPreRollMilliseconds (pPreRollMs->load (relaxed));
             connectedMask.store (layerEngine.getLoadedMask(), std::memory_order_relaxed);
         }
     }

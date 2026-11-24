@@ -5,7 +5,6 @@
 #include <array>
 #include <atomic>
 #include <memory>
-#include <mutex>
 #include <vector>
 
 /**
@@ -16,8 +15,8 @@
     Slots 3-5 are main-sample layers. They start at the fixed 100 ms lookahead
     position, aligned with the latency-compensated dry input.
 
-    Sample memory is immutable after loading. Replaced buffers are retired at an
-    audio-block boundary and reclaimed on the UI thread after voice references clear.
+    Sample memory is immutable after loading. Replaced sample buffers are retained
+    until the processor is destroyed so the audio thread never observes freed memory.
 */
 class LayeredSampleEngine final
 {
@@ -46,18 +45,18 @@ public:
         float delayShiftMs = 0.0f;
         float highPassHz = 20.0f;
         float lowPassHz = 20000.0f;
-        float attackMs = 2.0f;
-        float holdMs = 20.0f;
-        float decayMs = 140.0f;
-        float sustain = 0.78f;
-        float releaseMs = 200.0f;
+        float attackMs = 210.0f;
+        float holdMs = 0.0f;
+        float decayMs = 310.0f;
+        float sustain = 0.76f;
+        float releaseMs = 480.0f;
         int attackCurve = 2;   // 0..7 FL Studio modes (2 = Single curve)
         int decayCurve = 2;
         int releaseCurve = 2;
-        float attackTension = 0.25f;
+        float attackTension = 0.35f;
         float decayTension = -0.35f;
         float releaseTension = -0.45f;
-        bool envEnabled = true;
+        bool envEnabled = false;
         bool muted = false;
         bool solo = false;
         bool reverse = false;
@@ -74,9 +73,6 @@ public:
     void prepareToPlay (double sampleRate, int maximumBlockSize);
     void setTriggerMode (int mode, float threshold) noexcept;
     void setPreRollMilliseconds (float milliseconds) noexcept;
-    void requestTrigger() noexcept { manualTriggerRequest.store (true, std::memory_order_release); }
-    void collectRetiredSamples();
-    double getTailLengthSeconds() const noexcept;
 
     bool loadSampleFromFile (int layer, const juce::File& file, juce::String& error);
     void clearSample (int layer);
@@ -90,8 +86,13 @@ public:
     void processBlock (const juce::AudioBuffer<float>& triggerInput,
                        juce::AudioBuffer<float>& masterOutput,
                        const std::array<juce::AudioBuffer<float>*, kNumLayers>& layerOutputs,
-                       const juce::MidiBuffer& midi) noexcept;
+                       const juce::MidiBuffer& midi,
+                       bool manualTrigger = false) noexcept;
 
+    int getMaximumDelaySamples() const noexcept { return maximumDelaySamples; }
+    int getPreRollSamples() const noexcept { return preRollSamples; }
+    double getSampleRate() const noexcept { return currentSampleRate; }
+    int getRetiredSampleCount (int layer);
     const juce::AudioBuffer<float>& getLayerBuffer (int layer) const noexcept;
 
 private:
@@ -101,7 +102,8 @@ private:
         double sourceSampleRate = 44100.0;
         juce::String displayName;
         WaveformPreview preview;
-        SampleData* retireNext = nullptr;
+        std::atomic<int> activeVoices { 0 };
+        uint64_t retiredAfterBlock = 0;
     };
 
     struct Voice
@@ -115,33 +117,46 @@ private:
         bool active = false;
     };
 
+    struct EnvelopeSchedule
+    {
+        float attackEndMs = 210.0f;
+        float holdEndMs = 210.0f;
+        float decayEndMs = 520.0f;
+        float releaseStartMs = 520.0f;
+        float releaseMs = 480.0f;
+    };
+
+    static void assignVoiceSample (Voice& voice, SampleData* nextSample) noexcept;
+    void reclaimRetiredSamplesLocked();
     bool isLayerAudible (int layer) const noexcept;
     void triggerAllLayers() noexcept;
     void startLayer (int layer, bool ignoreTimingShift = false) noexcept;
     float renderLayerSample (int layer, float& left, float& right) noexcept;
-    float envelopeLevelAtAge (const LayerParameters& p, int age) const noexcept;
+    static EnvelopeSchedule computeEnvelopeSchedule (const LayerParameters& p, float totalDurationMs) noexcept;
+    static float envelopeLevelAtMs (const LayerParameters& p, const EnvelopeSchedule& sched, float ageMs) noexcept;
     static float applyPowerTension (float u, float tension) noexcept;
     static float flSegmentLevel (float progress, float y0, float y1, int mode, float tension) noexcept;
-    static void pushSampleStack (std::atomic<SampleData*>& head, SampleData* sample) noexcept;
 
     juce::AudioFormatManager formatManager;
+    mutable juce::CriticalSection sampleStateLock;
     std::array<std::atomic<SampleData*>, kNumLayers> currentSamples {};
-    // Lock-free retirement stacks: UI owns sample destruction; audio thread only acknowledges it.
-    std::atomic<SampleData*> retiredSamplesHead { nullptr };
-    std::atomic<SampleData*> safeToDeleteSamplesHead { nullptr };
-    std::array<std::atomic<double>, kNumLayers> tailSeconds {};
-    std::atomic<bool> manualTriggerRequest { false };
     std::array<std::atomic<bool>, kNumLayers> clearRequests {};
     std::array<std::atomic<bool>, kNumLayers> previewRequests {};
-    std::array<std::vector<std::unique_ptr<SampleData>>, kNumLayers> ownedSamples;
-    std::mutex ownedSamplesMutex;
+    std::array<std::unique_ptr<SampleData>, kNumLayers> activeSamples;
+    std::array<std::vector<std::unique_ptr<SampleData>>, kNumLayers> retiredSamples;
     std::array<juce::String, kNumLayers> sampleNames;
+    std::atomic<uint64_t> completedAudioBlocks { 0 };
     std::array<LayerParameters, kNumLayers> parameters {};
     std::array<std::array<Voice, kVoicesPerLayer>, kNumLayers> voices {};
     std::array<int, kNumLayers> nextVoiceToSteal {};
     std::array<juce::AudioBuffer<float>, kNumLayers> layerBuffers;
     std::array<juce::dsp::LinkwitzRileyFilter<float>, kNumLayers> layerHighPass;
     std::array<juce::dsp::LinkwitzRileyFilter<float>, kNumLayers> layerLowPass;
+    std::array<float, kNumLayers> lastHighPassHz {};
+    std::array<float, kNumLayers> lastLowPassHz {};
+    std::array<bool, kNumLayers> layerHighPassActive {};
+    std::array<bool, kNumLayers> layerLowPassActive {};
+    std::array<bool, kNumLayers> layerWasAudible {};
 
     std::vector<float> delayLeft, delayRight;
     int delayWritePosition = 0;
@@ -151,6 +166,7 @@ private:
     int refractoryRemaining = 0;
 
     double currentSampleRate = 44100.0;
+    double currentPreRollMs = kDefaultPreRollMilliseconds;
     float threshold = 0.03f;
     float previousInputLevel = 0.0f;
     int triggerMode = 0; // 0 = Audio, 1 = MIDI, 2 = Both
