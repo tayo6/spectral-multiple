@@ -111,6 +111,48 @@ void LayerPadStripComponent::resized()
     }
 }
 
+//==============================================================================
+WaveformResizeHandle::WaveformResizeHandle()
+{
+    setTooltip ("Drag to resize the waveform and sample editors; double-click to reset");
+    setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
+}
+
+void WaveformResizeHandle::paint (juce::Graphics& g)
+{
+    auto bounds = getLocalBounds().toFloat();
+    const float centreY = bounds.getCentreY();
+    g.setColour (ui::kBorder.withAlpha (0.70f));
+    g.drawHorizontalLine (juce::roundToInt (centreY), 8.0f, bounds.getRight() - 8.0f);
+
+    const float gripW = 34.0f;
+    const float gripH = 4.0f;
+    auto grip = juce::Rectangle<float> (bounds.getCentreX() - gripW * 0.5f,
+                                        centreY - gripH * 0.5f, gripW, gripH);
+    g.setColour (ui::kSecondaryText.withAlpha (0.75f));
+    g.fillRoundedRectangle (grip, 2.0f);
+}
+
+void WaveformResizeHandle::mouseDown (const juce::MouseEvent& event)
+{
+    dragStartScreenY = event.getScreenPosition().y;
+    if (onDragStarted)
+        onDragStarted();
+}
+
+void WaveformResizeHandle::mouseDrag (const juce::MouseEvent& event)
+{
+    if (onDragDelta)
+        onDragDelta (event.getScreenPosition().y - dragStartScreenY);
+}
+
+void WaveformResizeHandle::mouseDoubleClick (const juce::MouseEvent&)
+{
+    if (onDoubleClick)
+        onDoubleClick();
+}
+
+//==============================================================================
 WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     : AudioProcessorEditor (&p),
       proc (p),
@@ -128,6 +170,7 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     addAndMakeVisible (masterWaveform);
     addAndMakeVisible (controlBar);
     addChildComponent (triggerPanel);
+    addAndMakeVisible (resizeHandle);
     addAndMakeVisible (snapbackGroup);
     addAndMakeVisible (transientGroup);
     addAndMakeVisible (padStrip);
@@ -185,6 +228,34 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
         resized();
         repaint();
     };
+    controlBar.onCollapseToggled = [this] (bool collapsed)
+    {
+        editorsCollapsed = collapsed;
+        snapbackGroup.setVisible (! collapsed);
+        transientGroup.setVisible (! collapsed);
+        resizeHandle.setVisible (! collapsed);
+        resized();
+        repaint();
+    };
+
+    resizeHandle.onDragStarted = [this]
+    {
+        dragStartWaveformHeight = waveformHeight;
+    };
+    resizeHandle.onDragDelta = [this] (int deltaY)
+    {
+        if (dragStartWaveformHeight > 0)
+        {
+            waveformHeight = dragStartWaveformHeight + deltaY;
+            resized();
+        }
+    };
+    resizeHandle.onDoubleClick = [this]
+    {
+        waveformHeight = -1;
+        resized();
+    };
+
     controlBar.onDetailToggled = [this] (bool active)
     {
         if (active)
@@ -271,14 +342,53 @@ void WaveLensEditor::resized()
     padStrip.setBounds (body.removeFromBottom (42));
     body.removeFromBottom (7);
 
-    // Keep the waveform dominant while reserving enough vertical room for the
-    // sample editors and the six-pad selector at the bottom.
-    const int oscH = juce::jlimit (178, 286,
-        juce::roundToInt ((float) body.getHeight() * 0.37f));
-    masterWaveform.setBounds (body.removeFromTop (oscH));
-    body.removeFromTop (6);
+    const int controlBarHeight = 36;
+    const int triggerPanelSpace = triggerPanelOpen ? 44 : 0; // 6 px gap + 38 px panel
 
-    controlBar.setBounds (body.removeFromTop (36));
+    triggerPanel.setVisible (triggerPanelOpen);
+    snapbackGroup.setVisible (! editorsCollapsed);
+    transientGroup.setVisible (! editorsCollapsed);
+    resizeHandle.setVisible (! editorsCollapsed);
+
+    if (editorsCollapsed)
+    {
+        // In COLLAPSE mode the scope takes all vertical space not needed by
+        // the control bar and optional Trigger Settings drawer. The six pads
+        // remain visible so every layer can still be selected.
+        const int scopeHeight = juce::jmax (120, body.getHeight() - 6
+                                             - controlBarHeight - triggerPanelSpace);
+        masterWaveform.setBounds (body.removeFromTop (scopeHeight));
+        body.removeFromTop (6);
+        controlBar.setBounds (body.removeFromTop (controlBarHeight));
+
+        if (triggerPanelOpen)
+        {
+            body.removeFromTop (6);
+            triggerPanel.setBounds (body.removeFromTop (38));
+        }
+
+        return;
+    }
+
+    // The splitter adjusts the scope height while preserving a useful
+    // minimum space for both sample-bank editors at the smallest window size.
+    constexpr int minimumBankHeight = 168;
+    constexpr int minimumScopeHeight = 150;
+    constexpr int splitterHeight = 8;
+    const int fixedSpace = 6 + controlBarHeight + triggerPanelSpace
+                         + splitterHeight + 10 + minimumBankHeight;
+    const int maximumScopeHeight = juce::jmax (minimumScopeHeight,
+                                                body.getHeight() - fixedSpace);
+    const int defaultScopeHeight = juce::roundToInt ((float) body.getHeight() * 0.37f);
+
+    if (waveformHeight < 0)
+        waveformHeight = defaultScopeHeight;
+
+    waveformHeight = juce::jlimit (minimumScopeHeight, maximumScopeHeight, waveformHeight);
+
+    masterWaveform.setBounds (body.removeFromTop (waveformHeight));
+    body.removeFromTop (6);
+    controlBar.setBounds (body.removeFromTop (controlBarHeight));
 
     if (triggerPanelOpen)
     {
@@ -286,6 +396,7 @@ void WaveLensEditor::resized()
         triggerPanel.setBounds (body.removeFromTop (38));
     }
 
+    resizeHandle.setBounds (body.removeFromTop (splitterHeight));
     body.removeFromTop (10);
 
     const int gap = 12;
