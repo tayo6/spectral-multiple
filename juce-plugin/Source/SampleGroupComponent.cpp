@@ -29,18 +29,9 @@ SampleGroupComponent::SampleGroupComponent (WaveLensProcessor& processor, int gr
       baseLayer (group * 3),
       sampleBrowser (processor)
 {
-    const juce::String sectionName = (group == 0) ? "SNAPBACK" : "TRANSIENT";
-
     for (int i = 0; i < 3; ++i)
     {
         const int layerIdx = baseLayer + i;
-        const auto col = ui::layerColour (layerIdx);
-
-        dots[(size_t) i] = std::make_unique<SampleSelectorDot> (
-            i, col, sectionName + " sample " + juce::String (i + 1));
-        dots[(size_t) i]->onSelect = [this] (int slot) { selectSlot (slot); };
-        addAndMakeVisible (*dots[(size_t) i]);
-
         editors[(size_t) i] = std::make_unique<LayerEnvelopeComponent> (proc, layerIdx, col);
         addChildComponent (*editors[(size_t) i]);
     }
@@ -101,7 +92,6 @@ void SampleGroupComponent::selectSlot (int slotIndex)
 
     for (int i = 0; i < 3; ++i)
     {
-        dots[(size_t) i]->setSelected (i == selectedSlot);
         editors[(size_t) i]->setVisible (i == selectedSlot);
     }
 
@@ -131,12 +121,6 @@ void SampleGroupComponent::rebindActiveLayerToggles()
 void SampleGroupComponent::refreshState()
 {
     const int mask = proc.connectedMask.load (std::memory_order_relaxed);
-    for (int i = 0; i < 3; ++i)
-    {
-        const int layerIdx = baseLayer + i;
-        dots[(size_t) i]->setHasSample ((mask & (1 << layerIdx)) != 0);
-    }
-
     const int activeLayer = getSelectedLayer();
     const bool loaded = (mask & (1 << activeLayer)) != 0;
     const bool muted = proc.apvts.getRawParameterValue (ids::layerMute (activeLayer))->load() > 0.5f;
@@ -252,13 +236,7 @@ void SampleGroupComponent::resized()
     auto hdr = headerBounds.reduced (10, 7);
     hdr.removeFromLeft (98); // Section heading space ("SNAPBACK" / "TRANSIENT")
 
-    // Three small coloured circular selectors right beside the heading
-    for (int i = 0; i < 3; ++i)
-    {
-        dots[(size_t) i]->setBounds (hdr.removeFromLeft (20).withSizeKeepingCentre (18, 18));
-        hdr.removeFromLeft (2);
-    }
-
+    // Layer selection is handled by the six footer pads.
     // Right side of section header: Enable, S, >, SampleBrowser, x
     clearBtn.setBounds (hdr.removeFromRight (22));
     hdr.removeFromRight (4);
