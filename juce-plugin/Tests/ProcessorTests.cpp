@@ -229,6 +229,7 @@ public:
 //==============================================================================
 void testRealJuceAiffLoading (const fs::path& dir)
 {
+    std::cerr << "[TRACE] enter testRealJuceAiffLoading\n" << std::flush;
     const auto aiff44 = writeAiffFile16 (dir / "real_44.aif", 44100.0, {
         { 0.7f, 0.3f, -0.1f, 0.0f },
         { -0.2f, 0.6f, 0.1f, 0.0f }
@@ -244,6 +245,7 @@ void testRealJuceAiffLoading (const fs::path& dir)
 
     juce::AudioFormatManager fm;
     fm.registerBasicFormats();
+    std::cerr << "[TRACE] AIFF formats registered\n" << std::flush;
     for (const auto& pair : std::vector<std::pair<juce::File, double>> {
              { aiff44, 44100.0 }, { aiff48, 48000.0 }, { aiff96, 96000.0 } })
     {
@@ -257,12 +259,16 @@ void testRealJuceAiffLoading (const fs::path& dir)
         }
     }
 
+    std::cerr << "[TRACE] AIFF reader loop complete; construct processor\n" << std::flush;
     WaveLensProcessor proc;
+    std::cerr << "[TRACE] processor constructed; prepare\n" << std::flush;
     proc.prepareToPlay (44100.0, 256);
+    std::cerr << "[TRACE] processor prepared\n" << std::flush;
 
     juce::String err;
     check (proc.loadSampleFile (0, aiff44, err), "RealJUCE-AIFF: WaveLensProcessor loads stereo AIFF",
            err.toStdString());
+    std::cerr << "[TRACE] after processor AIFF load\n" << std::flush;
     check (proc.connectedMask.load() == (1 << 0), "RealJUCE-AIFF: connectedMask updated");
     check (proc.getSampleName (0) == "real_44", "RealJUCE-AIFF: sample name preserved");
 }
@@ -416,6 +422,7 @@ void testProcessorMonitorOversizedBlockAndDisabledBuses (const fs::path& dir)
 
 void testRealProcessorStateSerializationAndMigration (const fs::path& dir)
 {
+    std::cerr << "[TRACE] enter testRealProcessorStateSerializationAndMigration\n" << std::flush;
     const auto preWav = writeWavFileFloat32 (dir / "state_pre0.wav", 44100.0, { { 0.4f, 0.2f }, { 0.4f, 0.2f } });
     const auto mainWav = writeWavFileFloat32 (dir / "state_main3.wav", 44100.0, { { 0.8f, 0.1f }, { 0.8f, 0.1f } });
     const auto disappearingWav = writeWavFileFloat32 (dir / "vanishing_sample.wav", 44100.0, { { 0.5f }, { 0.5f } });
@@ -586,7 +593,9 @@ void testProcessorEditorLifecycle()
 {
     WaveLensProcessor proc;
     proc.prepareToPlay (44100.0, 256);
+    std::cerr << "[TRACE] before createEditor\n" << std::flush;
     std::unique_ptr<juce::AudioProcessorEditor> editor (proc.createEditor());
+    std::cerr << "[TRACE] after createEditor\n" << std::flush;
     check (editor != nullptr, "Editor: createEditor returns non-null WaveLensEditor");
     if (editor != nullptr)
     {
@@ -612,7 +621,9 @@ void runAllProcessorTests (const fs::path& dir)
 
 int main()
 {
+    std::cerr << "[TRACE] test main enter\n" << std::flush;
     juce::ScopedJuceInitialiser_GUI juceInit;
+    std::cerr << "[TRACE] JUCE GUI initialised\n" << std::flush;
 
     const fs::path tempDir = fs::temp_directory_path() / "spectral_multiple_processor_tests";
     fs::create_directories (tempDir);
