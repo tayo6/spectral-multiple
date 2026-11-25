@@ -9,9 +9,9 @@ namespace
     constexpr float kHandleRadius = 4.6f;
     constexpr float kTensionRadius = 4.6f;
     constexpr int kCurveSteps = 96;
-    constexpr int kFlBarHeight = 26;
-    constexpr int kControlStripHeight = 108;
     constexpr int kHeaderHeight = 22;
+    constexpr int kBottomReadoutHeight = 26;
+    constexpr float kWaveformWidthRatio = 0.58f;
     constexpr float kRulerHeight = 16.0f;
     constexpr float kOverviewHeight = 14.0f;
     constexpr float kMaxWaveformZoom = 32.0f;
@@ -21,14 +21,6 @@ namespace
         if (value >= 1000.0f)
             return juce::String (value / 1000.0f, 2) + "s";
         return juce::String (value, value < 10.0f ? 1 : 0) + "ms";
-    }
-
-    juce::String formatTrimPercent (float norm)
-    {
-        const float pct = norm * 100.0f;
-        if (std::abs (pct - std::round (pct)) < 0.05f)
-            return juce::String (juce::roundToInt (pct)) + "%";
-        return juce::String (pct, 1) + "%";
     }
 
     juce::String formatLayerDb (double linearGain)
@@ -96,16 +88,12 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     decayCurveAttachment = std::make_unique<ComboAtt> (state, ids::layerDecayCurve (layer), decayCurveBox);
     releaseCurveAttachment = std::make_unique<ComboAtt> (state, ids::layerReleaseCurve (layer), releaseCurveBox);
 
-    // GAIN parameter tile (replaces the former vertical volume fader; same
-    // layerGain parameter, same dB formatting, same double-click reset)
-    gainSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    // The SVG design uses a vertical Volume fader in its own card.
+    gainSlider.setSliderStyle (juce::Slider::LinearVertical);
     gainSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     gainSlider.setDoubleClickReturnValue (true, 1.0);
     gainSlider.setColour (juce::Slider::trackColourId, colour);
     gainSlider.setTooltip ("Layer volume (-inf to +6.0 dB). Double-click to reset to 0.0 dB.");
-    gainSlider.getProperties().set ("isTile", true);
-    gainSlider.getProperties().set ("tileLabel", "GAIN");
-    gainSlider.getProperties().set ("bipolar", false);
     addAndMakeVisible (gainSlider);
     gainAttachment = std::make_unique<SliderAtt> (state, ids::layerGain (layer), gainSlider);
     // NOTE: set after the attachment - SliderParameterAttachment overwrites
@@ -133,7 +121,7 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     };
 
     const juce::Colour secondaryFill = colour.interpolatedWith (ui::kMainText, 0.16f);
-    prepareTile (delaySlider,     "TIMING",   "Timing shift (-100 ms to +100 ms)",                    colour,        true,  0.0);
+    prepareTile (delaySlider,     "SHIFT",    "Layer timing shift (-100 ms to +100 ms)",              colour,        true,  0.0);
     prepareTile (pitchSlider,     "PITCH",    "Layer pitch (-24 to +24 semitones)",                   colour,        true,  0.0);
     prepareTile (panSlider,       "PAN",      "Stereo pan (Left / Centre / Right)",                   colour,        true,  0.0);
     prepareTile (widthSlider,     "WIDTH",    "Stereo width (0% mono, 100% original, 200% wide)",    colour,        false, 1.0);
@@ -250,6 +238,24 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
         resized();
         repaint();
     };
+    // These controls remain available in the parameter/state model but are not
+    // part of this compact SVG layout. Reverse remains available from the sample menu;
+    // curve modes remain available by right-clicking the editable envelope segments.
+    reverseBtn.setVisible (false);
+    attackCurveBox.setVisible (false);
+    decayCurveBox.setVisible (false);
+    releaseCurveBox.setVisible (false);
+    focusStartBtn.setVisible (false);
+    focusEndBtn.setVisible (false);
+    zoomFitBtn.setVisible (false);
+    zoomOutBtn.setVisible (false);
+    zoomResetBtn.setVisible (false);
+    zoomInBtn.setVisible (false);
+    fadeInSlider.setVisible (false);
+    fadeOutSlider.setVisible (false);
+    hpSlider.setVisible (false);
+    lpSlider.setVisible (false);
+
     updateZoomReadout();
 
     setMouseCursor (juce::MouseCursor::CrosshairCursor);
@@ -371,9 +377,10 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry (float tota
     Geometry result;
     const bool isZoomed = zoomFactor > 1.01f;
     auto bounds = getLocalBounds().toFloat();
-    bounds.removeFromBottom ((float) (kControlStripHeight + kFlBarHeight + 8));
+    bounds.setRight (bounds.getX() + bounds.getWidth() * kWaveformWidthRatio);
     bounds.removeFromTop ((float) kHeaderHeight);
-    bounds.removeFromBottom (kRulerHeight + (isZoomed ? kOverviewHeight : 0.0f));
+    bounds.removeFromBottom ((float) (kBottomReadoutHeight + kRulerHeight
+                                      + (isZoomed ? kOverviewHeight : 0.0f)));
     result.plot = bounds;
 
     const auto layerParams = readLayerParameters();
@@ -447,7 +454,8 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry (float tota
 
 void LayerEnvelopeComponent::paint (juce::Graphics& g)
 {
-    auto waveBox = getLocalBounds().withTrimmedBottom (kControlStripHeight + kFlBarHeight + 8).toFloat();
+    auto fullBounds = getLocalBounds().toFloat();
+    auto waveBox = fullBounds.removeFromLeft (fullBounds.getWidth() * kWaveformWidthRatio);
     const bool envEnabled = pEnvEnabled->load() > 0.5f;
     const juce::Colour flCurveColour = snap::bankAccentHi (layer);   // bright bank accent
     const juce::Colour flControlDot  = colour.interpolatedWith (ui::kMainText, 0.55f);
@@ -470,20 +478,10 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
 
     g.setColour (ui::kSecondaryText);
     g.setFont (juce::Font (10.0f));
-    const float fadeInVal = pFadeIn->load();
-    const float fadeOutVal = pFadeOut->load();
-    const juce::String fadeStr = (fadeInVal > 0.5f || fadeOutVal > 0.5f)
-        ? ("  |  FI " + formatEnvelopeTime (fadeInVal) + " FO " + formatEnvelopeTime (fadeOutVal))
-        : juce::String();
     auto textRect = readoutBar.reduced (8.0f, 0.0f);
-    textRect.setRight (juce::jmax (textRect.getX() + 40.0f, (float) focusStartBtn.getX() - 8.0f));
-    g.drawText ("A " + formatEnvelopeTime (pAttack->load())
-                + "  H " + formatEnvelopeTime (pHold->load())
-                + "  D " + formatEnvelopeTime (pDecay->load())
-                + "  S " + juce::String (pSustain->load() * 100.0f, 0) + "%"
-                + "  R " + formatEnvelopeTime (pRelease->load())
-                + "   |   Trim " + formatTrimPercent (trimStart) + "-" + formatTrimPercent (trimEnd)
-                + fadeStr
+    textRect.setRight (juce::jmax (textRect.getX() + 40.0f, (float) envEnableBtn.getX() - 6.0f));
+    g.drawText ("TRIM " + juce::String (trimStart * 100.0f, 0) + "% - "
+                + juce::String (trimEnd * 100.0f, 0) + "%"
                 + (reversed ? "  |  REV" : "")
                 + (! envEnabled ? "  |  ENV OFF" : ""),
                 textRect, juce::Justification::centredLeft, true);
@@ -723,7 +721,21 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         g.restoreState();
     }
 
-    // Bottom time ruler
+    // Bottom Attack / Decay readout and the interactive sample Pitch control.
+    auto bottomReadout = waveBox.removeFromBottom (kBottomReadoutHeight);
+    g.setColour (ui::kInsetBg.withAlpha (0.92f));
+    g.fillRect (bottomReadout);
+    g.setColour (ui::kBorder);
+    g.drawHorizontalLine (juce::roundToInt (bottomReadout.getY()), bottomReadout.getX(), bottomReadout.getRight());
+    auto envReadout = bottomReadout.reduced (7.0f, 0.0f);
+    envReadout.setRight (juce::jmax (envReadout.getX() + 40.0f, (float) pitchSlider.getX() - 5.0f));
+    g.setColour (ui::kSecondaryText);
+    g.setFont (juce::Font (9.5f));
+    g.drawText ("ATTACK " + formatEnvelopeTime (pAttack->load())
+                + "    DECAY " + formatEnvelopeTime (pDecay->load()),
+                envReadout, juce::Justification::centredLeft, true);
+
+    // Bottom time ruler.
     auto ruler = waveBox.removeFromBottom (kRulerHeight);
     g.setColour (ui::kInsetBg.withAlpha (0.85f));
     g.fillRect (ruler);
@@ -742,6 +754,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         g.drawText (lbl, juce::Rectangle<float> (boxX, ruler.getY(), 60.0f, ruler.getHeight()), just);
     }
 
+    // Overview bar when zoomed.
     if (zoomFactor > 1.01f)
     {
         auto ov = waveBox.removeFromBottom (kOverviewHeight);
@@ -763,109 +776,74 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         g.drawRoundedRectangle (thumbX, ov.getY() + 1.5f, thumbW, ov.getHeight() - 3.0f, 2.0f, 1.0f);
     }
 
-    // FL Studio Envelope Toolbar Strip
-    g.setColour (ui::kElevatedBg);
-    g.fillRoundedRectangle (flBarBounds.toFloat(), 4.0f);
-    g.setColour (ui::kBorder);
-    g.drawRoundedRectangle (flBarBounds.toFloat().reduced (0.5f), 4.0f, 1.0f);
-
-    g.setFont (juce::Font (9.5f, juce::Font::bold));
-    auto drawFlBoxLabel = [&] (const juce::ComboBox& box, const juce::String& lbl, float tensionVal)
-    {
-        g.setColour (ui::kSecondaryText);
-        g.drawText (lbl, box.getX() - 25, box.getY(), 23, box.getHeight(), juce::Justification::centredRight);
-        const int pct = juce::roundToInt (tensionVal * 100.0f);
-        g.setColour (std::abs (pct) > 0 ? flCurveColour : ui::kSecondaryText);
-        g.drawText ((pct > 0 ? "+" : "") + juce::String (pct) + "%",
-                    box.getRight() + 3, box.getY(), 31, box.getHeight(), juce::Justification::centredLeft);
-    };
-    drawFlBoxLabel (attackCurveBox,  "ATT", pAttackTension->load());
-    drawFlBoxLabel (decayCurveBox,   "DEC", pDecayTension->load());
-    drawFlBoxLabel (releaseCurveBox, "REL", pReleaseTension->load());
-
-    // SNAPBACK parameter tile deck
+    // Parameter bank: compact Shift / Width / Pan / Pogo / Trim controls and
+    // a dedicated vertical Volume fader. Sample wave and envelope remain live.
     g.setColour (ui::kPanelBg);
     g.fillRoundedRectangle (controlStripBounds.toFloat(), 4.0f);
     g.setColour (ui::kBorder);
     g.drawRoundedRectangle (controlStripBounds.toFloat().reduced (0.5f), 4.0f, 1.0f);
+
+    g.setColour (ui::kControlBg);
+    g.fillRoundedRectangle (gainCardBounds, 3.0f);
+    g.setColour (ui::kBorder);
+    g.drawRoundedRectangle (gainCardBounds.reduced (0.5f), 3.0f, 1.0f);
+    g.setColour (ui::kSecondaryText);
+    g.setFont (juce::Font (9.0f, juce::Font::bold));
+    g.drawText ("VOLUME", gainCardBounds.withTrimmedBottom (gainCardBounds.getHeight() - 14.0f), juce::Justification::centred);
+    g.setColour (ui::kMainText);
+    g.setFont (juce::Font (10.0f, juce::Font::bold));
+    g.drawText (gainSlider.getTextFromValue (gainSlider.getValue()),
+                gainCardBounds.withTrimmedTop (gainCardBounds.getHeight() - 17.0f), juce::Justification::centred);
+
 }
 
 void LayerEnvelopeComponent::resized()
 {
-    auto area = getLocalBounds();
-    controlStripBounds = area.removeFromBottom (kControlStripHeight);
-    area.removeFromBottom (4);
-    flBarBounds = area.removeFromBottom (kFlBarHeight);
-    area.removeFromBottom (4);
+    auto full = getLocalBounds();
+    const int waveW = juce::roundToInt ((float) full.getWidth() * kWaveformWidthRatio);
+    auto waveArea = full.removeFromLeft (waveW);
+    auto controls = full.reduced (7, 6);
+    controlStripBounds = controls;
 
-    auto waveArea = area;
     auto headerBar = waveArea.removeFromTop (kHeaderHeight).reduced (4, 2);
-    zoomInBtn.setBounds (headerBar.removeFromRight (20));
-    zoomResetBtn.setBounds (headerBar.removeFromRight (38));
-    zoomOutBtn.setBounds (headerBar.removeFromRight (20));
-    headerBar.removeFromRight (4);
-    zoomFitBtn.setBounds (headerBar.removeFromRight (26));
-    headerBar.removeFromRight (3);
-    focusEndBtn.setBounds (headerBar.removeFromRight (22));
-    headerBar.removeFromRight (2);
-    focusStartBtn.setBounds (headerBar.removeFromRight (22));
+    envEnableBtn.setBounds (headerBar.removeFromRight (40));
 
-    auto bottomWave = waveArea.toFloat();
-    bottomWave.removeFromBottom (kRulerHeight);
+    auto readout = waveArea.removeFromBottom (kBottomReadoutHeight).reduced (5, 2);
+    pitchSlider.setBounds (readout.removeFromRight (88));
+    waveArea.removeFromBottom (kRulerHeight);
     overviewBarBounds = (zoomFactor > 1.01f)
-        ? bottomWave.removeFromBottom (kOverviewHeight)
+        ? waveArea.removeFromBottom (kOverviewHeight).toFloat()
         : juce::Rectangle<float>();
 
-    auto flRow = flBarBounds.reduced (6, 3);
-    envEnableBtn.setBounds (flRow.removeFromLeft (40));
-    flRow.removeFromLeft (6);
+    // Trim range occupies a shared bottom row, with front and back handles side by side.
+    auto trimRow = controls.removeFromBottom (42).reduced (2, 2);
+    const int trimGap = 4;
+    const int trimHalf = (trimRow.getWidth() - trimGap) / 2;
+    trimStartSlider.setBounds (trimRow.removeFromLeft (trimHalf));
+    trimRow.removeFromLeft (trimGap);
+    trimEndSlider.setBounds (trimRow);
 
-    const int segSlotW = juce::jlimit (84, 164, (flRow.getWidth() - 12) / 3);
-    auto placeSeg = [&] (juce::ComboBox& box)
-    {
-        auto slot = flRow.removeFromLeft (segSlotW);
-        slot.removeFromLeft (25);
-        slot.removeFromRight (34);
-        box.setBounds (slot);
-        flRow.removeFromLeft (4);
-    };
-    placeSeg (attackCurveBox);
-    placeSeg (decayCurveBox);
-    placeSeg (releaseCurveBox);
+    // Left column: Shift, Width and Pan. Right column: Pogo and Volume.
+    const int colGap = 6;
+    const int leftW = (controls.getWidth() - colGap) / 2;
+    auto leftCol = controls.removeFromLeft (leftW);
+    controls.removeFromLeft (colGap);
+    auto rightCol = controls;
 
-    auto strip = controlStripBounds.reduced (8, 6);
+    constexpr int cardH = 40;
+    delaySlider.setBounds (leftCol.removeFromTop (cardH).reduced (1, 1));
+    leftCol.removeFromTop (4);
+    widthSlider.setBounds (leftCol.removeFromTop (cardH).reduced (1, 1));
+    leftCol.removeFromTop (4);
+    panSlider.setBounds (leftCol.removeFromTop (cardH).reduced (1, 1));
 
-    // Two rows of SNAPBACK parameter tiles:
-    //   Row 1: [REV] [GAIN] [PITCH] [POGO] [TRIM F] [TRIM B] [FADE IN] [FADE OUT]
-    //   Row 2: [TIMING] [PAN] [HP] [LP] aligned under the Row 1 tile columns
-    const int rowGap = 4;
-    const int rowH = (strip.getHeight() - rowGap) / 2;
-    auto row1 = strip.removeFromTop (rowH);
-    strip.removeFromTop (rowGap);
-    auto row2 = strip;
-
-    reverseBtn.setBounds (row1.removeFromLeft (44).withSizeKeepingCentre (44, juce::jmin (26, row1.getHeight())));
-    row1.removeFromLeft (6);
-    const int revW = 50;
-    const int availW = juce::jmax (280, row1.getWidth());
-    const int step = availW / 8;
-    const int tileW = juce::jlimit (42, 66, step - 6);
-    const int tileGap = juce::jmax (2, step - tileW);
-
-    for (auto* s : { &gainSlider, &pitchSlider, &widthSlider, &pogoSlider, &trimStartSlider,
-                     &trimEndSlider, &fadeInSlider, &fadeOutSlider })
-    {
-        s->setBounds (row1.removeFromLeft (tileW));
-        row1.removeFromLeft (tileGap);
-    }
-
-    row2.removeFromLeft (revW);
-    for (auto* s : { &delaySlider, &panSlider, &hpSlider, &lpSlider })
-    {
-        s->setBounds (row2.removeFromLeft (tileW));
-        row2.removeFromLeft (tileGap);
-    }
+    const int pogoH = 42;
+    pogoSlider.setBounds (rightCol.removeFromBottom (pogoH).reduced (1, 1));
+    rightCol.removeFromBottom (4);
+    gainCardBounds = rightCol.toFloat();
+    gainSlider.setBounds (rightCol.reduced (juce::jmax (8, rightCol.getWidth() / 4), 18));
 }
+
 
 LayerEnvelopeComponent::Handle LayerEnvelopeComponent::hitTestHandle (juce::Point<float> pos,
                                                                       const Geometry& g,
