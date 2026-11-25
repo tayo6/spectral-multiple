@@ -790,6 +790,54 @@ void testPreAndMainTimingAccuracy (const fs::path& dir)
 }
 
 //==============================================================================
+void testStereoWidthProcessing (const fs::path& dir)
+{
+    const auto stereo = writeWavFileFloat32 (dir / "width_stereo.wav", 44100.0,
+                                              { std::vector<float> (512, 0.5f),
+                                                std::vector<float> (512, -0.25f) });
+    const std::vector<float> zero (8192, 0.0f);
+
+    auto renderAtWidth = [&] (float width)
+    {
+        LayeredSampleEngine engine;
+        engine.prepareToPlay (44100.0, 256);
+        engine.setTriggerMode (1, 0.05f); // MIDI trigger
+        engine.setPreRollMilliseconds (0.0f);
+
+        juce::String err;
+        check (engine.loadSampleFromFile (3, juce::File (stereo), err),
+               "Width: stereo test sample loads", err.toStdString());
+
+        LayeredSampleEngine::LayerParameters p;
+        p.width = width;
+        engine.setLayerParameters (3, p);
+        const int firstSample = engine.getMaximumDelaySamples();
+        const auto out = runBlocks (engine, 8192, 256, zero, zero,
+                                    { { 0, juce::MidiMessage::noteOn (1, 60, 127) } });
+        return std::pair<float, float> { out.busL[3][(size_t) firstSample],
+                                         out.busR[3][(size_t) firstSample] };
+    };
+
+    const auto mono = renderAtWidth (0.0f);
+    check (std::abs (mono.first - 0.125f) < 1.0e-4f
+        && std::abs (mono.second - 0.125f) < 1.0e-4f,
+        "Width: 0% collapses stereo to the same mid signal on both channels",
+        "L=" + std::to_string (mono.first) + " R=" + std::to_string (mono.second));
+
+    const auto original = renderAtWidth (1.0f);
+    check (std::abs (original.first - 0.5f) < 1.0e-4f
+        && std::abs (original.second + 0.25f) < 1.0e-4f,
+        "Width: 100% preserves the original stereo signal",
+        "L=" + std::to_string (original.first) + " R=" + std::to_string (original.second));
+
+    const auto widened = renderAtWidth (2.0f);
+    check (std::abs (widened.first - 0.875f) < 1.0e-4f
+        && std::abs (widened.second + 0.625f) < 1.0e-4f,
+        "Width: 200% doubles side information without changing the mid signal",
+        "L=" + std::to_string (widened.first) + " R=" + std::to_string (widened.second));
+}
+
+//==============================================================================
 void testIndependentAudioRouting (const fs::path& dir)
 {
     LayeredSampleEngine engine;
@@ -1273,6 +1321,7 @@ int main()
     testPitchPogoTrimFadesFiltersAndPolyphony (tempDir);
     testTriggerModes (tempDir);
     testPreAndMainTimingAccuracy (tempDir);
+    testStereoWidthProcessing (tempDir);
     testIndependentAudioRouting (tempDir);
     testTailLengthSeconds (tempDir);
     testVoiceReleaseAndRemainingThreadSafety (tempDir);
