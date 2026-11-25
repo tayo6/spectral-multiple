@@ -52,6 +52,7 @@ public:
     {
         float gain = 1.0f;
         float pan = 0.0f;
+        float width = 1.0f; // 1.0 = original stereo, 0.0 = mono, 2.0 = widened
         float pitchSemitones = 0.0f;
         float delayShiftMs = 0.0f;
         float highPassHz = 20.0f;
