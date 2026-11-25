@@ -222,18 +222,28 @@ WaveformControlBar::WaveformControlBar (WaveLensProcessor& processor)
     preLeadAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, ids::preRollMs, preLeadSlider);
     preLeadSlider.updateText();
 
-    triggerTabBtn.setClickingTogglesState (true);
-    triggerTabBtn.setTooltip ("Open or close Trigger Settings panel");
-    triggerTabBtn.getProperties().set ("isTrapezoid", true);
-    triggerTabBtn.getProperties().set ("accentColour", (juce::int64) ui::kPurpleAccent.getARGB());
-    triggerTabBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
-    triggerTabBtn.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
-    triggerTabBtn.onClick = [this]
+    collapseTabBtn.setClickingTogglesState (true);
+    collapseTabBtn.setTooltip ("Collapse or restore the lower sample editors");
+    collapseTabBtn.getProperties().set ("isTrapezoid", true);
+    collapseTabBtn.getProperties().set ("accentColour", (juce::int64) ui::kPurpleAccent.getARGB());
+    collapseTabBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    collapseTabBtn.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
+    collapseTabBtn.onClick = [this]
+    {
+        if (onCollapseToggled)
+            onCollapseToggled (collapseTabBtn.getToggleState());
+    };
+    addAndMakeVisible (collapseTabBtn);
+
+    triggerSettingsBtn.setClickingTogglesState (true);
+    triggerSettingsBtn.setTooltip ("Open or close Trigger Settings");
+    triggerSettingsBtn.getProperties().set ("accentColour", (juce::int64) ui::kCyanAccent.getARGB());
+    triggerSettingsBtn.onClick = [this]
     {
         if (onTriggerPanelToggled)
-            onTriggerPanelToggled (triggerTabBtn.getToggleState());
+            onTriggerPanelToggled (triggerSettingsBtn.getToggleState());
     };
-    addAndMakeVisible (triggerTabBtn);
+    addAndMakeVisible (triggerSettingsBtn);
 
     fireTriggerBtn.setTooltip ("Fire manual trigger audition");
     fireTriggerBtn.getProperties().set ("accentColour", (juce::int64) ui::kCyanAccent.getARGB());
@@ -393,13 +403,15 @@ void WaveformControlBar::resized()
     r.removeFromRight (2);
     gridBtn.setBounds (r.removeFromRight (46));
 
-    // Centre trapezoid TRIGGER tab + compact fire button
-    const int trigW = 96;
+    // Centre trapezoid COLLAPSE tab + independent Trigger Settings + manual fire.
+    const int collapseW = 94;
+    const int settingsW = 48;
     const int fireW = 26;
-    const int totalCentreW = trigW + 4 + fireW;
+    const int totalCentreW = collapseW + 4 + settingsW + 4 + fireW;
     const int startX = juce::jmax (preLeadSlider.getRight() + 8,
                                    juce::jmin (gridBtn.getX() - totalCentreW - 8,
                                                getWidth() / 2 - totalCentreW / 2));
-    triggerTabBtn.setBounds (startX, r.getY() - 2, trigW, r.getHeight() + 4);
-    fireTriggerBtn.setBounds (triggerTabBtn.getRight() + 4, r.getY(), fireW, r.getHeight());
+    collapseTabBtn.setBounds (startX, r.getY() - 2, collapseW, r.getHeight() + 4);
+    triggerSettingsBtn.setBounds (collapseTabBtn.getRight() + 4, r.getY(), settingsW, r.getHeight());
+    fireTriggerBtn.setBounds (triggerSettingsBtn.getRight() + 4, r.getY(), fireW, r.getHeight());
 }
