@@ -124,8 +124,8 @@ private:
     std::unique_ptr<SliderAtt> fadeInAttachment, fadeOutAttachment, trimStartAttachment, trimEndAttachment;
     std::unique_ptr<SliderAtt> hpAttachment, lpAttachment;
 
-    juce::Rectangle<int> flBarBounds;
     juce::Rectangle<int> controlStripBounds;
+    juce::Rectangle<float> gainCardBounds;
     juce::Rectangle<float> overviewBarBounds;
     Handle activeHandle = Handle::None;
     float zoomFactor = 1.0f;
