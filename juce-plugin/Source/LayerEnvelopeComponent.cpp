@@ -136,6 +136,7 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     prepareTile (delaySlider,     "TIMING",   "Timing shift (-100 ms to +100 ms)",                    colour,        true,  0.0);
     prepareTile (pitchSlider,     "PITCH",    "Layer pitch (-24 to +24 semitones)",                   colour,        true,  0.0);
     prepareTile (panSlider,       "PAN",      "Stereo pan (Left / Centre / Right)",                   colour,        true,  0.0);
+    prepareTile (widthSlider,     "WIDTH",    "Stereo width (0% mono, 100% original, 200% wide)",    colour,        false, 1.0);
     prepareTile (pogoSlider,      "POGO",     "FL Sampler style pitch-bend envelope (-100% to +100%)", secondaryFill, true,  0.0);
     prepareTile (fadeInSlider,    "FADE IN",  "Sample fade-in duration (0 ms to 2000 ms)",            colour,        false, 0.0);
     prepareTile (fadeOutSlider,   "FADE OUT", "Sample fade-out duration (0 ms to 5000 ms)",           colour,        false, 0.0);
@@ -147,6 +148,7 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     delayAttachment     = std::make_unique<SliderAtt> (state, ids::layerDelay (layer),     delaySlider);
     pitchAttachment     = std::make_unique<SliderAtt> (state, ids::layerPitch (layer),     pitchSlider);
     panAttachment       = std::make_unique<SliderAtt> (state, ids::layerPan (layer),       panSlider);
+    widthAttachment     = std::make_unique<SliderAtt> (state, ids::layerWidth (layer),     widthSlider);
     pogoAttachment      = std::make_unique<SliderAtt> (state, ids::layerPogo (layer),      pogoSlider);
     fadeInAttachment    = std::make_unique<SliderAtt> (state, ids::layerFadeIn (layer),    fadeInSlider);
     fadeOutAttachment   = std::make_unique<SliderAtt> (state, ids::layerFadeOut (layer),   fadeOutSlider);
@@ -176,6 +178,7 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
             return juce::String ("C");
         return juce::String (std::abs (value) * 100.0, 0) + (value < 0.0 ? "L" : "R");
     };
+    widthSlider.textFromValueFunction  = [] (double value) { return juce::String (value * 100.0, 0) + "%"; };
     pogoSlider.textFromValueFunction    = [] (double v) { return juce::String (v > 0.0 ? "+" : "") + juce::String (v * 100.0, 0) + "%"; };
     fadeInSlider.textFromValueFunction  = [] (double v) { return formatEnvelopeTime ((float) v); };
     fadeOutSlider.textFromValueFunction = [] (double v) { return formatEnvelopeTime ((float) v); };
@@ -845,11 +848,11 @@ void LayerEnvelopeComponent::resized()
     row1.removeFromLeft (6);
     const int revW = 50;
     const int availW = juce::jmax (280, row1.getWidth());
-    const int step = availW / 7;
-    const int tileW = juce::jlimit (46, 66, step - 6);
+    const int step = availW / 8;
+    const int tileW = juce::jlimit (42, 66, step - 6);
     const int tileGap = juce::jmax (2, step - tileW);
 
-    for (auto* s : { &gainSlider, &pitchSlider, &pogoSlider, &trimStartSlider,
+    for (auto* s : { &gainSlider, &pitchSlider, &widthSlider, &pogoSlider, &trimStartSlider,
                      &trimEndSlider, &fadeInSlider, &fadeOutSlider })
     {
         s->setBounds (row1.removeFromLeft (tileW));
