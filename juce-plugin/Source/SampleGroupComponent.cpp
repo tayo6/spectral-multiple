@@ -2,6 +2,32 @@
 
 namespace ui = wavelens::ui;
 
+void SampleGroupComponent::BankPowerButton::paintButton (juce::Graphics& g,
+                                                          bool highlighted,
+                                                          bool down)
+{
+    const auto b = getLocalBounds().toFloat().reduced (0.5f);
+    auto fill = bankEnabled ? accent.withAlpha (0.18f) : ui::kControlBg;
+    if (down) fill = fill.brighter (0.15f);
+    else if (highlighted) fill = fill.brighter (0.08f);
+
+    g.setColour (fill);
+    g.fillRoundedRectangle (b, 3.5f);
+    g.setColour (bankEnabled ? accent.withAlpha (0.9f) : ui::kBorder);
+    g.drawRoundedRectangle (b, 3.5f, 1.0f);
+
+    const float cx = b.getCentreX();
+    const float cy = b.getCentreY();
+    const float radius = juce::jmin (6.0f, b.getHeight() * 0.27f);
+    g.setColour (bankEnabled ? accent.brighter (0.25f) : ui::kDisabledText);
+    juce::Path arc;
+    arc.addCentredArc (cx, cy + 1.0f, radius, radius, 0.0f,
+                       0.48f, juce::MathConstants<float>::twoPi - 0.48f, true);
+    g.strokePath (arc, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved,
+                                             juce::PathStrokeType::rounded));
+    g.drawLine (cx, cy - radius - 2.0f, cx, cy - 0.5f, 1.5f);
+}
+
 SampleGroupComponent::SampleGroupComponent (WaveLensProcessor& processor, int groupIndex)
     : proc (processor),
       group (juce::jlimit (0, 1, groupIndex)),
@@ -15,6 +41,31 @@ SampleGroupComponent::SampleGroupComponent (WaveLensProcessor& processor, int gr
         editors[(size_t) i] = std::make_unique<LayerEnvelopeComponent> (proc, layerIdx, col);
         addChildComponent (*editors[(size_t) i]);
     }
+
+    bankPowerBtn.setAccentColour (ui::layerColour (baseLayer));
+    bankPowerBtn.onClick = [this]
+    {
+        bool anyLayerEnabled = false;
+        for (int slot = 0; slot < 3; ++slot)
+            anyLayerEnabled = anyLayerEnabled
+                || proc.apvts.getRawParameterValue (ids::layerMute (baseLayer + slot))->load() < 0.5f;
+
+        // Clicking while any layer is active mutes the whole bank; clicking
+        // while all are muted enables all three layers again.
+        const float nextMute = anyLayerEnabled ? 1.0f : 0.0f;
+        for (int slot = 0; slot < 3; ++slot)
+        {
+            const auto parameterId = ids::layerMute (baseLayer + slot);
+            if (auto* parameter = dynamic_cast<juce::RangedAudioParameter*> (proc.apvts.getParameter (parameterId)))
+            {
+                parameter->beginChangeGesture();
+                parameter->setValueNotifyingHost (parameter->convertTo0to1 (nextMute));
+                parameter->endChangeGesture();
+            }
+        }
+        refreshState();
+    };
+    addAndMakeVisible (bankPowerBtn);
 
     soloBtn.setClickingTogglesState (true);
     soloBtn.setTooltip ("Solo all three layers in this bank");
@@ -92,10 +143,16 @@ void SampleGroupComponent::refreshState()
     const int activeLayer = getSelectedLayer();
     const bool loaded = (mask & (1 << activeLayer)) != 0;
     bool allBankSolo = true;
+    bool anyBankLayerEnabled = false;
     for (int slot = 0; slot < 3; ++slot)
+    {
         allBankSolo = allBankSolo
             && proc.apvts.getRawParameterValue (ids::layerSolo (baseLayer + slot))->load() > 0.5f;
+        anyBankLayerEnabled = anyBankLayerEnabled
+            || proc.apvts.getRawParameterValue (ids::layerMute (baseLayer + slot))->load() < 0.5f;
+    }
     soloBtn.setToggleState (allBankSolo, juce::dontSendNotification);
+    bankPowerBtn.setBankEnabled (anyBankLayerEnabled);
 
     auditionBtn.setEnabled (loaded);
     clearBtn.setEnabled (loaded);
@@ -219,6 +276,8 @@ void SampleGroupComponent::resized()
     auditionBtn.setBounds (hdr.removeFromRight (22));
     hdr.removeFromRight (4);
     soloBtn.setBounds (hdr.removeFromRight (22));
+    hdr.removeFromRight (4);
+    bankPowerBtn.setBounds (hdr.removeFromRight (22));
 
     editorBounds = area.reduced (8, 6);
     for (auto& ed : editors)
