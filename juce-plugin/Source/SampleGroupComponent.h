@@ -2,7 +2,6 @@
 
 #include "PluginProcessor.h"
 #include "SpectralMultipleLookAndFeel.h"
-#include "SampleSelectorDot.h"
 #include "SampleBrowserComponent.h"
 #include "LayerEnvelopeComponent.h"
 #include <array>
@@ -82,7 +81,6 @@ private:
     int selectedSlot = 0;
     bool dragOver = false;
 
-    std::array<std::unique_ptr<SampleSelectorDot>, 3> dots;
     LayerPowerButton enableBtn;
     juce::TextButton soloBtn { "S" };
     juce::TextButton auditionBtn { ">" };
