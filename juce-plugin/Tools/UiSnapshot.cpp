@@ -120,6 +120,8 @@ int main (int argc, char** argv)
     setParam (ids::layerPan (1), -0.35f);
     setParam (ids::layerPan (2), 0.35f);
     setParam (ids::layerPan (4), 0.25f);
+    setParam (ids::layerWidth (1), 0.65f);
+    setParam (ids::layerWidth (4), 1.35f);
     setParam (ids::layerPogo (4), 0.45f);
     setParam (ids::layerDelay (1), -8.0f);
     setParam (ids::layerDelay (4), 12.0f);
