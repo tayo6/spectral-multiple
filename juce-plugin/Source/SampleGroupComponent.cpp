@@ -2,27 +2,6 @@
 
 namespace ui = wavelens::ui;
 
-void SampleGroupComponent::LayerPowerButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
-{
-    auto b = getLocalBounds().toFloat().reduced (0.5f);
-
-    juce::Colour bg = layerOn ? accent.withAlpha (0.20f) : ui::kControlBg;
-    if (down)
-        bg = bg.brighter (0.16f);
-    else if (highlighted)
-        bg = layerOn ? accent.withAlpha (0.28f) : ui::kHoverBg;
-
-    g.setColour (bg);
-    g.fillRoundedRectangle (b, 3.5f);
-    g.setColour (layerOn ? accent.withAlpha (0.85f) : ui::kBorder);
-    g.drawRoundedRectangle (b, 3.5f, 1.0f);
-
-    g.setColour (layerOn ? accent.brighter (0.25f) : ui::kDisabledText);
-    g.setFont (juce::Font (12.5f, juce::Font::bold));
-    g.drawText ("M", b.withSizeKeepingCentre (b.getWidth(), b.getHeight()), juce::Justification::centred);
-}
-
-//==============================================================================
 SampleGroupComponent::SampleGroupComponent (WaveLensProcessor& processor, int groupIndex)
     : proc (processor),
       group (juce::jlimit (0, 1, groupIndex)),
@@ -36,22 +15,24 @@ SampleGroupComponent::SampleGroupComponent (WaveLensProcessor& processor, int gr
         addChildComponent (*editors[(size_t) i]);
     }
 
-    enableBtn.onClick = [this]
+    soloBtn.setClickingTogglesState (true);
+    soloBtn.setTooltip ("Solo all three layers in this bank");
+    soloBtn.getProperties().set ("accentColour", (juce::int64) ui::layerColour (baseLayer).getARGB());
+    soloBtn.onClick = [this]
     {
-        const int activeLayer = getSelectedLayer();
-        if (auto* param = dynamic_cast<juce::RangedAudioParameter*> (proc.apvts.getParameter (ids::layerMute (activeLayer))))
+        const bool shouldSolo = soloBtn.getToggleState();
+        for (int slot = 0; slot < 3; ++slot)
         {
-            const bool currentlyMuted = param->getValue() > 0.5f;
-            param->beginChangeGesture();
-            param->setValueNotifyingHost (currentlyMuted ? 0.0f : 1.0f);
-            param->endChangeGesture();
+            const auto parameterId = ids::layerSolo (baseLayer + slot);
+            if (auto* parameter = dynamic_cast<juce::RangedAudioParameter*> (proc.apvts.getParameter (parameterId)))
+            {
+                parameter->beginChangeGesture();
+                parameter->setValueNotifyingHost (parameter->convertTo0to1 (shouldSolo ? 1.0f : 0.0f));
+                parameter->endChangeGesture();
+            }
         }
         refreshState();
     };
-    addAndMakeVisible (enableBtn);
-
-    soloBtn.setClickingTogglesState (true);
-    soloBtn.setTooltip ("Solo active layer");
     addAndMakeVisible (soloBtn);
 
     auditionBtn.setTooltip ("Audition active layer sample");
@@ -95,7 +76,6 @@ void SampleGroupComponent::selectSlot (int slotIndex)
         editors[(size_t) i]->setVisible (i == selectedSlot);
     }
 
-    rebindActiveLayerToggles();
     sampleBrowser.setLayer (activeLayer);
     refreshState();
 
@@ -105,27 +85,17 @@ void SampleGroupComponent::selectSlot (int slotIndex)
     repaint();
 }
 
-void SampleGroupComponent::rebindActiveLayerToggles()
-{
-    const int activeLayer = getSelectedLayer();
-    const auto accent = ui::layerColour (activeLayer);
-
-    soloAtt.reset();
-    soloBtn.getProperties().set ("accentColour", (juce::int64) accent.getARGB());
-    soloAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
-        proc.apvts, ids::layerSolo (activeLayer), soloBtn);
-
-    enableBtn.setAccentColour (accent);
-}
-
 void SampleGroupComponent::refreshState()
 {
     const int mask = proc.connectedMask.load (std::memory_order_relaxed);
     const int activeLayer = getSelectedLayer();
     const bool loaded = (mask & (1 << activeLayer)) != 0;
-    const bool muted = proc.apvts.getRawParameterValue (ids::layerMute (activeLayer))->load() > 0.5f;
+    bool allBankSolo = true;
+    for (int slot = 0; slot < 3; ++slot)
+        allBankSolo = allBankSolo
+            && proc.apvts.getRawParameterValue (ids::layerSolo (baseLayer + slot))->load() > 0.5f;
+    soloBtn.setToggleState (allBankSolo, juce::dontSendNotification);
 
-    enableBtn.setLayerEnabled (! muted);
     auditionBtn.setEnabled (loaded);
     clearBtn.setEnabled (loaded);
     sampleBrowser.refreshDisplay();
@@ -237,19 +207,17 @@ void SampleGroupComponent::resized()
     hdr.removeFromLeft (98); // Section heading space ("SNAPBACK" / "TRANSIENT")
 
     // Layer selection is handled by the six footer pads.
-    // Right side of section header: Enable, S, >, SampleBrowser, x
+    // Right side of section header: bank Solo, audition, sample browser and clear.
     clearBtn.setBounds (hdr.removeFromRight (22));
     hdr.removeFromRight (4);
 
-    const int browserW = juce::jlimit (100, 210, hdr.getWidth() - 114);
+    const int browserW = juce::jlimit (100, 250, hdr.getWidth() - 88);
     sampleBrowser.setBounds (hdr.removeFromRight (browserW));
     hdr.removeFromRight (6);
 
     auditionBtn.setBounds (hdr.removeFromRight (22));
     hdr.removeFromRight (4);
     soloBtn.setBounds (hdr.removeFromRight (22));
-    hdr.removeFromRight (4);
-    enableBtn.setBounds (hdr.removeFromRight (24));
 
     editorBounds = area.reduced (8, 6);
     for (auto& ed : editors)
