@@ -52,7 +52,7 @@ private:
         void setBankEnabled (bool enabled) noexcept { if (bankEnabled != enabled) { bankEnabled = enabled; repaint(); } }
         void paintButton (juce::Graphics&, bool highlighted, bool down) override;
     private:
-        juce::Colour accent { wavelens::ui::kBlueAccent };
+        juce::Colour accent { wavelens::ui::kPurpleAccent };
         bool bankEnabled = true;
     };
 
