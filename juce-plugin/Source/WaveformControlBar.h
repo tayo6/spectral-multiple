@@ -7,7 +7,7 @@
 #include <memory>
 
 /**
-    Horizontal Trigger Settings drawer revealed when clicking the TRIGGER tab in WaveformControlBar.
+    Horizontal Trigger Settings drawer revealed by the separate TRIG control in WaveformControlBar.
 */
 class TriggerPanelComponent final : public juce::Component, private juce::Timer
 {
@@ -69,6 +69,7 @@ public:
     ~WaveformControlBar() override;
 
     std::function<void (bool triggerPanelOpen)> onTriggerPanelToggled;
+    std::function<void (bool collapsed)> onCollapseToggled;
     std::function<void (bool detailActive)> onDetailToggled;
     std::function<void (float zoomFactor)> onZoomStep;
     std::function<void()> onZoomReset;
@@ -79,7 +80,7 @@ public:
     void setOutputActive (bool active) noexcept;
     void setGridMode (bool isGrid) noexcept;
     void setZoomLevel (float zoomFactor) noexcept;
-    bool isTriggerPanelOpen() const noexcept { return triggerTabBtn.getToggleState(); }
+    bool isTriggerPanelOpen() const noexcept { return triggerSettingsBtn.getToggleState(); }
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -106,7 +107,8 @@ private:
     juce::Slider preLeadSlider;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> preLeadAtt;
 
-    juce::TextButton triggerTabBtn { "TRIGGER" };
+    juce::TextButton collapseTabBtn { "COLLAPSE" };
+    juce::TextButton triggerSettingsBtn { "TRIG" };
     juce::TextButton fireTriggerBtn { ">" };
 
     juce::TextButton gridBtn { "GRID" };
