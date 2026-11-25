@@ -111,7 +111,7 @@ private:
     juce::TextButton reverseBtn, envEnableBtn;
     juce::TextButton focusStartBtn, focusEndBtn, zoomFitBtn, zoomOutBtn, zoomResetBtn, zoomInBtn;
     juce::ComboBox attackCurveBox, decayCurveBox, releaseCurveBox;
-    juce::Slider gainSlider, delaySlider, pitchSlider, panSlider, pogoSlider;
+    juce::Slider gainSlider, delaySlider, pitchSlider, panSlider, pogoSlider, widthSlider;
     juce::Slider fadeInSlider, fadeOutSlider, trimStartSlider, trimEndSlider;
     juce::Slider hpSlider, lpSlider;
 
@@ -120,7 +120,7 @@ private:
     using SliderAtt = juce::AudioProcessorValueTreeState::SliderAttachment;
     std::unique_ptr<ButtonAtt> reverseAttachment, envEnableAttachment;
     std::unique_ptr<ComboAtt> attackCurveAttachment, decayCurveAttachment, releaseCurveAttachment;
-    std::unique_ptr<SliderAtt> gainAttachment, delayAttachment, pitchAttachment, panAttachment, pogoAttachment;
+    std::unique_ptr<SliderAtt> gainAttachment, delayAttachment, pitchAttachment, panAttachment, pogoAttachment, widthAttachment;
     std::unique_ptr<SliderAtt> fadeInAttachment, fadeOutAttachment, trimStartAttachment, trimEndAttachment;
     std::unique_ptr<SliderAtt> hpAttachment, lpAttachment;
 
