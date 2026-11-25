@@ -40,40 +40,8 @@ public:
     void filesDropped (const juce::StringArray& files, int x, int y) override;
 
 private:
-    class LayerPowerButton final : public juce::Button
-    {
-    public:
-        LayerPowerButton() : juce::Button ("LayerPower")
-        {
-            setTooltip ("Mute the selected layer (M)");
-            setMouseCursor (juce::MouseCursor::PointingHandCursor);
-        }
-
-        void setAccentColour (juce::Colour col) noexcept
-        {
-            accent = col;
-            repaint();
-        }
-
-        void setLayerEnabled (bool isEnabled) noexcept
-        {
-            if (layerOn != isEnabled)
-            {
-                layerOn = isEnabled;
-                repaint();
-            }
-        }
-
-        void paintButton (juce::Graphics& g, bool highlighted, bool down) override;
-
-    private:
-        juce::Colour accent { wavelens::ui::kPurpleAccent };
-        bool layerOn = true;
-    };
-
     void promptLoadActiveLayer();
     void loadFileIntoActiveLayer (const juce::File& file);
-    void rebindActiveLayerToggles();
 
     WaveLensProcessor& proc;
     const int group;
@@ -81,13 +49,11 @@ private:
     int selectedSlot = 0;
     bool dragOver = false;
 
-    LayerPowerButton enableBtn;
     juce::TextButton soloBtn { "S" };
     juce::TextButton auditionBtn { ">" };
     SampleBrowserComponent sampleBrowser;
     juce::TextButton clearBtn { "x" };
 
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> soloAtt;
     std::array<std::unique_ptr<LayerEnvelopeComponent>, 3> editors;
 
     juce::Rectangle<int> headerBounds;
