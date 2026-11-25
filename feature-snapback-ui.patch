@@ -1,0 +1,1577 @@
+From 71ce0302799f1d3689e82c6e70aea5aeb67616b6 Mon Sep 17 00:00:00 2001
+From: Z User <z@container>
+Date: Tue, 24 Nov 2026 16:49:55 +0000
+Subject: [PATCH] feat(ui): SNAPBACK flat near-black redesign ported to the
+ modular editor
+
+Port the SNAPBACK visual language (uploaded snapback-ui reference) onto the
+current component architecture. No parameter IDs, engine, state-format or
+routing changes - this is a paint + layout diff plus two small build fixes.
+
+Theme:
+- New Source/SnapbackTheme.h: single source of truth for the flat palette
+  (#0E0E12 surfaces, #5B7FF0 SNAPBACK blue, #9B6DF0 TRANSIENT violet),
+  six per-signal colours, bank accent helpers, trapezoid path helper
+- wavelens::ui now aliases snap:: values; layerColour maps to the new
+  blue/violet families
+
+Header (PluginHeaderComponent):
+- White flat 'S N A P B A C K' wordmark (replaces purple gradient)
+- New RESET button (scope + zoom only; samples/parameters untouched)
+- Compact BPM cluster (- 120 +) beside retained power/menu/preset/favourite
+
+Scope (MasterWaveformComponent):
+- Subtle blue-grey grid, flat near-black background and ruler
+- Master M overlay now starts INACTIVE (selected pair on open)
+- Trigger line/flash recoloured to SNAPBACK blue
+
+Control strip (WaveformControlBar):
+- TRIGGER tab is a SNAPBACK-blue trapezoid (still opens the trigger drawer)
+- Split GRID / SECONDS toggle buttons (blue / violet active states)
+- Zoom out / live zoom level / zoom in buttons; bar-span combo moved into
+  the trigger drawer (SPAN) so no functionality is lost
+
+Sample groups (SampleGroupComponent / SampleSelectorDot / browser):
+- Bank-accent headings, 3 blue / 3 violet selector circles, M-styled
+  layer enable button; all existing mute/solo/audition/load/clear
+  behaviour preserved
+
+Layer editor (LayerEnvelopeComponent):
+- 11 parameter tiles (GAIN, PITCH, POGO, TRIM F, TRIM B, FADE IN, FADE OUT,
+  TIMING, PAN, HP, LP) in two rows; vertical volume fader converted to the
+  GAIN tile on the same layerGain parameter
+- HP/LP tiles replace the dual-handle filter bar visually, wired to the
+  existing layerHighPass/layerLowPass parameters (DSP untouched)
+- Neutral grey-blue waveform (#97A0B4) under a bright bank-accent FL
+  envelope; flat panels replace violet chrome
+
+LookAndFeel (SpectralMultipleLookAndFeel):
+- Tile slider rendering (label, value, 2px track, bipolar centre fill,
+  thumb, width-aware font shrink), trapezoid button background, flat
+  buttons/combos/popups
+
+Build fixes needed for JUCE 7.0.12 (current main does not compile):
+- SampleSelectorDot / FilterControlComponent inherit SettableTooltipClient
+- GAIN textFromValueFunction set after SliderAttachment (attachment
+  overwrites it with parameter getText)
+
+Tools:
+- Tools/UiSnapshot.cpp + BUILD_UI_SNAPSHOT=ON: headless renderer that
+  loads synthetic samples through the real processor and saves PNGs of
+  the actual editor at 1280x760 / 1020x620 / 1920x1200
+
+Verified: Linux VST3 builds clean, engine + processor CTest suites pass,
+14/14 pixel checks on rendered screenshots at all three sizes.
+---
+ juce-plugin/CMakeLists.txt                    |  58 +++++++
+ juce-plugin/Source/FilterControlComponent.h   |   4 +-
+ juce-plugin/Source/LayerEnvelopeComponent.cpp | 162 +++++++++--------
+ juce-plugin/Source/LayerEnvelopeComponent.h   |  10 +-
+ .../Source/MasterWaveformComponent.cpp        |  16 +-
+ juce-plugin/Source/PluginEditor.cpp           |  16 +-
+ juce-plugin/Source/PluginHeaderComponent.cpp  |  60 +++++--
+ juce-plugin/Source/PluginHeaderComponent.h    |   4 +
+ juce-plugin/Source/SampleGroupComponent.cpp   |  16 +-
+ juce-plugin/Source/SampleGroupComponent.h     |   2 +-
+ juce-plugin/Source/SampleSelectorDot.h        |   3 +-
+ juce-plugin/Source/SnapbackTheme.h            |  76 ++++++++
+ .../Source/SpectralMultipleLookAndFeel.cpp    | 119 ++++++++++++-
+ .../Source/SpectralMultipleLookAndFeel.h      |  66 ++++---
+ juce-plugin/Source/WaveformControlBar.cpp     | 112 +++++++++---
+ juce-plugin/Source/WaveformControlBar.h       |  21 ++-
+ juce-plugin/Tools/UiSnapshot.cpp              | 163 ++++++++++++++++++
+ 17 files changed, 728 insertions(+), 180 deletions(-)
+ create mode 100644 juce-plugin/Source/SnapbackTheme.h
+ create mode 100644 juce-plugin/Tools/UiSnapshot.cpp
+
+diff --git a/juce-plugin/CMakeLists.txt b/juce-plugin/CMakeLists.txt
+index b6fc64a..e56f1a7 100644
+--- a/juce-plugin/CMakeLists.txt
++++ b/juce-plugin/CMakeLists.txt
+@@ -51,6 +51,7 @@ target_sources(WaveLens PRIVATE
+     Source/LayerEnvelopeComponent.h
+     Source/SpectralMultipleLookAndFeel.cpp
+     Source/SpectralMultipleLookAndFeel.h
++    Source/SnapbackTheme.h
+     Source/PluginHeaderComponent.cpp
+     Source/PluginHeaderComponent.h
+     Source/MasterWaveformComponent.cpp
+@@ -136,6 +137,7 @@ if(BUILD_PROCESSOR_TESTS)
+         Source/LayerEnvelopeComponent.h
+         Source/SpectralMultipleLookAndFeel.cpp
+         Source/SpectralMultipleLookAndFeel.h
++        Source/SnapbackTheme.h
+         Source/PluginHeaderComponent.cpp
+         Source/PluginHeaderComponent.h
+         Source/MasterWaveformComponent.cpp
+@@ -179,3 +181,59 @@ if(BUILD_PROCESSOR_TESTS)
+     add_test(NAME WaveLensProcessorTests COMMAND WaveLensProcessorTests)
+ endif()
+ 
++option(BUILD_UI_SNAPSHOT "Build headless UI screenshot tool (renders the editor to PNG)" OFF)
++
++if(BUILD_UI_SNAPSHOT)
++    juce_add_console_app(UiSnapshot
++        PRODUCT_NAME "UiSnapshot")
++
++    target_sources(UiSnapshot PRIVATE
++        Tools/UiSnapshot.cpp
++        Source/PluginProcessor.cpp
++        Source/PluginProcessor.h
++        Source/PluginEditor.cpp
++        Source/PluginEditor.h
++        Source/LayeredSampleEngine.cpp
++        Source/LayeredSampleEngine.h
++        Source/LayerEnvelopeComponent.cpp
++        Source/LayerEnvelopeComponent.h
++        Source/SpectralMultipleLookAndFeel.cpp
++        Source/SpectralMultipleLookAndFeel.h
++        Source/SnapbackTheme.h
++        Source/PluginHeaderComponent.cpp
++        Source/PluginHeaderComponent.h
++        Source/MasterWaveformComponent.cpp
++        Source/MasterWaveformComponent.h
++        Source/WaveformControlBar.cpp
++        Source/WaveformControlBar.h
++        Source/FilterControlComponent.cpp
++        Source/FilterControlComponent.h
++        Source/SampleBrowserComponent.cpp
++        Source/SampleBrowserComponent.h
++        Source/SampleGroupComponent.cpp
++        Source/SampleGroupComponent.h
++        Source/SampleSelectorDot.h
++        Source/MasterButton.h
++        Source/StateMigration.h)
++
++    target_include_directories(UiSnapshot PRIVATE
++        ${CMAKE_CURRENT_SOURCE_DIR}/Source)
++
++    target_compile_features(UiSnapshot PRIVATE cxx_std_17)
++
++    target_compile_definitions(UiSnapshot PRIVATE
++        JUCE_WEB_BROWSER=0
++        JUCE_USE_CURL=0
++        JUCE_USE_MP3AUDIOFORMAT=1
++        JUCE_VST3_CAN_REPLACE_VST2=0
++        JUCE_DISPLAY_SPLASH_SCREEN=0
++        JUCE_REPORT_APP_USAGE=0
++        JUCE_STRICT_REFCOUNTEDPOINTER=1)
++
++    target_link_libraries(UiSnapshot
++        PRIVATE
++            juce::juce_audio_utils
++            juce::juce_dsp
++            juce::juce_recommended_warning_flags)
++endif()
++
+diff --git a/juce-plugin/Source/FilterControlComponent.h b/juce-plugin/Source/FilterControlComponent.h
+index abf8b21..d436f18 100644
+--- a/juce-plugin/Source/FilterControlComponent.h
++++ b/juce-plugin/Source/FilterControlComponent.h
+@@ -7,7 +7,9 @@
+     Single horizontal Snapback-inspired dual-handle HP/LP filter bar.
+     Left handle adjusts high-pass cutoff; right handle adjusts low-pass cutoff.
+ */
+-class FilterControlComponent final : public juce::Component, private juce::Timer
++class FilterControlComponent final : public juce::Component,
++                                     public juce::SettableTooltipClient,
++                                     private juce::Timer
+ {
+ public:
+     FilterControlComponent (WaveLensProcessor& processor,
+diff --git a/juce-plugin/Source/LayerEnvelopeComponent.cpp b/juce-plugin/Source/LayerEnvelopeComponent.cpp
+index 74b04cb..7a13c32 100644
+--- a/juce-plugin/Source/LayerEnvelopeComponent.cpp
++++ b/juce-plugin/Source/LayerEnvelopeComponent.cpp
+@@ -10,7 +10,7 @@ namespace
+     constexpr float kTensionRadius = 4.6f;
+     constexpr int kCurveSteps = 96;
+     constexpr int kFlBarHeight = 26;
+-    constexpr int kControlStripHeight = 96;
++    constexpr int kControlStripHeight = 108;
+     constexpr int kHeaderHeight = 22;
+     constexpr float kRulerHeight = 16.0f;
+     constexpr float kOverviewHeight = 14.0f;
+@@ -45,8 +45,7 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
+                                                 juce::Colour traceColour)
+     : processor (p),
+       layer (juce::jlimit (0, WaveLensProcessor::kMaxSignals - 1, layerIndex)),
+-      colour (traceColour),
+-      filterBar (p, ids::layerHighPass (layer), ids::layerLowPass (layer), traceColour, 20.0f, 1000.0f, 1000.0f, 20000.0f)
++      colour (traceColour)
+ {
+     auto& state = processor.apvts;
+     pAttack = state.getRawParameterValue (ids::layerAttack (layer));
+@@ -97,25 +96,29 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
+     decayCurveAttachment = std::make_unique<ComboAtt> (state, ids::layerDecayCurve (layer), decayCurveBox);
+     releaseCurveAttachment = std::make_unique<ComboAtt> (state, ids::layerReleaseCurve (layer), releaseCurveBox);
+ 
+-    // Vertical Volume Fader (Snapback left-side level control)
+-    gainSlider.setSliderStyle (juce::Slider::LinearVertical);
+-    gainSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 48, 13);
+-    gainSlider.setColour (juce::Slider::trackColourId, colour);
++    // GAIN parameter tile (replaces the former vertical volume fader; same
++    // layerGain parameter, same dB formatting, same double-click reset)
++    gainSlider.setSliderStyle (juce::Slider::LinearHorizontal);
++    gainSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+     gainSlider.setDoubleClickReturnValue (true, 1.0);
+-    gainSlider.getProperties().set ("unityTick", true);
++    gainSlider.setColour (juce::Slider::trackColourId, colour);
+     gainSlider.setTooltip ("Layer volume (-inf to +6.0 dB). Double-click to reset to 0.0 dB.");
+-    gainSlider.textFromValueFunction = [] (double v) { return formatLayerDb (v); };
++    gainSlider.getProperties().set ("isTile", true);
++    gainSlider.getProperties().set ("tileLabel", "GAIN");
++    gainSlider.getProperties().set ("bipolar", false);
+     addAndMakeVisible (gainSlider);
+     gainAttachment = std::make_unique<SliderAtt> (state, ids::layerGain (layer), gainSlider);
++    // NOTE: set after the attachment - SliderParameterAttachment overwrites
++    // textFromValueFunction with the parameter's own getText().
++    gainSlider.textFromValueFunction = [] (double v) { return formatLayerDb (v); };
+ 
+-    auto prepareBar = [&] (juce::Slider& slider,
+-                           const juce::String& label,
+-                           const juce::String& tooltip,
+-                           juce::Colour fill,
+-                           bool bipolar,
+-                           double defaultVal)
++    auto prepareTile = [&] (juce::Slider& slider,
++                            const char* label,
++                            const juce::String& tooltip,
++                            juce::Colour fill,
++                            bool bipolar,
++                            double defaultVal)
+     {
+-        slider.setName (label);
+         slider.setSliderStyle (juce::Slider::LinearHorizontal);
+         slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+         slider.setSliderSnapsToMousePosition (false);
+@@ -123,20 +126,23 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
+         slider.setDoubleClickReturnValue (true, defaultVal);
+         slider.setColour (juce::Slider::trackColourId, fill);
+         slider.setTooltip (tooltip + " (Double-click to reset)");
+-        slider.getProperties().set ("inlineBar", true);
++        slider.getProperties().set ("isTile", true);
++        slider.getProperties().set ("tileLabel", label);
+         slider.getProperties().set ("bipolar", bipolar);
+         addAndMakeVisible (slider);
+     };
+ 
+     const juce::Colour secondaryFill = colour.interpolatedWith (ui::kMainText, 0.16f);
+-    prepareBar (delaySlider,     "TIMING",   "Timing shift (-100 ms to +100 ms)",                   colour,        true,  0.0);
+-    prepareBar (pitchSlider,     "PITCH",    "Layer pitch (-24 to +24 semitones)",                  colour,        true,  0.0);
+-    prepareBar (panSlider,       "PAN",      "Stereo pan (Left / Centre / Right)",                  colour,        true,  0.0);
+-    prepareBar (pogoSlider,      "POGO",     "FL Sampler style pitch-bend envelope (-100% to +100%)", secondaryFill, true,  0.0);
+-    prepareBar (fadeInSlider,    "FADE IN",  "Sample fade-in duration (0 ms to 2000 ms)",            colour,        false, 0.0);
+-    prepareBar (fadeOutSlider,   "FADE OUT", "Sample fade-out duration (0 ms to 5000 ms)",           colour,        false, 0.0);
+-    prepareBar (trimStartSlider, "TRIM F",   "Sample front trim (0% to 99%)",                       secondaryFill, false, 0.0);
+-    prepareBar (trimEndSlider,   "TRIM B",   "Sample back trim (0.5% to 100%)",                    secondaryFill, false, 1.0);
++    prepareTile (delaySlider,     "TIMING",   "Timing shift (-100 ms to +100 ms)",                    colour,        true,  0.0);
++    prepareTile (pitchSlider,     "PITCH",    "Layer pitch (-24 to +24 semitones)",                   colour,        true,  0.0);
++    prepareTile (panSlider,       "PAN",      "Stereo pan (Left / Centre / Right)",                   colour,        true,  0.0);
++    prepareTile (pogoSlider,      "POGO",     "FL Sampler style pitch-bend envelope (-100% to +100%)", secondaryFill, true,  0.0);
++    prepareTile (fadeInSlider,    "FADE IN",  "Sample fade-in duration (0 ms to 2000 ms)",            colour,        false, 0.0);
++    prepareTile (fadeOutSlider,   "FADE OUT", "Sample fade-out duration (0 ms to 5000 ms)",           colour,        false, 0.0);
++    prepareTile (trimStartSlider, "TRIM F",   "Sample front trim (0% to 99%)",                        secondaryFill, false, 0.0);
++    prepareTile (trimEndSlider,   "TRIM B",   "Sample back trim (0.5% to 100%)",                      secondaryFill, false, 1.0);
++    prepareTile (hpSlider,        "HP",       "Layer high-pass filter (20 Hz to 1 kHz)",              colour,        false, 20.0);
++    prepareTile (lpSlider,        "LP",       "Layer low-pass filter (1 kHz to 20 kHz)",              colour,        false, 20000.0);
+ 
+     delayAttachment     = std::make_unique<SliderAtt> (state, ids::layerDelay (layer),     delaySlider);
+     pitchAttachment     = std::make_unique<SliderAtt> (state, ids::layerPitch (layer),     pitchSlider);
+@@ -146,8 +152,8 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
+     fadeOutAttachment   = std::make_unique<SliderAtt> (state, ids::layerFadeOut (layer),   fadeOutSlider);
+     trimStartAttachment = std::make_unique<SliderAtt> (state, ids::layerTrimStart (layer), trimStartSlider);
+     trimEndAttachment   = std::make_unique<SliderAtt> (state, ids::layerTrimEnd (layer),   trimEndSlider);
+-
+-    addAndMakeVisible (filterBar);
++    hpAttachment        = std::make_unique<SliderAtt> (state, ids::layerHighPass (layer),  hpSlider);
++    lpAttachment        = std::make_unique<SliderAtt> (state, ids::layerLowPass (layer),   lpSlider);
+ 
+     trimStartSlider.onValueChange = [this]
+     {
+@@ -175,9 +181,17 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
+     fadeOutSlider.textFromValueFunction = [] (double v) { return formatEnvelopeTime ((float) v); };
+     trimStartSlider.textFromValueFunction = [] (double v) { return juce::String (v * 100.0, 0) + "%"; };
+     trimEndSlider.textFromValueFunction   = [] (double v) { return juce::String (v * 100.0, 0) + "%"; };
++    hpSlider.textFromValueFunction = [] (double hz)
++    {
++        if (hz >= 999.5)
++            return juce::String (hz / 1000.0, 1) + " kHz";
++        return juce::String (juce::roundToInt (hz)) + " Hz";
++    };
++    lpSlider.textFromValueFunction = hpSlider.textFromValueFunction;
+ 
+     for (auto* s : { &gainSlider, &delaySlider, &pitchSlider, &panSlider, &pogoSlider,
+-                     &fadeInSlider, &fadeOutSlider, &trimStartSlider, &trimEndSlider })
++                     &fadeInSlider, &fadeOutSlider, &trimStartSlider, &trimEndSlider,
++                     &hpSlider, &lpSlider })
+         s->updateText();
+ 
+     auto prepareZoomBtn = [this] (juce::TextButton& b, const juce::String& text, const juce::String& tip,
+@@ -432,7 +446,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
+ {
+     auto waveBox = getLocalBounds().withTrimmedBottom (kControlStripHeight + kFlBarHeight + 8).toFloat();
+     const bool envEnabled = pEnvEnabled->load() > 0.5f;
+-    const juce::Colour flCurveColour = colour.interpolatedWith (ui::kMainText, 0.14f);
++    const juce::Colour flCurveColour = snap::bankAccentHi (layer);   // bright bank accent
+     const juce::Colour flControlDot  = colour.interpolatedWith (ui::kMainText, 0.55f);
+ 
+     g.setColour (ui::kMainBg);
+@@ -446,7 +460,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
+ 
+     // Top readout strip inside waveform box
+     auto readoutBar = waveBox.removeFromTop ((float) kHeaderHeight);
+-    g.setColour (ui::kHeaderBg.withAlpha (0.92f));
++    g.setColour (ui::kInsetBg.withAlpha (0.92f));
+     g.fillRect (readoutBar);
+     g.setColour (ui::kBorder);
+     g.drawHorizontalLine (juce::roundToInt (readoutBar.getBottom()), readoutBar.getX(), readoutBar.getRight());
+@@ -483,8 +497,8 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
+         g.saveState();
+         g.reduceClipRegion (plot.toNearestInt());
+ 
+-        // Subtle grid
+-        g.setColour (ui::kBorder.withAlpha (0.28f));
++        // Subtle blue-grey grid
++        g.setColour (ui::kGridLine.withAlpha (0.13f));
+         const int gridDivs = juce::jlimit (8, 256, 8 * (1 << (int) std::floor (std::log2 (juce::jmax (1.0f, zoomFactor)))));
+         const int firstGrid = juce::jmax (1, (int) std::ceil (viewStartNorm * (float) gridDivs));
+         const int lastGrid = juce::jmin (gridDivs - 1, (int) std::floor (vpEnd * (float) gridDivs));
+@@ -495,7 +509,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
+         }
+         for (int r = 1; r < 4; ++r)
+         {
+-            g.setColour (r == 2 ? colour.withAlpha (0.24f) : ui::kBorder.withAlpha (0.22f));
++            g.setColour (r == 2 ? ui::kGridLine.withAlpha (0.22f) : ui::kGridLine.withAlpha (0.10f));
+             const float y = plot.getY() + plot.getHeight() * (float) r / 4.0f;
+             g.drawHorizontalLine (juce::roundToInt (y), plot.getX(), plot.getRight());
+         }
+@@ -504,7 +518,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
+         {
+             const float centre = plot.getCentreY();
+             const float amplitude = plot.getHeight() * 0.44f;
+-            g.setColour (colour.withAlpha (0.90f));
++            g.setColour (ui::kNeutralWave);   // neutral grey-blue sample waveform
+             const int cols = juce::jmax (1, (int) std::floor (plot.getWidth()));
+             for (int col = 0; col < cols; ++col)
+             {
+@@ -649,7 +663,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
+                                                       juce::PathStrokeType::rounded));
+ 
+         // Trim lines & flags
+-        g.setColour (colour.brighter (0.25f));
++        g.setColour (flCurveColour);
+         g.drawLine (geometry.trimX0, plot.getY(), geometry.trimX0, plot.getBottom(), 1.8f);
+         g.drawLine (geometry.trimX1, plot.getY(), geometry.trimX1, plot.getBottom(), 1.8f);
+ 
+@@ -708,7 +722,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
+ 
+     // Bottom time ruler
+     auto ruler = waveBox.removeFromBottom (kRulerHeight);
+-    g.setColour (ui::kHeaderBg.withAlpha (0.85f));
++    g.setColour (ui::kInsetBg.withAlpha (0.85f));
+     g.fillRect (ruler);
+     g.setColour (ui::kSecondaryText);
+     g.setFont (juce::Font (9.5f));
+@@ -735,7 +749,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
+ 
+         const float trimBoxX = ov.getX() + trimStart * ov.getWidth();
+         const float trimBoxW = juce::jmax (2.0f, (trimEnd - trimStart) * ov.getWidth());
+-        g.setColour (colour.withAlpha (0.30f));
++        g.setColour (flCurveColour.withAlpha (0.30f));
+         g.fillRect (trimBoxX, ov.getY() + 4.0f, trimBoxW, ov.getHeight() - 8.0f);
+ 
+         const float thumbX = ov.getX() + viewStartNorm * ov.getWidth();
+@@ -747,7 +761,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
+     }
+ 
+     // FL Studio Envelope Toolbar Strip
+-    g.setColour (ui::kControlBg);
++    g.setColour (ui::kElevatedBg);
+     g.fillRoundedRectangle (flBarBounds.toFloat(), 4.0f);
+     g.setColour (ui::kBorder);
+     g.drawRoundedRectangle (flBarBounds.toFloat().reduced (0.5f), 4.0f, 1.0f);
+@@ -766,21 +780,11 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
+     drawFlBoxLabel (decayCurveBox,   "DEC", pDecayTension->load());
+     drawFlBoxLabel (releaseCurveBox, "REL", pReleaseTension->load());
+ 
+-    // Snapback-style lower parameter deck
+-    g.setColour (ui::kControlBg.withAlpha (0.85f));
++    // SNAPBACK parameter tile deck
++    g.setColour (ui::kPanelBg);
+     g.fillRoundedRectangle (controlStripBounds.toFloat(), 4.0f);
+     g.setColour (ui::kBorder);
+     g.drawRoundedRectangle (controlStripBounds.toFloat().reduced (0.5f), 4.0f, 1.0f);
+-
+-    // Subtle divider between vertical Volume fader and flat bar parameter deck
+-    const int divX = gainSlider.getRight() + 6;
+-    g.setColour (ui::kBorder.withAlpha (0.8f));
+-    g.drawVerticalLine (divX, (float) controlStripBounds.getY() + 6.0f, (float) controlStripBounds.getBottom() - 6.0f);
+-
+-    g.setFont (juce::Font (9.0f, juce::Font::bold));
+-    g.setColour (ui::kSecondaryText);
+-    const auto gb = gainSlider.getBounds();
+-    g.drawText ("VOL", gb.getX(), gb.getY() - 12, gb.getWidth(), 11, juce::Justification::centred);
+ }
+ 
+ void LayerEnvelopeComponent::resized()
+@@ -828,42 +832,36 @@ void LayerEnvelopeComponent::resized()
+ 
+     auto strip = controlStripBounds.reduced (8, 6);
+ 
+-    // Left vertical Volume fader
+-    auto volArea = strip.removeFromLeft (46);
+-    volArea.removeFromTop (11);
+-    gainSlider.setBounds (volArea);
+-
+-    strip.removeFromLeft (12);
+-
+-    // 3 sleek Snapback horizontal bar rows (zero rotary knobs)
++    // Two rows of SNAPBACK parameter tiles:
++    //   Row 1: [REV] [GAIN] [PITCH] [POGO] [TRIM F] [TRIM B] [FADE IN] [FADE OUT]
++    //   Row 2: [TIMING] [PAN] [HP] [LP] aligned under the Row 1 tile columns
+     const int rowGap = 4;
+-    const int barH = juce::jlimit (20, 26, (strip.getHeight() - rowGap * 2) / 3);
+-    auto row1 = strip.removeFromTop (barH);
+-    strip.removeFromTop (rowGap);
+-    auto row2 = strip.removeFromTop (barH);
++    const int rowH = (strip.getHeight() - rowGap) / 2;
++    auto row1 = strip.removeFromTop (rowH);
+     strip.removeFromTop (rowGap);
+-    auto row3 = strip.removeFromTop (barH);
+-
+-    auto placeRowOf4 = [] (juce::Rectangle<int> row,
+-                           juce::Slider& s0, juce::Slider& s1, juce::Slider& s2, juce::Slider& s3)
++    auto row2 = strip;
++
++    reverseBtn.setBounds (row1.removeFromLeft (44).withSizeKeepingCentre (44, juce::jmin (26, row1.getHeight())));
++    row1.removeFromLeft (6);
++    const int revW = 50;
++    const int availW = juce::jmax (280, row1.getWidth());
++    const int step = availW / 7;
++    const int tileW = juce::jlimit (46, 66, step - 6);
++    const int tileGap = juce::jmax (2, step - tileW);
++
++    for (auto* s : { &gainSlider, &pitchSlider, &pogoSlider, &trimStartSlider,
++                     &trimEndSlider, &fadeInSlider, &fadeOutSlider })
+     {
+-        const int colGap = 5;
+-        const int w = (row.getWidth() - colGap * 3) / 4;
+-        s0.setBounds (row.removeFromLeft (w));
+-        row.removeFromLeft (colGap);
+-        s1.setBounds (row.removeFromLeft (w));
+-        row.removeFromLeft (colGap);
+-        s2.setBounds (row.removeFromLeft (w));
+-        row.removeFromLeft (colGap);
+-        s3.setBounds (row);
+-    };
+-
+-    placeRowOf4 (row1, delaySlider, pitchSlider, panSlider, pogoSlider);
+-    placeRowOf4 (row2, fadeInSlider, fadeOutSlider, trimStartSlider, trimEndSlider);
++        s->setBounds (row1.removeFromLeft (tileW));
++        row1.removeFromLeft (tileGap);
++    }
+ 
+-    reverseBtn.setBounds (row3.removeFromLeft (48));
+-    row3.removeFromLeft (6);
+-    filterBar.setBounds (row3);
++    row2.removeFromLeft (revW);
++    for (auto* s : { &delaySlider, &panSlider, &hpSlider, &lpSlider })
++    {
++        s->setBounds (row2.removeFromLeft (tileW));
++        row2.removeFromLeft (tileGap);
++    }
+ }
+ 
+ LayerEnvelopeComponent::Handle LayerEnvelopeComponent::hitTestHandle (juce::Point<float> pos,
+diff --git a/juce-plugin/Source/LayerEnvelopeComponent.h b/juce-plugin/Source/LayerEnvelopeComponent.h
+index 725c003..4c926e6 100644
+--- a/juce-plugin/Source/LayerEnvelopeComponent.h
++++ b/juce-plugin/Source/LayerEnvelopeComponent.h
+@@ -2,11 +2,12 @@
+ 
+ #include "PluginProcessor.h"
+ #include "SpectralMultipleLookAndFeel.h"
+-#include "FilterControlComponent.h"
+ 
+ /**
+-    Waveform-backed sample editor, FL-style tension envelope, and Snapback-inspired
+-    parameter deck for one individual SNAPBACK (0..2) or TRANSIENT (3..5) layer.
++    Waveform-backed sample editor, FL-style tension envelope, and SNAPBACK
++    parameter tile deck for one individual SNAPBACK (0..2) or TRANSIENT (3..5)
++    layer. The 11 parameter controls are compact tiles rendered by
++    SpectralMultipleLookAndFeel (see the "isTile" slider property).
+ */
+ class LayerEnvelopeComponent final : public juce::Component, private juce::Timer
+ {
+@@ -112,7 +113,7 @@ private:
+     juce::ComboBox attackCurveBox, decayCurveBox, releaseCurveBox;
+     juce::Slider gainSlider, delaySlider, pitchSlider, panSlider, pogoSlider;
+     juce::Slider fadeInSlider, fadeOutSlider, trimStartSlider, trimEndSlider;
+-    FilterControlComponent filterBar;
++    juce::Slider hpSlider, lpSlider;
+ 
+     using ButtonAtt = juce::AudioProcessorValueTreeState::ButtonAttachment;
+     using ComboAtt  = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
+@@ -121,6 +122,7 @@ private:
+     std::unique_ptr<ComboAtt> attackCurveAttachment, decayCurveAttachment, releaseCurveAttachment;
+     std::unique_ptr<SliderAtt> gainAttachment, delayAttachment, pitchAttachment, panAttachment, pogoAttachment;
+     std::unique_ptr<SliderAtt> fadeInAttachment, fadeOutAttachment, trimStartAttachment, trimEndAttachment;
++    std::unique_ptr<SliderAtt> hpAttachment, lpAttachment;
+ 
+     juce::Rectangle<int> flBarBounds;
+     juce::Rectangle<int> controlStripBounds;
+diff --git a/juce-plugin/Source/MasterWaveformComponent.cpp b/juce-plugin/Source/MasterWaveformComponent.cpp
+index 4537003..0d71ef3 100644
+--- a/juce-plugin/Source/MasterWaveformComponent.cpp
++++ b/juce-plugin/Source/MasterWaveformComponent.cpp
+@@ -35,7 +35,9 @@ MasterWaveformComponent::MasterWaveformComponent (WaveLensProcessor& processor)
+ 
+     lastObservedTriggerCount = proc.getTriggerCount();
+ 
+-    masterBtn.setToggleState (true, juce::dontSendNotification);
++    // Master overlay (all six signals) starts INACTIVE by default: the plugin
++    // opens showing the selected SNAPBACK + TRANSIENT pair only.
++    masterBtn.setToggleState (false, juce::dontSendNotification);
+     masterBtn.onClick = [this]
+     {
+         if (masterBtn.getToggleState())
+@@ -224,7 +226,7 @@ void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
+                                                       juce::Rectangle<float> plot,
+                                                       juce::Rectangle<float> ruler)
+ {
+-    g.setColour (ui::kHeaderBg);
++    g.setColour (ui::kInsetBg);
+     g.fillRect (ruler);
+     g.setColour (ui::kBorder);
+     g.drawHorizontalLine (juce::roundToInt (ruler.getBottom() - 0.5f), ruler.getX(), ruler.getRight());
+@@ -256,7 +258,7 @@ void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
+             const float norm = (float) i / (float) divisions;
+             const float tx = normToX (norm, plotX, plotW);
+             const bool major = (i % majorStep == 0);
+-            g.setColour (major ? ui::kBorder.withAlpha (0.85f) : ui::kBorder.withAlpha (0.35f));
++            g.setColour (major ? ui::kGridLine.withAlpha (0.26f) : ui::kGridLine.withAlpha (0.11f));
+             g.drawVerticalLine (juce::roundToInt (tx), plotY, plot.getBottom());
+ 
+             if (major && tx > (float) masterBtn.getRight() + 14.0f)
+@@ -290,7 +292,7 @@ void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
+             const float norm = juce::jlimit (0.0f, 1.0f, (float) (ms / windowMs));
+             const float tx = normToX (norm, plotX, plotW);
+             const bool major = (i % 2 == 0);
+-            g.setColour (major ? ui::kBorder.withAlpha (0.85f) : ui::kBorder.withAlpha (0.35f));
++            g.setColour (major ? ui::kGridLine.withAlpha (0.26f) : ui::kGridLine.withAlpha (0.11f));
+             g.drawVerticalLine (juce::roundToInt (tx), plotY, plot.getBottom());
+ 
+             if (major && tx > (float) masterBtn.getRight() + 14.0f)
+@@ -305,10 +307,10 @@ void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
+     // Subtle horizontal reference lines & central waveform baseline
+     const float centre = plot.getCentreY();
+     const float halfHeight = plotH * 0.43f;
+-    g.setColour (ui::kBorder.withAlpha (0.35f));
++    g.setColour (ui::kGridLine.withAlpha (0.12f));
+     g.drawHorizontalLine (juce::roundToInt (centre - halfHeight * 0.5f), plotX, plot.getRight());
+     g.drawHorizontalLine (juce::roundToInt (centre + halfHeight * 0.5f), plotX, plot.getRight());
+-    g.setColour (ui::kSecondaryText.withAlpha (0.32f));
++    g.setColour (ui::kGridLine.withAlpha (0.30f));
+     g.drawHorizontalLine (juce::roundToInt (centre), plotX, plot.getRight());
+ 
+     // Threshold horizontal guide when Audio / Both trigger mode is active
+@@ -517,7 +519,7 @@ void MasterWaveformComponent::paintLiveOutputMonitor (juce::Graphics& g, juce::R
+     const bool has = proc.hasData.load();
+ 
+     // Subtle vertical grid + baseline
+-    g.setColour (ui::kBorder.withAlpha (0.45f));
++    g.setColour (ui::kGridLine.withAlpha (0.16f));
+     for (int i = 1; i < 8; ++i)
+         g.drawVerticalLine (juce::roundToInt (area.getX() + area.getWidth() * (float) i / 8.0f),
+                             area.getY(), area.getBottom());
+diff --git a/juce-plugin/Source/PluginEditor.cpp b/juce-plugin/Source/PluginEditor.cpp
+index 0f96cc9..8e625d4 100644
+--- a/juce-plugin/Source/PluginEditor.cpp
++++ b/juce-plugin/Source/PluginEditor.cpp
+@@ -47,6 +47,7 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
+     masterWaveform.onZoomChanged = [this] (float z)
+     {
+         controlBar.setDetailActive (z > 1.05f);
++        controlBar.setZoomLevel (z);
+     };
+ 
+     controlBar.onTriggerPanelToggled = [this] (bool open)
+@@ -63,7 +64,15 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
+         else
+             masterWaveform.resetZoom();
+     };
+-    controlBar.onZoomBarsSelected = [this] (double barsCount)
++    controlBar.onZoomStep = [this] (float factor)
++    {
++        masterWaveform.zoomBy (factor);
++    };
++    controlBar.onZoomReset = [this]
++    {
++        masterWaveform.resetZoom();
++    };
++    triggerPanel.onZoomBarsSelected = [this] (double barsCount)
+     {
+         masterWaveform.setZoomBars (barsCount);
+     };
+@@ -91,6 +100,11 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
+     masterWaveform.setSelectedPair (snapbackGroup.getSelectedLayer(),
+                                     transientGroup.getSelectedLayer());
+ 
++    // Restore the timeline span from the persisted bars parameter (both the
++    // drawer combo and the scope default to 1 bar, so sync once at startup).
++    masterWaveform.setZoomBars (barsFromIndex (
++        juce::roundToInt (proc.apvts.getRawParameterValue (ids::bars)->load())));
++
+     setResizable (true, true);
+     setResizeLimits (1020, 620, 1920, 1200);
+     setSize (1280, 760);
+diff --git a/juce-plugin/Source/PluginHeaderComponent.cpp b/juce-plugin/Source/PluginHeaderComponent.cpp
+index e85cb08..d8ce965 100644
+--- a/juce-plugin/Source/PluginHeaderComponent.cpp
++++ b/juce-plugin/Source/PluginHeaderComponent.cpp
+@@ -86,6 +86,22 @@ PluginHeaderComponent::PluginHeaderComponent (WaveLensProcessor& processor)
+     nextPresetBtn.onClick = [this] { stepPreset (1); };
+     addAndMakeVisible (nextPresetBtn);
+ 
++    resetBtn.setTooltip ("Reset scope view and zoom (samples and parameters are untouched)");
++    resetBtn.onClick = [this]
++    {
++        if (onResetScope) onResetScope();
++        if (onResetZoom) onResetZoom();
++    };
++    addAndMakeVisible (resetBtn);
++
++    bpmDownBtn.setTooltip ("Decrease BPM by 1");
++    bpmDownBtn.onClick = [this] { setBpm (currentBpm - 1.0); };
++    addAndMakeVisible (bpmDownBtn);
++
++    bpmUpBtn.setTooltip ("Increase BPM by 1");
++    bpmUpBtn.onClick = [this] { setBpm (currentBpm + 1.0); };
++    addAndMakeVisible (bpmUpBtn);
++
+     presetBox.addItemList ({
+         "Init / Clean Layers",
+         "Tight 35ms Snapback",
+@@ -306,29 +322,27 @@ void PluginHeaderComponent::paint (juce::Graphics& g)
+     g.setColour (ui::kBorder);
+     g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
+ 
+-    // Centered bold tracked brand title
+-    juce::ColourGradient titleGrad (ui::kPurpleAccent, (float) getWidth() * 0.40f, 0.0f,
+-                                    juce::Colour (0xffe0c8ff), (float) getWidth() * 0.60f, 0.0f, false);
+-    g.setGradientFill (titleGrad);
+-    g.setFont (juce::Font (20.0f, juce::Font::bold));
+-    g.drawText ("S P E C T R A L   M U L T I P L E",
++    // Centered white SNAPBACK wordmark (flat, no gradient)
++    g.setColour (ui::kMainText);
++    g.setFont (juce::Font (19.0f, juce::Font::bold));
++    g.drawText ("S N A P B A C K",
+                 getLocalBounds(), juce::Justification::centred);
+ 
+-    // Subtle BPM pill readout to the right of menu button
+-    if (getWidth() > 740)
++    // Compact BPM readout between the - / + buttons
++    if (! bpmValueBounds.isEmpty())
+     {
+-        const int bpmX = menuBtn.getRight() + 10;
+-        g.setColour (ui::kSecondaryText);
+-        g.setFont (juce::Font (10.5f, juce::Font::bold));
++        g.setColour (ui::kMainText);
++        g.setFont (juce::Font (11.0f, juce::Font::bold));
+         g.drawText (juce::String ((int) currentBpm) + " BPM",
+-                    bpmX, 0, 64, getHeight(), juce::Justification::centredLeft);
++                    bpmValueBounds, juce::Justification::centred);
+     }
+ 
+     if (! powerBtn.getToggleState())
+     {
+         g.setColour (ui::kWarningAmber.withAlpha (0.85f));
+         g.setFont (juce::Font (10.0f, juce::Font::bold));
+-        g.drawText ("BYPASSED", menuBtn.getRight() + 74, 0, 68, getHeight(), juce::Justification::centredLeft);
++        g.drawText ("BYPASSED", juce::jmax (resetBtn.getRight() + 8, menuBtn.getRight() + 8),
++                    0, 68, getHeight(), juce::Justification::centredLeft);
+     }
+ }
+ 
+@@ -339,7 +353,10 @@ void PluginHeaderComponent::resized()
+     powerBtn.setBounds (r.removeFromLeft (28));
+     r.removeFromLeft (6);
+     menuBtn.setBounds (r.removeFromLeft (28));
++    r.removeFromLeft (10);
++    resetBtn.setBounds (r.removeFromLeft (60).withSizeKeepingCentre (60, 26));
+ 
++    // Right cluster: preset navigation + favourite
+     nextPresetBtn.setBounds (r.removeFromRight (26).withSizeKeepingCentre (26, 26));
+     r.removeFromRight (4);
+     const int comboW = juce::jlimit (140, 200, getWidth() / 6);
+@@ -348,4 +365,21 @@ void PluginHeaderComponent::resized()
+     prevPresetBtn.setBounds (r.removeFromRight (26).withSizeKeepingCentre (26, 26));
+     r.removeFromRight (6);
+     favBtn.setBounds (r.removeFromRight (26).withSizeKeepingCentre (26, 26));
++
++    // Compact BPM cluster to the left of the preset cluster
++    if (r.getWidth() > 240)
++    {
++        r.removeFromRight (16);
++        bpmUpBtn.setBounds (r.removeFromRight (24).withSizeKeepingCentre (24, 24));
++        r.removeFromRight (4);
++        bpmValueBounds = r.removeFromRight (62).withSizeKeepingCentre (62, 24);
++        r.removeFromRight (4);
++        bpmDownBtn.setBounds (r.removeFromRight (24).withSizeKeepingCentre (24, 24));
++    }
++    else
++    {
++        bpmDownBtn.setBounds ({});
++        bpmUpBtn.setBounds ({});
++        bpmValueBounds = {};
++    }
+ }
+diff --git a/juce-plugin/Source/PluginHeaderComponent.h b/juce-plugin/Source/PluginHeaderComponent.h
+index d04596e..4c500e6 100644
+--- a/juce-plugin/Source/PluginHeaderComponent.h
++++ b/juce-plugin/Source/PluginHeaderComponent.h
+@@ -53,9 +53,13 @@ private:
+     IconButton powerBtn { IconButton::Kind::Power, "Bypass / Power toggle" };
+     IconButton menuBtn  { IconButton::Kind::Menu,  "Spectral Multiple menu" };
+     IconButton favBtn   { IconButton::Kind::Heart, "Favourite current preset" };
++    juce::TextButton resetBtn { "RESET" };
+     juce::TextButton prevPresetBtn { "<" };
+     juce::ComboBox presetBox;
+     juce::TextButton nextPresetBtn { ">" };
++    juce::TextButton bpmDownBtn { "-" };
++    juce::TextButton bpmUpBtn { "+" };
++    juce::Rectangle<int> bpmValueBounds;
+ 
+     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginHeaderComponent)
+ };
+diff --git a/juce-plugin/Source/SampleGroupComponent.cpp b/juce-plugin/Source/SampleGroupComponent.cpp
+index 20fc705..c2a7d0a 100644
+--- a/juce-plugin/Source/SampleGroupComponent.cpp
++++ b/juce-plugin/Source/SampleGroupComponent.cpp
+@@ -17,15 +17,9 @@ void SampleGroupComponent::LayerPowerButton::paintButton (juce::Graphics& g, boo
+     g.setColour (layerOn ? accent.withAlpha (0.85f) : ui::kBorder);
+     g.drawRoundedRectangle (b, 3.5f, 1.0f);
+ 
+-    const float cx = b.getCentreX();
+-    const float cy = b.getCentreY();
+-    const float r = 4.6f;
+-
+-    g.setColour (layerOn ? accent.brighter (0.22f) : ui::kDisabledText);
+-    juce::Path arc;
+-    arc.addCentredArc (cx, cy + 0.5f, r, r, 0.0f, 0.55f, juce::MathConstants<float>::twoPi - 0.55f, true);
+-    g.strokePath (arc, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+-    g.drawLine (cx, cy - 5.5f, cx, cy - 0.8f, 1.5f);
++    g.setColour (layerOn ? accent.brighter (0.25f) : ui::kDisabledText);
++    g.setFont (juce::Font (12.5f, juce::Font::bold));
++    g.drawText ("M", b.withSizeKeepingCentre (b.getWidth(), b.getHeight()), juce::Justification::centred);
+ }
+ 
+ //==============================================================================
+@@ -240,9 +234,9 @@ void SampleGroupComponent::paint (juce::Graphics& g)
+     g.setColour (activeAccent);
+     g.fillRoundedRectangle (hdr.getX() + 6.0f, hdr.getCentreY() - 7.0f, 3.0f, 14.0f, 1.5f);
+ 
+-    // Section heading immediately preceding the three selector circles
++    // Section heading (bank accent) immediately preceding the three selector circles
+     const juce::String title = (group == 0) ? "SNAPBACK" : "TRANSIENT";
+-    g.setColour (ui::kMainText);
++    g.setColour (snap::bankAccentHi (group * 3));
+     g.setFont (juce::Font (13.5f, juce::Font::bold));
+     g.drawText (title,
+                 headerBounds.getX() + 14, headerBounds.getY(),
+diff --git a/juce-plugin/Source/SampleGroupComponent.h b/juce-plugin/Source/SampleGroupComponent.h
+index 87b535e..d3e774d 100644
+--- a/juce-plugin/Source/SampleGroupComponent.h
++++ b/juce-plugin/Source/SampleGroupComponent.h
+@@ -46,7 +46,7 @@ private:
+     public:
+         LayerPowerButton() : juce::Button ("LayerPower")
+         {
+-            setTooltip ("Enable or mute the selected layer");
++            setTooltip ("Mute the selected layer (M)");
+             setMouseCursor (juce::MouseCursor::PointingHandCursor);
+         }
+ 
+diff --git a/juce-plugin/Source/SampleSelectorDot.h b/juce-plugin/Source/SampleSelectorDot.h
+index 2cb192f..d8bb334 100644
+--- a/juce-plugin/Source/SampleSelectorDot.h
++++ b/juce-plugin/Source/SampleSelectorDot.h
+@@ -3,7 +3,8 @@
+ #include "SpectralMultipleLookAndFeel.h"
+ #include <functional>
+ 
+-class SampleSelectorDot final : public juce::Component
++class SampleSelectorDot final : public juce::Component,
++                                public juce::SettableTooltipClient
+ {
+ public:
+     SampleSelectorDot (int indexInGroup, juce::Colour dotColour, juce::String tip)
+diff --git a/juce-plugin/Source/SnapbackTheme.h b/juce-plugin/Source/SnapbackTheme.h
+new file mode 100644
+index 0000000..b156023
+--- /dev/null
++++ b/juce-plugin/Source/SnapbackTheme.h
+@@ -0,0 +1,76 @@
++#pragma once
++
++#include <juce_gui_basics/juce_gui_basics.h>
++
++/**
++    Single source of truth for the SNAPBACK flat near-black palette.
++    SNAPBACK = periwinkle blue family, TRANSIENT = violet family.
++
++    wavelens::ui (SpectralMultipleLookAndFeel.h) aliases these values, so all
++    components share one palette definition.
++*/
++namespace snap
++{
++    // ---- Surfaces (flat, no gradients) ---------------------------------------
++    inline const juce::Colour bg        { 0xff0e0e12 }; // main background
++    inline const juce::Colour panel     { 0xff141419 }; // panel background
++    inline const juce::Colour panelHi   { 0xff191921 }; // elevated panel / toolbar
++    inline const juce::Colour inset     { 0xff111116 }; // rulers, readouts, dividers
++    inline const juce::Colour border    { 0xff27272f }; // panel outlines
++    inline const juce::Colour borderSoft{ 0xff1f1f27 }; // subtle separators
++
++    // ---- Parameter tiles ------------------------------------------------------
++    inline const juce::Colour tile      { 0xff1b1b22 }; // rounded parameter tile
++    inline const juce::Colour tileTrack { 0xff2b2b34 }; // thin track inside tiles
++    inline const juce::Colour tileLabel { 0xff8b8f9c }; // small grey label
++
++    // ---- Text ------------------------------------------------------------------
++    inline const juce::Colour text      { 0xffeceef2 }; // primary white
++    inline const juce::Colour muted     { 0xff8f94a3 }; // secondary grey
++    inline const juce::Colour disabled  { 0xff55555f }; // disabled text
++    inline const juce::Colour onAccent  { 0xff0f1016 }; // dark text on accent fills
++
++    // ---- Bank accents -----------------------------------------------------------
++    inline const juce::Colour snap      { 0xff5b7ff0 }; // SNAPBACK periwinkle blue
++    inline const juce::Colour snapHi    { 0xff8ca6ff }; // bright SNAPBACK
++    inline const juce::Colour tr        { 0xff9b6df0 }; // TRANSIENT violet
++    inline const juce::Colour trHi      { 0xffb795ff }; // bright TRANSIENT
++
++    // ---- Waveform / meters --------------------------------------------------------
++    inline const juce::Colour wave      { 0xff97a0b4 }; // neutral grey-blue waveform
++    inline const juce::Colour grid      { 0xff8a94b4 }; // subtle blue-grey grid
++    inline const juce::Colour meterCool { 0xff5b7ff0 };
++    inline const juce::Colour meterMid  { 0xffe8b64c };
++    inline const juce::Colour meterHot  { 0xffe0564a };
++    inline const juce::Colour warn      { 0xffe8b64c }; // missing-sample amber
++
++    /** Individual signal colour of layer n (0..5): blue family vs violet family. */
++    inline juce::Colour signalColour (int n) noexcept
++    {
++        static const juce::uint32 table[] = { 0xff5b7ff0,   // SNAPBACK 1
++                                              0xff7d92f3,   // SNAPBACK 2
++                                              0xffa3b3f7,   // SNAPBACK 3
++                                              0xff9b6df0,   // TRANSIENT 1
++                                              0xffb18bf5,   // TRANSIENT 2
++                                              0xffc9b0fa }; // TRANSIENT 3
++        return juce::Colour (table[(size_t) juce::jlimit (0, 5, n)]);
++    }
++
++    /** Bank accent of a SNAPBACK (0..2) or TRANSIENT (3..5) layer. */
++    inline juce::Colour bankAccent (int layer) noexcept    { return layer < 3 ? snap : tr; }
++
++    /** Bright bank accent of a SNAPBACK (0..2) or TRANSIENT (3..5) layer. */
++    inline juce::Colour bankAccentHi (int layer) noexcept  { return layer < 3 ? snapHi : trHi; }
++
++    /** Symmetric trapezoid used for the TRIGGER tab (wide top, narrow bottom). */
++    inline juce::Path trapezoidPath (juce::Rectangle<float> b, float insetWidth) noexcept
++    {
++        juce::Path p;
++        p.startNewSubPath (b.getX(), b.getY());
++        p.lineTo (b.getRight(), b.getY());
++        p.lineTo (b.getRight() - insetWidth, b.getBottom());
++        p.lineTo (b.getX() + insetWidth, b.getBottom());
++        p.closeSubPath();
++        return p;
++    }
++}
+diff --git a/juce-plugin/Source/SpectralMultipleLookAndFeel.cpp b/juce-plugin/Source/SpectralMultipleLookAndFeel.cpp
+index 108b2c1..4751262 100644
+--- a/juce-plugin/Source/SpectralMultipleLookAndFeel.cpp
++++ b/juce-plugin/Source/SpectralMultipleLookAndFeel.cpp
+@@ -44,6 +44,17 @@ void SpectralMultipleLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, in
+     const bool hovered = slider.isMouseOverOrDragging();
+     const bool isBipolar = static_cast<bool> (slider.getProperties().getWithDefault ("bipolar", false));
+ 
++    // Compact SNAPBACK parameter tile: dark rounded tile, grey label, white
++    // value, thin accent track near the bottom (bipolar fills from centre).
++    if (static_cast<bool> (slider.getProperties().getWithDefault ("isTile", false)))
++    {
++        const float proportion = (float) slider.valueToProportionOfLength (slider.getValue());
++        drawTileSlider (g, juce::Rectangle<float> ((float) x, (float) y,
++                                                   (float) width, (float) height),
++                        slider, juce::jlimit (0.0f, 1.0f, proportion));
++        return;
++    }
++
+     if (style == juce::Slider::LinearVertical)
+     {
+         auto b = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height);
+@@ -53,7 +64,7 @@ void SpectralMultipleLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, in
+         const float barH = juce::jmax (12.0f, bot - top);
+         juce::Rectangle<float> bar (b.getCentreX() - barW * 0.5f, top, barW, barH);
+ 
+-        g.setColour (juce::Colour (0xff100f17));
++        g.setColour (snap::inset);
+         g.fillRoundedRectangle (bar, 3.0f);
+ 
+         // Subtle unity (0 dB) reference tick at 50%
+@@ -83,7 +94,7 @@ void SpectralMultipleLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, in
+     if (static_cast<bool> (slider.getProperties().getWithDefault ("inlineBar", false)))
+     {
+         auto bar = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height).reduced (0.5f);
+-        g.setColour (hovered ? ui::kHoverBg.darker (0.25f) : juce::Colour (0xff12111a));
++        g.setColour (hovered ? ui::kHoverBg.darker (0.25f) : snap::inset);
+         g.fillRoundedRectangle (bar, 3.0f);
+ 
+         const float innerL = bar.getX() + 1.0f;
+@@ -142,7 +153,7 @@ void SpectralMultipleLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, in
+     const float barH = juce::jmin (14.0f, b.getHeight() - 4.0f);
+     juce::Rectangle<float> track (b.getX() + 2.0f, b.getCentreY() - barH * 0.5f,
+                                   juce::jmax (10.0f, b.getWidth() - 4.0f), barH);
+-    g.setColour (juce::Colour (0xff100f17));
++    g.setColour (snap::inset);
+     g.fillRoundedRectangle (track, 3.0f);
+ 
+     const float clampedX = juce::jlimit (track.getX() + 1.0f, track.getRight() - 1.0f, sliderPos);
+@@ -161,6 +172,76 @@ void SpectralMultipleLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, in
+     g.drawRoundedRectangle (track, 3.0f, 1.0f);
+ }
+ 
++void SpectralMultipleLookAndFeel::drawTileSlider (juce::Graphics& g, juce::Rectangle<float> tile,
++                                                  juce::Slider& slider, float proportion)
++{
++    const bool enabled = slider.isEnabled();
++    const bool hovered = slider.isMouseOverOrDragging();
++    const auto accent = slider.findColour (juce::Slider::trackColourId).isTransparent()
++        ? ui::kPurpleAccent
++        : slider.findColour (juce::Slider::trackColourId);
++    const bool isBipolar = static_cast<bool> (slider.getProperties().getWithDefault ("bipolar", false));
++
++    g.setColour (hovered ? ui::kHoverBg : ui::kControlBg);
++    g.fillRoundedRectangle (tile, 5.5f);
++    g.setColour (enabled ? ui::kBorder : ui::kBorder.withAlpha (0.45f));
++    g.drawRoundedRectangle (tile.reduced (0.5f), 5.5f, 1.0f);
++
++    auto inner = tile.reduced (7.0f, 4.0f);
++    const auto label = slider.getProperties().getWithDefault ("tileLabel", slider.getName()).toString();
++    const auto valueText = slider.getTextFromValue (slider.getValue());
++    const float textW = juce::jmax (10.0f, inner.getWidth());
++
++    // Shrink long labels/values ("FADE OUT", "20.0 kHz") until they fit the tile.
++    auto shrinkToFit = [] (const juce::String& t, float baseHeight, float maxWidth) -> juce::Font
++    {
++        auto f = juce::Font (baseHeight, juce::Font::bold);
++        while (f.getStringWidthFloat (t) > maxWidth - 1.0f && f.getHeight() > 6.0f)
++            f = f.withHeight (f.getHeight() - 0.5f);
++        return f;
++    };
++
++    auto labelArea = inner.removeFromTop (11).toNearestInt();
++    g.setColour (enabled ? ui::kTileLabel : ui::kDisabledText);
++    g.setFont (shrinkToFit (label, 9.0f, textW));
++    if (label.isNotEmpty())
++        g.drawText (label, labelArea, juce::Justification::centredLeft, false);
++
++    auto valueArea = inner.removeFromTop (15).toNearestInt();
++    g.setColour (enabled ? ui::kMainText : ui::kDisabledText);
++    g.setFont (shrinkToFit (valueText, 12.5f, textW));
++    g.drawText (valueText, valueArea, juce::Justification::centredLeft, false);
++
++    const float trackY = tile.getBottom() - 9.5f;
++    auto track = juce::Rectangle<float> (tile.getX() + 7.0f, trackY,
++                                         juce::jmax (4.0f, tile.getWidth() - 14.0f), 2.0f);
++    g.setColour (snap::tileTrack);
++    g.fillRoundedRectangle (track, 1.0f);
++
++    if (isBipolar)
++    {
++        // Bipolar centre marker
++        g.setColour (ui::kBorder.brighter (0.30f));
++        g.fillRect (track.getCentreX() - 0.5f, trackY - 3.0f, 1.0f, 8.0f);
++    }
++
++    const float px = track.getX() + proportion * track.getWidth();
++    juce::Rectangle<float> fill;
++    if (isBipolar)
++        fill = juce::Rectangle<float> (juce::jmin (px, track.getCentreX()), trackY,
++                                       std::abs (px - track.getCentreX()), track.getHeight());
++    else
++        fill = track.withWidth (juce::jmax (0.0f, px - track.getX()));
++    if (fill.getWidth() > 0.5f)
++    {
++        g.setColour (accent.withAlpha (enabled ? 0.92f : 0.35f));
++        g.fillRoundedRectangle (fill, 1.0f);
++    }
++
++    g.setColour (enabled ? ui::kMainText : ui::kDisabledText);
++    g.fillRoundedRectangle (px - 1.5f, trackY - 3.5f, 3.0f, 9.0f, 1.5f);
++}
++
+ void SpectralMultipleLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,
+                                                         const juce::Colour& /*backgroundColour*/,
+                                                         bool shouldDrawButtonAsHighlighted,
+@@ -169,6 +250,33 @@ void SpectralMultipleLookAndFeel::drawButtonBackground (juce::Graphics& g, juce:
+     auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
+     const bool isToggleOn = button.getToggleState();
+ 
++    const juce::var accentVar = button.getProperties().getWithDefault ("accentColour", juce::var());
++    const juce::Colour customAccent = accentVar.isInt() || accentVar.isInt64()
++        ? juce::Colour ((juce::uint32) (juce::int64) accentVar)
++        : ui::kPurpleAccent;
++
++    // Trapezoid tab (TRIGGER): wide top, narrow bottom, accent filled.
++    if (static_cast<bool> (button.getProperties().getWithDefault ("isTrapezoid", false)))
++    {
++        const auto trap = snap::trapezoidPath (bounds, bounds.getWidth() * 0.16f);
++        juce::Colour fill = isToggleOn ? customAccent.brighter (0.12f) : customAccent;
++        if (! button.isEnabled())
++            fill = ui::kControlBg;
++        else if (shouldDrawButtonAsDown)
++            fill = fill.darker (0.18f);
++        else if (shouldDrawButtonAsHighlighted)
++            fill = fill.brighter (0.10f);
++
++        g.setColour (fill);
++        g.fillPath (trap);
++        if (! button.isEnabled())
++        {
++            g.setColour (ui::kBorder.withAlpha (0.45f));
++            g.strokePath (trap, juce::PathStrokeType (1.0f));
++        }
++        return;
++    }
++
+     if (static_cast<bool> (button.getProperties().getWithDefault ("isFlatSegment", false)))
+     {
+         auto fill = isToggleOn ? ui::kSelectedAccent.withAlpha (0.24f) : ui::kControlBg;
+@@ -182,11 +290,6 @@ void SpectralMultipleLookAndFeel::drawButtonBackground (juce::Graphics& g, juce:
+         return;
+     }
+ 
+-    const juce::var accentVar = button.getProperties().getWithDefault ("accentColour", juce::var());
+-    const juce::Colour customAccent = accentVar.isInt() || accentVar.isInt64()
+-        ? juce::Colour ((juce::uint32) (juce::int64) accentVar)
+-        : ui::kPurpleAccent;
+-
+     juce::Colour fill = isToggleOn ? customAccent.withAlpha (0.20f) : ui::kControlBg;
+     if (! button.isEnabled())
+         fill = ui::kPanelBg;
+diff --git a/juce-plugin/Source/SpectralMultipleLookAndFeel.h b/juce-plugin/Source/SpectralMultipleLookAndFeel.h
+index 7303b25..7dda4eb 100644
+--- a/juce-plugin/Source/SpectralMultipleLookAndFeel.h
++++ b/juce-plugin/Source/SpectralMultipleLookAndFeel.h
+@@ -1,37 +1,51 @@
+ #pragma once
+ 
+ #include <juce_audio_utils/juce_audio_utils.h>
++#include "SnapbackTheme.h"
+ #include <array>
+ 
++/**
++    UI colour aliases for the SNAPBACK flat near-black theme.
++    All values come from snap:: (SnapbackTheme.h) - do not define new raw
++    colours here; extend SnapbackTheme.h instead so the palette stays in one place.
++*/
+ namespace wavelens::ui
+ {
+-    inline const juce::Colour kMainBg         { 0xff0b0a10 };
+-    inline const juce::Colour kHeaderBg       { 0xff09090d };
+-    inline const juce::Colour kPanelBg        { 0xff15141c };
+-    inline const juce::Colour kControlBg      { 0xff1c1a24 };
+-    inline const juce::Colour kHoverBg        { 0xff24212e };
+-    inline const juce::Colour kBorder         { 0xff302c3a };
+-    inline const juce::Colour kMainText       { 0xfff0edf5 };
+-    inline const juce::Colour kSecondaryText  { 0xff9692a3 };
+-    inline const juce::Colour kDisabledText   { 0xff55515f };
+-    inline const juce::Colour kPurpleAccent   { 0xffb477ff };
+-    inline const juce::Colour kSelectedAccent { 0xffa66bfa };
+-    inline const juce::Colour kCyanAccent     { 0xff43d5d0 };
+-    inline const juce::Colour kInputWave      { 0xffa2a0aa };
+-    inline const juce::Colour kMasterWave     { 0xff48d6d0 };
+-    inline const juce::Colour kWarningAmber   { 0xffffb86c };
++    inline const juce::Colour kMainBg         { snap::bg };
++    inline const juce::Colour kHeaderBg       { snap::panelHi };
++    inline const juce::Colour kPanelBg        { snap::panel };
++    inline const juce::Colour kControlBg      { snap::tile };
++    inline const juce::Colour kHoverBg        { juce::Colour (0xff23232b) };
++    inline const juce::Colour kBorder         { snap::border };
++    inline const juce::Colour kElevatedBg     { snap::panelHi };
++    inline const juce::Colour kInsetBg        { snap::inset };
++    inline const juce::Colour kMainText       { snap::text };
++    inline const juce::Colour kSecondaryText  { snap::muted };
++    inline const juce::Colour kDisabledText   { snap::disabled };
++    inline const juce::Colour kTileLabel      { snap::tileLabel };
++    inline const juce::Colour kOnAccentText   { snap::onAccent };
++    inline const juce::Colour kNeutralWave    { snap::wave };
++    inline const juce::Colour kGridLine       { snap::grid };
++    inline const juce::Colour kPurpleAccent   { snap::snap };     // generic accent: SNAPBACK blue
++    inline const juce::Colour kSelectedAccent { snap::snapHi };   // bright bank highlight
++    inline const juce::Colour kCyanAccent     { snap::snap };     // trigger indicator accent
++    inline const juce::Colour kInputWave      { snap::wave };
++    inline const juce::Colour kMasterWave     { snap::snapHi };
++    inline const juce::Colour kWarningAmber   { snap::warn };
+ 
+     inline juce::Colour layerColour (int layer) noexcept
+     {
+-        static constexpr std::array<juce::uint32, 6> kPalette {
+-            0xffa78bfa, // SNAPBACK 1
+-            0xff8b5cf6, // SNAPBACK 2
+-            0xff6366f1, // SNAPBACK 3
+-            0xfff472b6, // TRANSIENT 1
+-            0xffe879f9, // TRANSIENT 2
+-            0xff22d3ee  // TRANSIENT 3
+-        };
+-        return juce::Colour (kPalette[(size_t) juce::jlimit (0, 5, layer)]);
++        return snap::signalColour (layer);
++    }
++
++    inline juce::Colour bankAccent (int layer) noexcept
++    {
++        return snap::bankAccent (layer);
++    }
++
++    inline juce::Colour bankAccentHi (int layer) noexcept
++    {
++        return snap::bankAccentHi (layer);
+     }
+ 
+     inline juce::String layerShortName (int layer)
+@@ -82,4 +96,8 @@ public:
+     juce::Font getComboBoxFont (juce::ComboBox&) override;
+     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
+     juce::Font getPopupMenuFont() override;
++
++private:
++    void drawTileSlider (juce::Graphics&, juce::Rectangle<float> tile, juce::Slider&,
++                         float proportion);
+ };
+diff --git a/juce-plugin/Source/WaveformControlBar.cpp b/juce-plugin/Source/WaveformControlBar.cpp
+index de63be1..f840d64 100644
+--- a/juce-plugin/Source/WaveformControlBar.cpp
++++ b/juce-plugin/Source/WaveformControlBar.cpp
+@@ -42,6 +42,20 @@ TriggerPanelComponent::TriggerPanelComponent (WaveLensProcessor& processor)
+     addAndMakeVisible (viewBox);
+     viewAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (proc.apvts, ids::view, viewBox);
+ 
++    // Timeline bar span (moved here from the control bar so the bar can host
++    // the compact zoom out / level / zoom in controls instead)
++    if (auto* spanChoice = dynamic_cast<juce::AudioParameterChoice*> (proc.apvts.getParameter (ids::bars)))
++        spanBox.addItemList (spanChoice->choices, 1);
++    spanBox.setTooltip ("Timeline bar span");
++    spanBox.setJustificationType (juce::Justification::centredLeft);
++    addAndMakeVisible (spanBox);
++    spanAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (proc.apvts, ids::bars, spanBox);
++    spanBox.onChange = [this]
++    {
++        if (onZoomBarsSelected)
++            onZoomBarsSelected (barsFromIndex (spanBox.getSelectedItemIndex()));
++    };
++
+     for (auto* b : { &drumsBtn, &generalBtn, &complexBtn })
+     {
+         b->setClickingTogglesState (false);
+@@ -114,6 +128,7 @@ void TriggerPanelComponent::paint (juce::Graphics& g)
+     g.setColour (ui::kSecondaryText);
+     g.drawText ("THRESH", thresholdSlider.getX() - 48, 0, 44, getHeight(), juce::Justification::centredRight);
+     g.drawText ("MODE", modeBox.getX() - 36, 0, 32, getHeight(), juce::Justification::centredRight);
++    g.drawText ("SPAN", spanBox.getX() - 36, 0, 32, getHeight(), juce::Justification::centredRight);
+     g.drawText ("IN FILTER", inputFilter.getX() - 56, 0, 52, getHeight(), juce::Justification::centredRight);
+ 
+     // Trigger LED indicator on far left
+@@ -150,6 +165,8 @@ void TriggerPanelComponent::resized()
+ 
+     listenBtn.setBounds (r.removeFromRight (84));
+     r.removeFromRight (6);
++    spanBox.setBounds (r.removeFromRight (76));
++    r.removeFromRight (40); // SPAN label
+     viewBox.setBounds (r.removeFromRight (92));
+     r.removeFromRight (12);
+ 
+@@ -207,7 +224,10 @@ WaveformControlBar::WaveformControlBar (WaveLensProcessor& processor)
+ 
+     triggerTabBtn.setClickingTogglesState (true);
+     triggerTabBtn.setTooltip ("Open or close Trigger Settings panel");
+-    triggerTabBtn.getProperties().set ("isFlatSegment", true);
++    triggerTabBtn.getProperties().set ("isTrapezoid", true);
++    triggerTabBtn.getProperties().set ("accentColour", (juce::int64) ui::kPurpleAccent.getARGB());
++    triggerTabBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
++    triggerTabBtn.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
+     triggerTabBtn.onClick = [this]
+     {
+         if (onTriggerPanelToggled)
+@@ -220,14 +240,30 @@ WaveformControlBar::WaveformControlBar (WaveLensProcessor& processor)
+     fireTriggerBtn.onClick = [this] { proc.requestTrigger(); };
+     addAndMakeVisible (fireTriggerBtn);
+ 
+-    gridSecBtn.setTooltip ("Toggle Beat Grid / Milliseconds ruler");
+-    gridSecBtn.onClick = [this]
++    auto setupViewBtn = [this] (juce::TextButton& b, const juce::String& text,
++                                juce::Colour accent, const juce::String& tip)
++    {
++        b.setButtonText (text);
++        b.setClickingTogglesState (true);
++        b.setTooltip (tip);
++        b.getProperties().set ("accentColour", (juce::int64) accent.getARGB());
++        addAndMakeVisible (b);
++    };
++    setupViewBtn (gridBtn, "GRID", ui::kPurpleAccent, "Show beat grid ruler");
++    setupViewBtn (secondsBtn, "SECONDS", snap::tr, "Show milliseconds ruler");
++    gridBtn.onClick = [this]
+     {
+-        setGridMode (! isGridMode);
++        setGridMode (true);
+         if (onGridModeChanged)
+             onGridModeChanged (isGridMode);
+     };
+-    addAndMakeVisible (gridSecBtn);
++    secondsBtn.onClick = [this]
++    {
++        setGridMode (false);
++        if (onGridModeChanged)
++            onGridModeChanged (isGridMode);
++    };
++    setGridMode (true);
+ 
+     detailBtn.onClick = [this]
+     {
+@@ -236,17 +272,29 @@ WaveformControlBar::WaveformControlBar (WaveLensProcessor& processor)
+     };
+     addAndMakeVisible (detailBtn);
+ 
+-    zoomBox.addItemList ({ "1/4", "1/2", "1 Bar", "2 Bars", "4 Bars", "8 Bars" }, 1);
+-    zoomBox.setSelectedId (3, juce::dontSendNotification);
+-    zoomBox.setTooltip ("Timeline bar span");
+-    zoomBox.onChange = [this]
++    zoomOutBtn.setTooltip ("Zoom out timeline");
++    zoomOutBtn.onClick = [this]
+     {
+-        static constexpr double kBars[] = { 0.25, 0.5, 1.0, 2.0, 4.0, 8.0 };
+-        const int idx = juce::jlimit (0, 5, zoomBox.getSelectedItemIndex());
+-        if (onZoomBarsSelected)
+-            onZoomBarsSelected (kBars[idx]);
++        if (onZoomStep)
++            onZoomStep (1.0f / 1.35f);
+     };
+-    addAndMakeVisible (zoomBox);
++    addAndMakeVisible (zoomOutBtn);
++
++    zoomLevelBtn.setTooltip ("Current timeline zoom (click to reset)");
++    zoomLevelBtn.onClick = [this]
++    {
++        if (onZoomReset)
++            onZoomReset();
++    };
++    addAndMakeVisible (zoomLevelBtn);
++
++    zoomInBtn.setTooltip ("Zoom in timeline");
++    zoomInBtn.onClick = [this]
++    {
++        if (onZoomStep)
++            onZoomStep (1.35f);
++    };
++    addAndMakeVisible (zoomInBtn);
+ 
+     outputBtn.setClickingTogglesState (true);
+     outputBtn.setTooltip ("Toggle live summed Master Output monitor");
+@@ -279,7 +327,20 @@ void WaveformControlBar::setOutputActive (bool active) noexcept
+ void WaveformControlBar::setGridMode (bool isGrid) noexcept
+ {
+     isGridMode = isGrid;
+-    gridSecBtn.setButtonText (isGridMode ? "GRID" : "SEC");
++    gridBtn.setToggleState (isGrid, juce::dontSendNotification);
++    secondsBtn.setToggleState (! isGrid, juce::dontSendNotification);
++    repaint();
++}
++
++void WaveformControlBar::setZoomLevel (float zoomFactor) noexcept
++{
++    const juce::String txt = zoomFactor <= 1.05f
++        ? juce::String ("1.0x")
++        : (zoomFactor >= 9.95f ? juce::String (juce::roundToInt (zoomFactor)) + "x"
++                               : juce::String (zoomFactor, 1) + "x");
++    zoomLevelBtn.setButtonText (txt);
++    zoomOutBtn.setEnabled (zoomFactor > 1.05f);
++    zoomInBtn.setEnabled (zoomFactor < 31.5f);
+     repaint();
+ }
+ 
+@@ -317,21 +378,28 @@ void WaveformControlBar::resized()
+     const int preW = juce::jlimit (96, 154, getWidth() / 8);
+     preLeadSlider.setBounds (r.removeFromLeft (preW));
+ 
+-    outputBtn.setBounds (r.removeFromRight (64));
++    // Right stack: OUTPUT | zoom in / level / out | DETAIL | SECONDS | GRID
++    outputBtn.setBounds (r.removeFromRight (58));
+     r.removeFromRight (6);
+-    zoomBox.setBounds (r.removeFromRight (78));
++    zoomInBtn.setBounds (r.removeFromRight (24));
++    r.removeFromRight (2);
++    zoomLevelBtn.setBounds (r.removeFromRight (42));
++    r.removeFromRight (2);
++    zoomOutBtn.setBounds (r.removeFromRight (24));
+     r.removeFromRight (6);
+     detailBtn.setBounds (r.removeFromRight (72));
+     r.removeFromRight (6);
+-    gridSecBtn.setBounds (r.removeFromRight (46));
++    secondsBtn.setBounds (r.removeFromRight (62));
++    r.removeFromRight (2);
++    gridBtn.setBounds (r.removeFromRight (46));
+ 
+-    // Centre TRIGGER tab + compact fire button
+-    const int trigW = 86;
++    // Centre trapezoid TRIGGER tab + compact fire button
++    const int trigW = 96;
+     const int fireW = 26;
+     const int totalCentreW = trigW + 4 + fireW;
+     const int startX = juce::jmax (preLeadSlider.getRight() + 8,
+-                                   juce::jmin (gridSecBtn.getX() - totalCentreW - 8,
++                                   juce::jmin (gridBtn.getX() - totalCentreW - 8,
+                                                getWidth() / 2 - totalCentreW / 2));
+-    triggerTabBtn.setBounds (startX, r.getY(), trigW, r.getHeight());
++    triggerTabBtn.setBounds (startX, r.getY() - 2, trigW, r.getHeight() + 4);
+     fireTriggerBtn.setBounds (triggerTabBtn.getRight() + 4, r.getY(), fireW, r.getHeight());
+ }
+diff --git a/juce-plugin/Source/WaveformControlBar.h b/juce-plugin/Source/WaveformControlBar.h
+index c479a13..1c31f10 100644
+--- a/juce-plugin/Source/WaveformControlBar.h
++++ b/juce-plugin/Source/WaveformControlBar.h
+@@ -15,6 +15,8 @@ public:
+     explicit TriggerPanelComponent (WaveLensProcessor& processor);
+     ~TriggerPanelComponent() override;
+ 
++    std::function<void (double barsCount)> onZoomBarsSelected;
++
+     void paint (juce::Graphics&) override;
+     void resized() override;
+ 
+@@ -40,6 +42,9 @@ private:
+     juce::ComboBox viewBox;
+     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> viewAtt;
+ 
++    juce::ComboBox spanBox;
++    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> spanAtt;
++
+     juce::TextButton listenBtn { "MONITOR IN" };
+     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> listenAtt;
+ 
+@@ -53,8 +58,9 @@ private:
+ /**
+     36 px control bar directly beneath the main oscilloscope:
+     Left:   Limiter toggle + live peak ceiling dB + PRE lead slider
+-    Centre: TRIGGER settings drawer tab + quick-fire trigger button
+-    Right:  GRID/SEC toggle, DETAIL magnifying-glass toggle, ZOOM dropdown, OUTPUT toggle
++    Centre: Trapezoid TRIGGER settings drawer tab + quick-fire trigger button
++    Right:  GRID / SECONDS ruler toggle, DETAIL magnifier toggle,
++            zoom out / zoom level / zoom in, OUTPUT monitor toggle
+ */
+ class WaveformControlBar final : public juce::Component, private juce::Timer
+ {
+@@ -64,13 +70,15 @@ public:
+ 
+     std::function<void (bool triggerPanelOpen)> onTriggerPanelToggled;
+     std::function<void (bool detailActive)> onDetailToggled;
+-    std::function<void (double barsCount)> onZoomBarsSelected;
++    std::function<void (float zoomFactor)> onZoomStep;
++    std::function<void()> onZoomReset;
+     std::function<void (bool gridMode)> onGridModeChanged;
+     std::function<void (bool outputActive)> onOutputToggled;
+ 
+     void setDetailActive (bool active) noexcept;
+     void setOutputActive (bool active) noexcept;
+     void setGridMode (bool isGrid) noexcept;
++    void setZoomLevel (float zoomFactor) noexcept;
+     bool isTriggerPanelOpen() const noexcept { return triggerTabBtn.getToggleState(); }
+ 
+     void paint (juce::Graphics&) override;
+@@ -101,9 +109,12 @@ private:
+     juce::TextButton triggerTabBtn { "TRIGGER" };
+     juce::TextButton fireTriggerBtn { ">" };
+ 
+-    juce::TextButton gridSecBtn { "GRID" };
++    juce::TextButton gridBtn { "GRID" };
++    juce::TextButton secondsBtn { "SECONDS" };
+     MagnifierButton detailBtn;
+-    juce::ComboBox zoomBox;
++    juce::TextButton zoomOutBtn { "-" };
++    juce::TextButton zoomLevelBtn { "1.0x" };
++    juce::TextButton zoomInBtn { "+" };
+     juce::TextButton outputBtn { "OUTPUT" };
+ 
+     bool isGridMode = true;
+diff --git a/juce-plugin/Tools/UiSnapshot.cpp b/juce-plugin/Tools/UiSnapshot.cpp
+new file mode 100644
+index 0000000..f72a6e4
+--- /dev/null
++++ b/juce-plugin/Tools/UiSnapshot.cpp
+@@ -0,0 +1,163 @@
++#include "../Source/PluginProcessor.h"
++#include "../Source/PluginEditor.h"
++
++#include <cmath>
++#include <iostream>
++#include <memory>
++
++/**
++    Headless UI screenshot tool (BUILD_UI_SNAPSHOT=ON).
++
++    Renders the real WaveLensEditor through the JUCE software renderer at the
++    three supported window sizes and writes PNG files - no display required.
++    Synthetic drum samples are generated, loaded through the processor's real
++    sample-loading path and a few parameters are set so the screenshots show
++    genuine waveform + envelope data.
++*/
++namespace
++{
++juce::Component* findComponentByName (juce::Component* parent, const juce::String& name)
++{
++    if (parent == nullptr)
++        return nullptr;
++    if (parent->getName() == name)
++        return parent;
++    for (auto* child : parent->getChildren())
++        if (auto* found = findComponentByName (child, name))
++            return found;
++    return nullptr;
++}
++
++juce::File makeSampleFile (const juce::File& dir, const juce::String& name, int kind)
++{
++    const double sr = 44100.0;
++    const int len = (int) (sr * 0.85);
++    juce::AudioBuffer<float> buf (1, len);
++    double phase = 0.0;
++
++    for (int i = 0; i < len; ++i)
++    {
++        const double t = (double) i / sr;
++        double v = 0.0;
++
++        if (kind == 0) // kick-like swept sine
++        {
++            const double f = 46.0 + 92.0 * std::exp (-t * 10.0);
++            phase += juce::MathConstants<double>::twoPi * f / sr;
++            v = 0.92 * std::sin (phase) * std::exp (-t * 6.5);
++        }
++        else if (kind == 1) // hat-like noise tick
++        {
++            const double noise = (double) (std::rand() % 2001 - 1000) / 1000.0;
++            v = 0.55 * noise * std::exp (-t * 34.0) + 0.18 * std::sin (t * 9500.0) * std::exp (-t * 46.0);
++        }
++        else // tonal blip
++        {
++            phase += juce::MathConstants<double>::twoPi * 320.0 / sr;
++            v = 0.5 * std::sin (phase) * std::exp (-t * 11.0)
++              + 0.12 * std::sin (phase * 2.0) * std::exp (-t * 16.0);
++        }
++
++        buf.setSample (0, i, (float) juce::jlimit (-1.0, 1.0, v));
++    }
++
++    const auto file = dir.getChildFile (name + ".wav");
++    file.deleteFile();
++    juce::WavAudioFormat format;
++    auto* rawStream = file.createOutputStream().release();
++    std::unique_ptr<juce::AudioFormatWriter> writer (format.createWriterFor (rawStream, sr, 1, 16, {}, 0));
++    if (writer != nullptr)
++    {
++        writer->writeFromAudioSampleBuffer (buf, 0, buf.getNumSamples());
++        writer->flush();
++    }
++    return file;
++}
++} // namespace
++
++int main (int argc, char** argv)
++{
++    const juce::String outDirPath = argc > 1 ? argv[1] : ".";
++    const auto outDir = juce::File::getCurrentWorkingDirectory().getChildFile (outDirPath);
++    outDir.createDirectory();
++
++    juce::ScopedJuceInitialiser_GUI juceInit;
++
++    WaveLensProcessor processor;
++
++    // Load synthetic samples through the real loading path
++    const auto kick = makeSampleFile (outDir, "ui-shot-kick", 0);
++    const auto hat  = makeSampleFile (outDir, "ui-shot-hat", 1);
++    const auto blip = makeSampleFile (outDir, "ui-shot-blip", 2);
++
++    const juce::File files[] = { kick, kick, blip, hat, hat, blip };
++    for (int l = 0; l < WaveLensProcessor::kMaxSignals; ++l)
++    {
++        juce::String err;
++        if (! processor.loadSampleFile (l, files[(size_t) l], err))
++            std::cerr << "sample load failed for layer " << l << ": " << err << std::endl;
++    }
++
++    auto setParam = [&processor] (const juce::String& id, float plainValue)
++    {
++        if (auto* p = dynamic_cast<juce::RangedAudioParameter*> (processor.apvts.getParameter (id)))
++            p->setValueNotifyingHost (p->convertTo0to1 (plainValue));
++    };
++
++    // A little parameter variety so tiles/envelopes render real values
++    for (int l = 0; l < WaveLensProcessor::kMaxSignals; ++l)
++    {
++        setParam (ids::layerEnvEnabled (l), 1.0f);
++        setParam (ids::layerAttack (l), 0.5f + 3.0f * (float) l);
++        setParam (ids::layerHold (l), 2.0f);
++        setParam (ids::layerDecay (l), 60.0f + 45.0f * (float) l);
++        setParam (ids::layerSustain (l), 0.35f + 0.12f * (float) l);
++        setParam (ids::layerRelease (l), 120.0f + 80.0f * (float) l);
++    }
++    setParam (ids::layerPitch (1), -12.0f);
++    setParam (ids::layerPitch (2), 7.0f);
++    setParam (ids::layerPitch (4), -3.0f);
++    setParam (ids::layerPan (1), -0.35f);
++    setParam (ids::layerPan (2), 0.35f);
++    setParam (ids::layerPan (4), 0.25f);
++    setParam (ids::layerPogo (4), 0.45f);
++    setParam (ids::layerDelay (1), -8.0f);
++    setParam (ids::layerDelay (4), 12.0f);
++    setParam (ids::layerTrimStart (1), 0.04f);
++    setParam (ids::layerTrimEnd (1), 0.86f);
++    setParam (ids::layerFadeOut (2), 30.0f);
++    setParam (ids::layerHighPass (5), 320.0f);
++    setParam (ids::layerLowPass (4), 8.5e3f);
++    setParam (ids::preRollMs, 50.0f);
++
++    std::unique_ptr<juce::AudioProcessorEditor> editor (processor.createEditor());
++
++    auto shoot = [&] (const char* fileName, int w, int h)
++    {
++        editor->setBounds (0, 0, w, h);
++        juce::Image img (juce::Image::ARGB, w, h, true);
++        {
++            juce::Graphics g (img);
++            editor->paintEntireComponent (g, true);
++        }
++        const auto file = outDir.getChildFile (fileName);
++        file.deleteFile();
++        juce::FileOutputStream out (file);
++        if (juce::PNGImageFormat().writeImageToStream (img, out))
++            std::cout << "wrote " << file.getFullPathName() << std::endl;
++        else
++            std::cerr << "failed to write " << file.getFullPathName() << std::endl;
++    };
++
++    shoot ("snapback-ui-1280x760.png", 1280, 760);
++    shoot ("snapback-ui-1020x620.png", 1020, 620);
++    shoot ("snapback-ui-1920x1200.png", 1920, 1200);
++
++    // Bonus shot: global Master M overlay (all six traces) at default size
++    if (auto* master = findComponentByName (editor.get(), "Master"))
++        if (auto* masterButton = dynamic_cast<juce::Button*> (master))
++            masterButton->setToggleState (true, juce::dontSendNotification);
++    shoot ("snapback-ui-master-1280x760.png", 1280, 760);
++
++    return 0;
++}
+-- 
+2.47.3
+
