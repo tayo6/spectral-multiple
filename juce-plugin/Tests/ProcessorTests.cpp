@@ -268,9 +268,13 @@ void testRealJuceAiffLoading (const fs::path& dir)
     juce::String err;
     check (proc.loadSampleFile (0, aiff44, err), "RealJUCE-AIFF: WaveLensProcessor loads stereo AIFF",
            err.toStdString());
-    std::cerr << "[TRACE] after processor AIFF load\n" << std::flush;
+    std::cerr << "[TRACE] after processor AIFF load; connectedMask=" << proc.connectedMask.load() << "\n" << std::flush;
     check (proc.connectedMask.load() == (1 << 0), "RealJUCE-AIFF: connectedMask updated");
-    check (proc.getSampleName (0) == "real_44", "RealJUCE-AIFF: sample name preserved");
+    std::cerr << "[TRACE] connectedMask check complete; query sample name\n" << std::flush;
+    const auto sampleName = proc.getSampleName (0);
+    std::cerr << "[TRACE] sample name returned: " << sampleName << "\n" << std::flush;
+    check (sampleName == "real_44", "RealJUCE-AIFF: sample name preserved");
+    std::cerr << "[TRACE] AIFF test checks complete; leaving function scope\n" << std::flush;
 }
 
 void testProcessorMonitorOversizedBlockAndDisabledBuses (const fs::path& dir)
