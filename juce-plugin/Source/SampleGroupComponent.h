@@ -46,7 +46,7 @@ private:
     public:
         LayerPowerButton() : juce::Button ("LayerPower")
         {
-            setTooltip ("Enable or mute the selected layer");
+            setTooltip ("Mute the selected layer (M)");
             setMouseCursor (juce::MouseCursor::PointingHandCursor);
         }
 

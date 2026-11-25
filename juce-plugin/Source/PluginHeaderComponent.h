@@ -53,9 +53,13 @@ private:
     IconButton powerBtn { IconButton::Kind::Power, "Bypass / Power toggle" };
     IconButton menuBtn  { IconButton::Kind::Menu,  "Spectral Multiple menu" };
     IconButton favBtn   { IconButton::Kind::Heart, "Favourite current preset" };
+    juce::TextButton resetBtn { "RESET" };
     juce::TextButton prevPresetBtn { "<" };
     juce::ComboBox presetBox;
     juce::TextButton nextPresetBtn { ">" };
+    juce::TextButton bpmDownBtn { "-" };
+    juce::TextButton bpmUpBtn { "+" };
+    juce::Rectangle<int> bpmValueBounds;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginHeaderComponent)
 };

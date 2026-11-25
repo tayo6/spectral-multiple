@@ -2,11 +2,12 @@
 
 #include "PluginProcessor.h"
 #include "SpectralMultipleLookAndFeel.h"
-#include "FilterControlComponent.h"
 
 /**
-    Waveform-backed sample editor, FL-style tension envelope, and Snapback-inspired
-    parameter deck for one individual SNAPBACK (0..2) or TRANSIENT (3..5) layer.
+    Waveform-backed sample editor, FL-style tension envelope, and SNAPBACK
+    parameter tile deck for one individual SNAPBACK (0..2) or TRANSIENT (3..5)
+    layer. The 11 parameter controls are compact tiles rendered by
+    SpectralMultipleLookAndFeel (see the "isTile" slider property).
 */
 class LayerEnvelopeComponent final : public juce::Component, private juce::Timer
 {
@@ -112,7 +113,7 @@ private:
     juce::ComboBox attackCurveBox, decayCurveBox, releaseCurveBox;
     juce::Slider gainSlider, delaySlider, pitchSlider, panSlider, pogoSlider;
     juce::Slider fadeInSlider, fadeOutSlider, trimStartSlider, trimEndSlider;
-    FilterControlComponent filterBar;
+    juce::Slider hpSlider, lpSlider;
 
     using ButtonAtt = juce::AudioProcessorValueTreeState::ButtonAttachment;
     using ComboAtt  = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
@@ -121,6 +122,7 @@ private:
     std::unique_ptr<ComboAtt> attackCurveAttachment, decayCurveAttachment, releaseCurveAttachment;
     std::unique_ptr<SliderAtt> gainAttachment, delayAttachment, pitchAttachment, panAttachment, pogoAttachment;
     std::unique_ptr<SliderAtt> fadeInAttachment, fadeOutAttachment, trimStartAttachment, trimEndAttachment;
+    std::unique_ptr<SliderAtt> hpAttachment, lpAttachment;
 
     juce::Rectangle<int> flBarBounds;
     juce::Rectangle<int> controlStripBounds;

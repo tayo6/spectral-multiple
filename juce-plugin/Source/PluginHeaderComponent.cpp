@@ -86,6 +86,22 @@ PluginHeaderComponent::PluginHeaderComponent (WaveLensProcessor& processor)
     nextPresetBtn.onClick = [this] { stepPreset (1); };
     addAndMakeVisible (nextPresetBtn);
 
+    resetBtn.setTooltip ("Reset scope view and zoom (samples and parameters are untouched)");
+    resetBtn.onClick = [this]
+    {
+        if (onResetScope) onResetScope();
+        if (onResetZoom) onResetZoom();
+    };
+    addAndMakeVisible (resetBtn);
+
+    bpmDownBtn.setTooltip ("Decrease BPM by 1");
+    bpmDownBtn.onClick = [this] { setBpm (currentBpm - 1.0); };
+    addAndMakeVisible (bpmDownBtn);
+
+    bpmUpBtn.setTooltip ("Increase BPM by 1");
+    bpmUpBtn.onClick = [this] { setBpm (currentBpm + 1.0); };
+    addAndMakeVisible (bpmUpBtn);
+
     presetBox.addItemList ({
         "Init / Clean Layers",
         "Tight 35ms Snapback",
@@ -306,29 +322,27 @@ void PluginHeaderComponent::paint (juce::Graphics& g)
     g.setColour (ui::kBorder);
     g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
 
-    // Centered bold tracked brand title
-    juce::ColourGradient titleGrad (ui::kPurpleAccent, (float) getWidth() * 0.40f, 0.0f,
-                                    juce::Colour (0xffe0c8ff), (float) getWidth() * 0.60f, 0.0f, false);
-    g.setGradientFill (titleGrad);
-    g.setFont (juce::Font (20.0f, juce::Font::bold));
-    g.drawText ("S P E C T R A L   M U L T I P L E",
+    // Centered white SNAPBACK wordmark (flat, no gradient)
+    g.setColour (ui::kMainText);
+    g.setFont (juce::Font (19.0f, juce::Font::bold));
+    g.drawText ("S N A P B A C K",
                 getLocalBounds(), juce::Justification::centred);
 
-    // Subtle BPM pill readout to the right of menu button
-    if (getWidth() > 740)
+    // Compact BPM readout between the - / + buttons
+    if (! bpmValueBounds.isEmpty())
     {
-        const int bpmX = menuBtn.getRight() + 10;
-        g.setColour (ui::kSecondaryText);
-        g.setFont (juce::Font (10.5f, juce::Font::bold));
+        g.setColour (ui::kMainText);
+        g.setFont (juce::Font (11.0f, juce::Font::bold));
         g.drawText (juce::String ((int) currentBpm) + " BPM",
-                    bpmX, 0, 64, getHeight(), juce::Justification::centredLeft);
+                    bpmValueBounds, juce::Justification::centred);
     }
 
     if (! powerBtn.getToggleState())
     {
         g.setColour (ui::kWarningAmber.withAlpha (0.85f));
         g.setFont (juce::Font (10.0f, juce::Font::bold));
-        g.drawText ("BYPASSED", menuBtn.getRight() + 74, 0, 68, getHeight(), juce::Justification::centredLeft);
+        g.drawText ("BYPASSED", juce::jmax (resetBtn.getRight() + 8, menuBtn.getRight() + 8),
+                    0, 68, getHeight(), juce::Justification::centredLeft);
     }
 }
 
@@ -339,7 +353,10 @@ void PluginHeaderComponent::resized()
     powerBtn.setBounds (r.removeFromLeft (28));
     r.removeFromLeft (6);
     menuBtn.setBounds (r.removeFromLeft (28));
+    r.removeFromLeft (10);
+    resetBtn.setBounds (r.removeFromLeft (60).withSizeKeepingCentre (60, 26));
 
+    // Right cluster: preset navigation + favourite
     nextPresetBtn.setBounds (r.removeFromRight (26).withSizeKeepingCentre (26, 26));
     r.removeFromRight (4);
     const int comboW = juce::jlimit (140, 200, getWidth() / 6);
@@ -348,4 +365,21 @@ void PluginHeaderComponent::resized()
     prevPresetBtn.setBounds (r.removeFromRight (26).withSizeKeepingCentre (26, 26));
     r.removeFromRight (6);
     favBtn.setBounds (r.removeFromRight (26).withSizeKeepingCentre (26, 26));
+
+    // Compact BPM cluster to the left of the preset cluster
+    if (r.getWidth() > 240)
+    {
+        r.removeFromRight (16);
+        bpmUpBtn.setBounds (r.removeFromRight (24).withSizeKeepingCentre (24, 24));
+        r.removeFromRight (4);
+        bpmValueBounds = r.removeFromRight (62).withSizeKeepingCentre (62, 24);
+        r.removeFromRight (4);
+        bpmDownBtn.setBounds (r.removeFromRight (24).withSizeKeepingCentre (24, 24));
+    }
+    else
+    {
+        bpmDownBtn.setBounds ({});
+        bpmUpBtn.setBounds ({});
+        bpmValueBounds = {};
+    }
 }

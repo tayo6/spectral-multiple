@@ -7,7 +7,9 @@
     Single horizontal Snapback-inspired dual-handle HP/LP filter bar.
     Left handle adjusts high-pass cutoff; right handle adjusts low-pass cutoff.
 */
-class FilterControlComponent final : public juce::Component, private juce::Timer
+class FilterControlComponent final : public juce::Component,
+                                     public juce::SettableTooltipClient,
+                                     private juce::Timer
 {
 public:
     FilterControlComponent (WaveLensProcessor& processor,

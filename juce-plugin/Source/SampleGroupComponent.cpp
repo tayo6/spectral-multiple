@@ -17,15 +17,9 @@ void SampleGroupComponent::LayerPowerButton::paintButton (juce::Graphics& g, boo
     g.setColour (layerOn ? accent.withAlpha (0.85f) : ui::kBorder);
     g.drawRoundedRectangle (b, 3.5f, 1.0f);
 
-    const float cx = b.getCentreX();
-    const float cy = b.getCentreY();
-    const float r = 4.6f;
-
-    g.setColour (layerOn ? accent.brighter (0.22f) : ui::kDisabledText);
-    juce::Path arc;
-    arc.addCentredArc (cx, cy + 0.5f, r, r, 0.0f, 0.55f, juce::MathConstants<float>::twoPi - 0.55f, true);
-    g.strokePath (arc, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    g.drawLine (cx, cy - 5.5f, cx, cy - 0.8f, 1.5f);
+    g.setColour (layerOn ? accent.brighter (0.25f) : ui::kDisabledText);
+    g.setFont (juce::Font (12.5f, juce::Font::bold));
+    g.drawText ("M", b.withSizeKeepingCentre (b.getWidth(), b.getHeight()), juce::Justification::centred);
 }
 
 //==============================================================================
@@ -240,9 +234,9 @@ void SampleGroupComponent::paint (juce::Graphics& g)
     g.setColour (activeAccent);
     g.fillRoundedRectangle (hdr.getX() + 6.0f, hdr.getCentreY() - 7.0f, 3.0f, 14.0f, 1.5f);
 
-    // Section heading immediately preceding the three selector circles
+    // Section heading (bank accent) immediately preceding the three selector circles
     const juce::String title = (group == 0) ? "SNAPBACK" : "TRANSIENT";
-    g.setColour (ui::kMainText);
+    g.setColour (snap::bankAccentHi (group * 3));
     g.setFont (juce::Font (13.5f, juce::Font::bold));
     g.drawText (title,
                 headerBounds.getX() + 14, headerBounds.getY(),

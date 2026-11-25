@@ -21,7 +21,16 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     addAndMakeVisible (snapbackGroup);
     addAndMakeVisible (transientGroup);
 
-    header.onResetScope = [this] { masterWaveform.repaint(); };
+    header.onResetScope = [this]
+    {
+        masterWaveform.setMasterOverlayActive (false);
+        masterWaveform.setOutputMonitorActive (false);
+        masterWaveform.setGridMode (true);
+        controlBar.setOutputActive (false);
+        controlBar.setGridMode (true);
+        controlBar.setDetailActive (false);
+        masterWaveform.repaint();
+    };
     header.onResetZoom  = [this]
     {
         masterWaveform.resetZoom();
@@ -47,6 +56,7 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     masterWaveform.onZoomChanged = [this] (float z)
     {
         controlBar.setDetailActive (z > 1.05f);
+        controlBar.setZoomLevel (z);
     };
 
     controlBar.onTriggerPanelToggled = [this] (bool open)
@@ -63,7 +73,15 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
         else
             masterWaveform.resetZoom();
     };
-    controlBar.onZoomBarsSelected = [this] (double barsCount)
+    controlBar.onZoomStep = [this] (float factor)
+    {
+        masterWaveform.zoomBy (factor);
+    };
+    controlBar.onZoomReset = [this]
+    {
+        masterWaveform.resetZoom();
+    };
+    triggerPanel.onZoomBarsSelected = [this] (double barsCount)
     {
         masterWaveform.setZoomBars (barsCount);
     };
@@ -90,6 +108,11 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
 
     masterWaveform.setSelectedPair (snapbackGroup.getSelectedLayer(),
                                     transientGroup.getSelectedLayer());
+
+    // Restore the timeline span from the persisted bars parameter (both the
+    // drawer combo and the scope default to 1 bar, so sync once at startup).
+    masterWaveform.setZoomBars (barsFromIndex (
+        juce::roundToInt (proc.apvts.getRawParameterValue (ids::bars)->load())));
 
     setResizable (true, true);
     setResizeLimits (1020, 620, 1920, 1200);

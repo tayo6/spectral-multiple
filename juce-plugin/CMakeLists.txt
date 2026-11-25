@@ -51,6 +51,7 @@ target_sources(WaveLens PRIVATE
     Source/LayerEnvelopeComponent.h
     Source/SpectralMultipleLookAndFeel.cpp
     Source/SpectralMultipleLookAndFeel.h
+    Source/SnapbackTheme.h
     Source/PluginHeaderComponent.cpp
     Source/PluginHeaderComponent.h
     Source/MasterWaveformComponent.cpp
@@ -136,6 +137,7 @@ if(BUILD_PROCESSOR_TESTS)
         Source/LayerEnvelopeComponent.h
         Source/SpectralMultipleLookAndFeel.cpp
         Source/SpectralMultipleLookAndFeel.h
+        Source/SnapbackTheme.h
         Source/PluginHeaderComponent.cpp
         Source/PluginHeaderComponent.h
         Source/MasterWaveformComponent.cpp
@@ -177,5 +179,61 @@ if(BUILD_PROCESSOR_TESTS)
             juce::juce_recommended_warning_flags)
 
     add_test(NAME WaveLensProcessorTests COMMAND WaveLensProcessorTests)
+endif()
+
+option(BUILD_UI_SNAPSHOT "Build headless UI screenshot tool (renders the editor to PNG)" OFF)
+
+if(BUILD_UI_SNAPSHOT)
+    juce_add_console_app(UiSnapshot
+        PRODUCT_NAME "UiSnapshot")
+
+    target_sources(UiSnapshot PRIVATE
+        Tools/UiSnapshot.cpp
+        Source/PluginProcessor.cpp
+        Source/PluginProcessor.h
+        Source/PluginEditor.cpp
+        Source/PluginEditor.h
+        Source/LayeredSampleEngine.cpp
+        Source/LayeredSampleEngine.h
+        Source/LayerEnvelopeComponent.cpp
+        Source/LayerEnvelopeComponent.h
+        Source/SpectralMultipleLookAndFeel.cpp
+        Source/SpectralMultipleLookAndFeel.h
+        Source/SnapbackTheme.h
+        Source/PluginHeaderComponent.cpp
+        Source/PluginHeaderComponent.h
+        Source/MasterWaveformComponent.cpp
+        Source/MasterWaveformComponent.h
+        Source/WaveformControlBar.cpp
+        Source/WaveformControlBar.h
+        Source/FilterControlComponent.cpp
+        Source/FilterControlComponent.h
+        Source/SampleBrowserComponent.cpp
+        Source/SampleBrowserComponent.h
+        Source/SampleGroupComponent.cpp
+        Source/SampleGroupComponent.h
+        Source/SampleSelectorDot.h
+        Source/MasterButton.h
+        Source/StateMigration.h)
+
+    target_include_directories(UiSnapshot PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source)
+
+    target_compile_features(UiSnapshot PRIVATE cxx_std_17)
+
+    target_compile_definitions(UiSnapshot PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_USE_MP3AUDIOFORMAT=1
+        JUCE_VST3_CAN_REPLACE_VST2=0
+        JUCE_DISPLAY_SPLASH_SCREEN=0
+        JUCE_REPORT_APP_USAGE=0
+        JUCE_STRICT_REFCOUNTEDPOINTER=1)
+
+    target_link_libraries(UiSnapshot
+        PRIVATE
+            juce::juce_audio_utils
+            juce::juce_dsp
+            juce::juce_recommended_warning_flags)
 endif()
 

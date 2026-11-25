@@ -15,6 +15,8 @@ public:
     explicit TriggerPanelComponent (WaveLensProcessor& processor);
     ~TriggerPanelComponent() override;
 
+    std::function<void (double barsCount)> onZoomBarsSelected;
+
     void paint (juce::Graphics&) override;
     void resized() override;
 
@@ -40,6 +42,9 @@ private:
     juce::ComboBox viewBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> viewAtt;
 
+    juce::ComboBox spanBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> spanAtt;
+
     juce::TextButton listenBtn { "MONITOR IN" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> listenAtt;
 
@@ -53,8 +58,9 @@ private:
 /**
     36 px control bar directly beneath the main oscilloscope:
     Left:   Limiter toggle + live peak ceiling dB + PRE lead slider
-    Centre: TRIGGER settings drawer tab + quick-fire trigger button
-    Right:  GRID/SEC toggle, DETAIL magnifying-glass toggle, ZOOM dropdown, OUTPUT toggle
+    Centre: Trapezoid TRIGGER settings drawer tab + quick-fire trigger button
+    Right:  GRID / SECONDS ruler toggle, DETAIL magnifier toggle,
+            zoom out / zoom level / zoom in, OUTPUT monitor toggle
 */
 class WaveformControlBar final : public juce::Component, private juce::Timer
 {
@@ -64,13 +70,15 @@ public:
 
     std::function<void (bool triggerPanelOpen)> onTriggerPanelToggled;
     std::function<void (bool detailActive)> onDetailToggled;
-    std::function<void (double barsCount)> onZoomBarsSelected;
+    std::function<void (float zoomFactor)> onZoomStep;
+    std::function<void()> onZoomReset;
     std::function<void (bool gridMode)> onGridModeChanged;
     std::function<void (bool outputActive)> onOutputToggled;
 
     void setDetailActive (bool active) noexcept;
     void setOutputActive (bool active) noexcept;
     void setGridMode (bool isGrid) noexcept;
+    void setZoomLevel (float zoomFactor) noexcept;
     bool isTriggerPanelOpen() const noexcept { return triggerTabBtn.getToggleState(); }
 
     void paint (juce::Graphics&) override;
@@ -101,9 +109,12 @@ private:
     juce::TextButton triggerTabBtn { "TRIGGER" };
     juce::TextButton fireTriggerBtn { ">" };
 
-    juce::TextButton gridSecBtn { "GRID" };
+    juce::TextButton gridBtn { "GRID" };
+    juce::TextButton secondsBtn { "SECONDS" };
     MagnifierButton detailBtn;
-    juce::ComboBox zoomBox;
+    juce::TextButton zoomOutBtn { "-" };
+    juce::TextButton zoomLevelBtn { "1.0x" };
+    juce::TextButton zoomInBtn { "+" };
     juce::TextButton outputBtn { "OUTPUT" };
 
     bool isGridMode = true;
