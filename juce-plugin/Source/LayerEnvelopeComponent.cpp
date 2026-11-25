@@ -180,7 +180,7 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     };
     lpSlider.textFromValueFunction = hpSlider.textFromValueFunction;
 
-    for (auto* s : { &gainSlider, &delaySlider, &pitchSlider, &panSlider, &pogoSlider,
+    for (auto* s : { &gainSlider, &delaySlider, &pitchSlider, &panSlider, &widthSlider, &pogoSlider,
                      &fadeInSlider, &fadeOutSlider, &trimStartSlider, &trimEndSlider,
                      &hpSlider, &lpSlider })
         s->updateText();
