@@ -11,6 +11,7 @@ SampleGroupComponent::SampleGroupComponent (WaveLensProcessor& processor, int gr
     for (int i = 0; i < 3; ++i)
     {
         const int layerIdx = baseLayer + i;
+        const auto col = ui::layerColour (layerIdx);
         editors[(size_t) i] = std::make_unique<LayerEnvelopeComponent> (proc, layerIdx, col);
         addChildComponent (*editors[(size_t) i]);
     }
