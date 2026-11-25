@@ -2,6 +2,115 @@
 
 namespace ui = wavelens::ui;
 
+LayerPadStripComponent::PadCell::PadCell (WaveLensProcessor& processor,
+                                          int layerIndex,
+                                          std::function<void()> selectCallback)
+    : layer (juce::jlimit (0, 5, layerIndex)),
+      accent (ui::layerColour (layer))
+{
+    selectButton.setButtonText ("PAD " + juce::String (layer + 1));
+    const auto sampleName = processor.getSampleName (layer);
+    selectButton.setTooltip ("Select " + ui::layerFullName (layer)
+                             + (sampleName.isNotEmpty() ? ": " + sampleName : ": Empty"));
+    selectButton.setClickingTogglesState (true);
+    selectButton.onClick = [callback = std::move (selectCallback)] { if (callback) callback(); };
+    selectButton.setColour (juce::TextButton::buttonColourId, ui::kControlBg);
+    selectButton.setColour (juce::TextButton::textColourOffId, ui::kMainText);
+    selectButton.setColour (juce::TextButton::textColourOnId, accent.brighter (0.25f));
+    addAndMakeVisible (selectButton);
+
+    for (auto* button : { &muteButton, &soloButton })
+    {
+        button->setClickingTogglesState (true);
+        button->setColour (juce::TextButton::buttonColourId, ui::kMainBg);
+        button->setColour (juce::TextButton::textColourOffId, ui::kSecondaryText);
+        button->setColour (juce::TextButton::textColourOnId, accent.brighter (0.25f));
+        button->getProperties().set ("accentColour", (juce::int64) accent.getARGB());
+        addAndMakeVisible (*button);
+    }
+
+    muteButton.setTooltip ("Mute " + ui::layerFullName (layer));
+    soloButton.setTooltip ("Solo " + ui::layerFullName (layer));
+    muteAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+        processor.apvts, ids::layerMute (layer), muteButton);
+    soloAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+        processor.apvts, ids::layerSolo (layer), soloButton);
+}
+
+void LayerPadStripComponent::PadCell::setSelected (bool selected)
+{
+    isSelected = selected;
+    selectButton.setToggleState (selected, juce::dontSendNotification);
+    repaint();
+}
+
+void LayerPadStripComponent::PadCell::paint (juce::Graphics& g)
+{
+    const auto b = getLocalBounds().toFloat().reduced (0.5f);
+    g.setColour (isSelected ? accent.withAlpha (0.16f) : ui::kPanelBg);
+    g.fillRoundedRectangle (b, 4.0f);
+    g.setColour (isSelected ? accent.withAlpha (0.95f) : ui::kBorder);
+    g.drawRoundedRectangle (b, 4.0f, isSelected ? 1.4f : 1.0f);
+    g.setColour (accent.withAlpha (isSelected ? 0.95f : 0.55f));
+    g.fillRoundedRectangle (b.getX() + 4.0f, b.getY() + 5.0f, 3.0f, b.getHeight() - 10.0f, 1.5f);
+}
+
+void LayerPadStripComponent::PadCell::resized()
+{
+    auto r = getLocalBounds().reduced (8, 4);
+    const int buttonW = juce::jlimit (22, 30, juce::roundToInt (r.getHeight() * 0.78f));
+    soloButton.setBounds (r.removeFromRight (buttonW));
+    r.removeFromRight (3);
+    muteButton.setBounds (r.removeFromRight (buttonW));
+    r.removeFromRight (5);
+    selectButton.setBounds (r);
+}
+
+LayerPadStripComponent::LayerPadStripComponent (WaveLensProcessor& processor)
+{
+    for (int i = 0; i < 6; ++i)
+    {
+        pads[(size_t) i] = std::make_unique<PadCell> (processor, i, [this, i]
+        {
+            if (onLayerSelected)
+                onLayerSelected (i);
+        });
+        addAndMakeVisible (*pads[(size_t) i]);
+    }
+    setSelectedLayers (0, 3);
+}
+
+void LayerPadStripComponent::setSelectedLayers (int snapbackLayer, int transientLayer)
+{
+    const int snap = juce::jlimit (0, 2, snapbackLayer);
+    const int trans = juce::jlimit (3, 5, transientLayer);
+    for (int i = 0; i < 6; ++i)
+        pads[(size_t) i]->setSelected (i == snap || i == trans);
+}
+
+void LayerPadStripComponent::paint (juce::Graphics& g)
+{
+    const auto b = getLocalBounds().toFloat();
+    g.setColour (ui::kHeaderBg);
+    g.fillRect (b);
+    g.setColour (ui::kBorder);
+    g.drawHorizontalLine (0, 0.0f, b.getRight());
+    g.drawVerticalLine (getWidth() / 2, 5.0f, b.getBottom() - 5.0f);
+}
+
+void LayerPadStripComponent::resized()
+{
+    auto r = getLocalBounds().reduced (8, 5);
+    constexpr int gap = 7;
+    const int cellW = (r.getWidth() - gap * 5) / 6;
+    for (int i = 0; i < 6; ++i)
+    {
+        pads[(size_t) i]->setBounds (r.removeFromLeft (cellW));
+        if (i != 5)
+            r.removeFromLeft (gap);
+    }
+}
+
 WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     : AudioProcessorEditor (&p),
       proc (p),
@@ -10,7 +119,8 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
       controlBar (p),
       triggerPanel (p),
       snapbackGroup (p, 0),
-      transientGroup (p, 1)
+      transientGroup (p, 1),
+      padStrip (p)
 {
     setLookAndFeel (&lnf);
 
@@ -20,6 +130,15 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     addChildComponent (triggerPanel);
     addAndMakeVisible (snapbackGroup);
     addAndMakeVisible (transientGroup);
+    addAndMakeVisible (padStrip);
+
+    padStrip.onLayerSelected = [this] (int layer)
+    {
+        if (layer < 3)
+            snapbackGroup.selectSlot (layer);
+        else
+            transientGroup.selectSlot (layer - 3);
+    };
 
     header.onResetScope = [this]
     {
@@ -98,6 +217,8 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     {
         masterWaveform.setSelectedPair (snapbackGroup.getSelectedLayer(),
                                         transientGroup.getSelectedLayer());
+        padStrip.setSelectedLayers (snapbackGroup.getSelectedLayer(),
+                                    transientGroup.getSelectedLayer());
     };
     snapbackGroup.onSelectionChanged  = syncSelectedPair;
     transientGroup.onSelectionChanged = syncSelectedPair;
@@ -108,6 +229,8 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
 
     masterWaveform.setSelectedPair (snapbackGroup.getSelectedLayer(),
                                     transientGroup.getSelectedLayer());
+    padStrip.setSelectedLayers (snapbackGroup.getSelectedLayer(),
+                                transientGroup.getSelectedLayer());
 
     // Restore the timeline span from the persisted bars parameter (both the
     // drawer combo and the scope default to 1 bar, so sync once at startup).
@@ -144,10 +267,14 @@ void WaveLensEditor::resized()
     auto area = getLocalBounds();
     header.setBounds (area.removeFromTop (48));
 
-    auto body = area.reduced (12, 10);
+    auto body = area.reduced (12, 8);
+    padStrip.setBounds (body.removeFromBottom (42));
+    body.removeFromBottom (7);
 
-    // Responsive oscilloscope height (~250 px at default 1280x760 window)
-    const int oscH = juce::jlimit (178, 280, juce::roundToInt ((float) body.getHeight() * 0.36f));
+    // Keep the waveform dominant while reserving enough vertical room for the
+    // sample editors and the six-pad selector at the bottom.
+    const int oscH = juce::jlimit (178, 286,
+        juce::roundToInt ((float) body.getHeight() * 0.37f));
     masterWaveform.setBounds (body.removeFromTop (oscH));
     body.removeFromTop (6);
 
