@@ -40,6 +40,22 @@ public:
     void filesDropped (const juce::StringArray& files, int x, int y) override;
 
 private:
+    class BankPowerButton final : public juce::Button
+    {
+    public:
+        BankPowerButton() : juce::Button ("BankPower")
+        {
+            setTooltip ("Enable or mute all three samples in this bank");
+            setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        }
+        void setAccentColour (juce::Colour colour) noexcept { accent = colour; repaint(); }
+        void setBankEnabled (bool enabled) noexcept { if (bankEnabled != enabled) { bankEnabled = enabled; repaint(); } }
+        void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+    private:
+        juce::Colour accent { wavelens::ui::kBlueAccent };
+        bool bankEnabled = true;
+    };
+
     void promptLoadActiveLayer();
     void loadFileIntoActiveLayer (const juce::File& file);
 
@@ -49,6 +65,7 @@ private:
     int selectedSlot = 0;
     bool dragOver = false;
 
+    BankPowerButton bankPowerBtn;
     juce::TextButton soloBtn { "S" };
     juce::TextButton auditionBtn { ">" };
     SampleBrowserComponent sampleBrowser;
