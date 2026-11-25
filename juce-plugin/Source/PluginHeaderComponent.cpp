@@ -322,10 +322,12 @@ void PluginHeaderComponent::paint (juce::Graphics& g)
     g.setColour (ui::kBorder);
     g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
 
-    // Centered white SNAPBACK wordmark (flat, no gradient)
-    g.setColour (ui::kMainText);
+    // Centered WAVESTACK wordmark, matching the supplied coloured SVG identity.
+    g.setGradientFill (juce::ColourGradient (
+        juce::Colour::fromRGB (0xa8, 0x88, 0xeb), 0.0f, 0.0f,
+        juce::Colour::fromRGB (0x8b, 0x9c, 0xf6), (float) getWidth(), 0.0f, false));
     g.setFont (juce::Font (19.0f, juce::Font::bold));
-    g.drawText ("S N A P B A C K",
+    g.drawText ("W A V E S T A C K",
                 getLocalBounds(), juce::Justification::centred);
 
     // Compact BPM readout between the - / + buttons
