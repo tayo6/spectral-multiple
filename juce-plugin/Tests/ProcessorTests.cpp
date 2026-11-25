@@ -260,6 +260,7 @@ void testRealJuceAiffLoading (const fs::path& dir)
     }
 
     std::cerr << "[TRACE] AIFF reader loop complete; construct processor\n" << std::flush;
+    {
     WaveLensProcessor proc;
     std::cerr << "[TRACE] processor constructed; prepare\n" << std::flush;
     proc.prepareToPlay (44100.0, 256);
@@ -274,7 +275,9 @@ void testRealJuceAiffLoading (const fs::path& dir)
     const auto sampleName = proc.getSampleName (0);
     std::cerr << "[TRACE] sample name returned: " << sampleName << "\n" << std::flush;
     check (sampleName == "real_44", "RealJUCE-AIFF: sample name preserved");
-    std::cerr << "[TRACE] AIFF test checks complete; leaving function scope\n" << std::flush;
+    std::cerr << "[TRACE] AIFF test checks complete; leaving processor scope\n" << std::flush;
+    }
+    std::cerr << "[TRACE] processor destruction completed; AIFF test returned\n" << std::flush;
 }
 
 void testProcessorMonitorOversizedBlockAndDisabledBuses (const fs::path& dir)
@@ -616,10 +619,15 @@ void testProcessorEditorLifecycle()
 
 void runAllProcessorTests (const fs::path& dir)
 {
+    std::cerr << "[TRACE] runAll: before AIFF test\n" << std::flush;
     testRealJuceAiffLoading (dir);
+    std::cerr << "[TRACE] runAll: after AIFF test; before monitor test\n" << std::flush;
     testProcessorMonitorOversizedBlockAndDisabledBuses (dir);
+    std::cerr << "[TRACE] runAll: after monitor test; before state test\n" << std::flush;
     testRealProcessorStateSerializationAndMigration (dir);
+    std::cerr << "[TRACE] runAll: after state test; before editor lifecycle test\n" << std::flush;
     testProcessorEditorLifecycle();
+    std::cerr << "[TRACE] runAll: after editor lifecycle test\n" << std::flush;
 }
 } // namespace
 
