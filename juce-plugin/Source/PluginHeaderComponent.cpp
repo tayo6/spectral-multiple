@@ -162,6 +162,7 @@ void PluginHeaderComponent::applyPreset (int presetIndex)
             {
                 setParam (ids::layerGain (l), 1.0f);
                 setParam (ids::layerPan (l), 0.0f);
+                setParam (ids::layerWidth (l), 1.0f);
                 setParam (ids::layerPitch (l), 0.0f);
                 setParam (ids::layerDelay (l), 0.0f);
                 setParam (ids::layerHighPass (l), 20.0f);
