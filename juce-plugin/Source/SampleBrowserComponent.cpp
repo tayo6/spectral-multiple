@@ -137,11 +137,12 @@ void SampleBrowserComponent::paint (juce::Graphics& g)
 void SampleBrowserComponent::resized()
 {
     // The sample title leads the row; both slot arrows sit at the right edge.
-    auto r = getLocalBounds().reduced (3, 0);
-    const int arrowW = juce::jlimit (16, 22, juce::roundToInt ((float) getHeight() * 0.88f));
+    const float uiScale = (float) getHeight() / 20.0f;
+    auto r = getLocalBounds().reduced (juce::roundToInt (3.0f * uiScale), 0);
+    const int arrowW = juce::jmax (1, juce::roundToInt (22.0f * uiScale));
     nextBtn.setBounds (r.removeFromRight (arrowW));
-    r.removeFromRight (2);
+    r.removeFromRight (juce::roundToInt (2.0f * uiScale));
     prevBtn.setBounds (r.removeFromRight (arrowW));
-    r.removeFromRight (3);
+    r.removeFromRight (juce::roundToInt (3.0f * uiScale));
     selectorBtn.setBounds (r);
 }

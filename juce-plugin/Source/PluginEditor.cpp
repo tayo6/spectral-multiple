@@ -47,22 +47,26 @@ void LayerPadStripComponent::PadCell::setSelected (bool selected)
 void LayerPadStripComponent::PadCell::paint (juce::Graphics& g)
 {
     const auto b = getLocalBounds().toFloat().reduced (0.5f);
+    const float uiScale = (float) getHeight() / 26.0f;
     g.setColour (isSelected ? accent.withAlpha (0.16f) : ui::kPanelBg);
-    g.fillRoundedRectangle (b, 4.0f);
+    g.fillRoundedRectangle (b, 4.0f * uiScale);
     g.setColour (isSelected ? accent.withAlpha (0.95f) : ui::kBorder);
-    g.drawRoundedRectangle (b, 4.0f, isSelected ? 1.4f : 1.0f);
+    g.drawRoundedRectangle (b, 4.0f * uiScale, (isSelected ? 1.4f : 1.0f) * uiScale);
     g.setColour (accent.withAlpha (isSelected ? 0.95f : 0.55f));
-    g.fillRoundedRectangle (b.getX() + 4.0f, b.getY() + 5.0f, 3.0f, b.getHeight() - 10.0f, 1.5f);
+    g.fillRoundedRectangle (b.getX() + 4.0f * uiScale, b.getY() + 5.0f * uiScale,
+                            3.0f * uiScale, b.getHeight() - 10.0f * uiScale, 1.5f * uiScale);
 }
 
 void LayerPadStripComponent::PadCell::resized()
 {
-    auto r = getLocalBounds().reduced (8, 4);
-    const int buttonW = juce::jlimit (22, 30, juce::roundToInt (r.getHeight() * 0.78f));
+    const float uiScale = (float) getHeight() / 26.0f;
+    auto r = getLocalBounds().reduced (juce::roundToInt (5.0f * uiScale),
+                                       juce::roundToInt (5.0f * uiScale));
+    const int buttonW = juce::jmax (1, juce::roundToInt (16.0f * uiScale));
     soloButton.setBounds (r.removeFromRight (buttonW));
-    r.removeFromRight (3);
+    r.removeFromRight (juce::roundToInt (4.0f * uiScale));
     muteButton.setBounds (r.removeFromRight (buttonW));
-    r.removeFromRight (5);
+    r.removeFromRight (juce::roundToInt (5.0f * uiScale));
     selectButton.setBounds (r);
 }
 
@@ -94,8 +98,9 @@ void LayerPadStripComponent::paint (juce::Graphics& g)
     g.setColour (ui::kHeaderBg);
     g.fillRect (b);
     g.setColour (ui::kBorder);
+    const float uiScale = (float) getHeight() / 42.0f;
     g.drawHorizontalLine (0, 0.0f, b.getRight());
-    g.drawVerticalLine (getWidth() / 2, 5.0f, b.getBottom() - 5.0f);
+    g.drawVerticalLine (getWidth() / 2, 5.0f * uiScale, b.getBottom() - 5.0f * uiScale);
 }
 
 void LayerPadStripComponent::resized()
@@ -216,6 +221,10 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
         transientGroup.refreshState();
         masterWaveform.repaint();
     };
+    header.onEditorSizeSelected = [this] (int preset)
+    {
+        applyEditorSizePreset (preset);
+    };
 
     masterWaveform.onMasterToggled = [this] (bool masterActive)
     {
@@ -248,19 +257,21 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
 
     resizeHandle.onDragStarted = [this]
     {
-        dragStartWaveformHeight = waveformHeight;
+        dragStartWaveformHeightSvg = waveformHeightSvg;
     };
     resizeHandle.onDragDelta = [this] (int deltaY)
     {
-        if (dragStartWaveformHeight > 0)
+        const float scale = juce::jmin ((float) getWidth() / 800.0f,
+                                        (float) getHeight() / 600.0f);
+        if (scale > 0.001f)
         {
-            waveformHeight = dragStartWaveformHeight + deltaY;
+            waveformHeightSvg = dragStartWaveformHeightSvg + (float) deltaY / scale;
             resized();
         }
     };
     resizeHandle.onDoubleClick = [this]
     {
-        waveformHeight = -1;
+        waveformHeightSvg = 298.0f; // Restore the SVG's 298 px visualizer region.
         resized();
     };
 
@@ -317,8 +328,7 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
         juce::roundToInt (proc.apvts.getRawParameterValue (ids::bars)->load())));
 
     setResizable (true, true);
-    setResizeLimits (1020, 620, 1920, 1200);
-    setSize (1280, 760);
+    applyEditorSizePreset (2); // Normal working view: 1024 x 768
 
     startTimerHz (10);
 }
@@ -343,34 +353,102 @@ void WaveLensEditor::paint (juce::Graphics& g)
     // SVG panel divider between the SNAPBACK and TRANSIENT banks.
     if (! editorsCollapsed)
     {
-        const float sx = (float) getWidth() / 800.0f;
-        const float sy = (float) getHeight() / 600.0f;
+        const float scale = juce::jmin ((float) getWidth() / 800.0f,
+                                        (float) getHeight() / 600.0f);
+        const int canvasW = juce::roundToInt (800.0f * scale);
+        const int canvasH = juce::roundToInt (600.0f * scale);
+        const int offsetX = (getWidth() - canvasW) / 2;
+        const int offsetY = (getHeight() - canvasH) / 2;
         g.setColour (ui::kBorder);
-        g.drawVerticalLine (juce::roundToInt (400.0f * sx),
-                            372.0f * sy, 558.0f * sy);
+        g.drawVerticalLine (offsetX + juce::roundToInt (400.0f * scale),
+                            (float) (offsetY + juce::roundToInt (372.0f * scale)),
+                            (float) (offsetY + juce::roundToInt (558.0f * scale)));
     }
+}
+
+juce::Rectangle<int> WaveLensEditor::getLargeEditorSize() const
+{
+    auto& displays = juce::Desktop::getInstance().getDisplays();
+    auto* display = displays.getDisplayForRect (getScreenBounds());
+    if (display == nullptr)
+        display = displays.getPrimaryDisplay();
+
+    juce::Rectangle<int> available (0, 0, 1280, 800);
+    if (display != nullptr)
+        available = display->userArea;
+
+    // Display::userArea already excludes operating-system desktop bars;
+    // use the full available work area for the Large preset.
+    int width = available.getWidth();
+    int height = juce::roundToInt ((float) width * 0.75f);
+    if (height > available.getHeight())
+    {
+        height = available.getHeight();
+        width = juce::roundToInt ((float) height * (4.0f / 3.0f));
+    }
+
+    // Keep the exact 4:3 layout ratio and the editor's supported minimum size.
+    width = juce::jmax (800, (width / 4) * 4);
+    height = juce::jmax (600, (width / 4) * 3);
+    return { width, height };
+}
+
+void WaveLensEditor::updateResizeConstraints()
+{
+    const auto largeSize = getLargeEditorSize();
+    const int maxWidth = juce::jlimit (1024, 4096, largeSize.getWidth());
+    const int maxHeight = juce::jlimit (768, 3072, largeSize.getHeight());
+    setResizeLimits (800, 600, maxWidth, maxHeight);
+    if (auto* resizeLimits = getConstrainer())
+        resizeLimits->setFixedAspectRatio (4.0 / 3.0);
+}
+
+void WaveLensEditor::applyEditorSizePreset (int preset)
+{
+    currentEditorSizePreset = juce::jlimit (0, 2, preset);
+    header.setEditorSizePreset (currentEditorSizePreset);
+    updateResizeConstraints();
+
+    juce::Rectangle<int> target;
+    switch (currentEditorSizePreset)
+    {
+        case 0: target = { 800, 600 }; break; // SVG reference canvas
+        case 1: target = getLargeEditorSize(); break;
+        case 2:
+        default: target = { 1024, 768 }; break;
+    }
+
+    setSize (target.getWidth(), target.getHeight());
 }
 
 void WaveLensEditor::resized()
 {
-    // The outer editor follows the supplied 800 x 600 SVG coordinate system.
-    // All primary regions use independent X/Y scaling so the editor remains
-    // responsive to the supported DAW window sizes.
-    const float sx = (float) getWidth() / 800.0f;
-    const float sy = (float) getHeight() / 600.0f;
-    auto sxRound = [sx] (float value) { return juce::roundToInt (value * sx); };
-    auto syRound = [sy] (float value) { return juce::roundToInt (value * sy); };
+    // Use the SVG as a fixed 800 x 600 coordinate plane. The same scale is
+    // applied in both directions; if a host supplies a non-4:3 rectangle,
+    // centre the intact design instead of stretching text and controls.
+    const float scale = juce::jmin ((float) getWidth() / 800.0f,
+                                    (float) getHeight() / 600.0f);
+    if (scale <= 0.001f)
+        return;
 
-    const int headerH = syRound (44.0f);
-    const int footerTop = syRound (558.0f);
-    const int footerH = getHeight() - footerTop;
-    const int visualizerY = headerH;
-    const int toolbarH = syRound (42.0f);       // 30 px strip + 12 px trapezoid rise
-    const int toolbarOverlap = syRound (12.0f);
-    const int defaultWaveformH = syRound (298.0f);
+    const int canvasW = juce::roundToInt (800.0f * scale);
+    const int canvasH = juce::roundToInt (600.0f * scale);
+    const int offsetX = (getWidth() - canvasW) / 2;
+    const int offsetY = (getHeight() - canvasH) / 2;
+    auto px = [scale, offsetX] (float value) { return offsetX + juce::roundToInt (value * scale); };
+    auto py = [scale, offsetY] (float value) { return offsetY + juce::roundToInt (value * scale); };
+    auto ps = [scale] (float value) { return juce::roundToInt (value * scale); };
 
-    header.setBounds (0, 0, getWidth(), headerH);
-    padStrip.setBounds (0, footerTop, getWidth(), footerH);
+    const int headerH = ps (44.0f);
+    const int footerTop = py (558.0f);
+    const int footerBottom = py (600.0f);
+    const int footerH = footerBottom - footerTop;
+    const int visualizerY = py (44.0f);
+    const int toolbarH = ps (42.0f);       // 30 px strip + 12 px trapezoid rise
+    const int toolbarOverlap = ps (12.0f);
+
+    header.setBounds (offsetX, offsetY, canvasW, headerH);
+    padStrip.setBounds (offsetX, footerTop, canvasW, footerH);
 
     triggerPanel.setVisible (triggerPanelOpen);
     snapbackGroup.setVisible (! editorsCollapsed);
@@ -381,49 +459,45 @@ void WaveLensEditor::resized()
     {
         constexpr float minimumBankHeightSvg = 150.0f;
         constexpr float minimumScopeHeightSvg = 150.0f;
-        const int minimumScopeH = syRound (minimumScopeHeightSvg);
-        const int minimumBankH = syRound (minimumBankHeightSvg);
+        const int minimumScopeH = ps (minimumScopeHeightSvg);
+        const int minimumBankH = ps (minimumBankHeightSvg);
         const int maximumWaveformH = juce::jmax (minimumScopeH,
             footerTop - visualizerY - toolbarH + toolbarOverlap - minimumBankH);
-
-        if (waveformHeight < 0)
-            waveformHeight = defaultWaveformH;
-        waveformHeight = juce::jlimit (minimumScopeH, maximumWaveformH, waveformHeight);
+        const float maximumWaveformSvg = (float) maximumWaveformH / scale;
+        waveformHeightSvg = juce::jlimit (minimumScopeHeightSvg, maximumWaveformSvg, waveformHeightSvg);
     }
-
 
     const int activeWaveformHeight = editorsCollapsed
         ? footerTop - visualizerY - toolbarH + toolbarOverlap
-        : waveformHeight;
+        : ps (waveformHeightSvg);
     const int waveformBottom = visualizerY + activeWaveformHeight;
     const int toolbarY = waveformBottom - toolbarOverlap;
     const int bankTop = toolbarY + toolbarH;
 
-    masterWaveform.setBounds (0, visualizerY, getWidth(), activeWaveformHeight);
-    controlBar.setBounds (0, toolbarY, getWidth(), toolbarH);
+    masterWaveform.setBounds (offsetX, visualizerY, canvasW, activeWaveformHeight);
+    controlBar.setBounds (offsetX, toolbarY, canvasW, toolbarH);
 
-    // Trigger settings are a temporary overlay, not a reflow of the SVG canvas.
+    // Trigger settings remain an overlay; they do not reflow the SVG canvas.
     if (triggerPanelOpen)
     {
-        const int panelH = syRound (38.0f);
-        const int panelW = sxRound (720.0f);
-        triggerPanel.setBounds ((getWidth() - panelW) / 2,
-                                juce::jmax (visualizerY + syRound (8.0f), toolbarY - panelH - syRound (6.0f)),
+        const int panelH = ps (38.0f);
+        const int panelW = ps (720.0f);
+        triggerPanel.setBounds (offsetX + (canvasW - panelW) / 2,
+                                juce::jmax (visualizerY + ps (8.0f), toolbarY - panelH - ps (6.0f)),
                                 panelW, panelH);
         triggerPanel.toFront (false);
     }
 
     if (! editorsCollapsed)
     {
-        // The draggable splitter overlays the top edge of the bank panels; it
-        // does not steal vertical space from the SVG's 186 px bank region.
-        resizeHandle.setBounds (0, bankTop - syRound (4.0f), getWidth(), syRound (8.0f));
+        // The splitter overlays the top edge of the two SVG bank panels.
+        resizeHandle.setBounds (offsetX, bankTop - ps (4.0f), canvasW, ps (8.0f));
         resizeHandle.toFront (false);
 
-        const int snapW = sxRound (399.0f);
-        const int transientX = sxRound (401.0f);
-        snapbackGroup.setBounds (0, bankTop, snapW, footerTop - bankTop);
+        const int snapRight = px (399.0f);
+        const int transientX = px (401.0f);
+        snapbackGroup.setBounds (offsetX, bankTop, snapRight - offsetX, footerTop - bankTop);
         transientGroup.setBounds (transientX, bankTop,
-                                  getWidth() - transientX, footerTop - bankTop);
+                                  px (800.0f) - transientX, footerTop - bankTop);
     }
 }

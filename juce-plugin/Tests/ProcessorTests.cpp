@@ -596,14 +596,14 @@ void testProcessorEditorLifecycle()
     check (editor != nullptr, "Editor: createEditor returns non-null WaveLensEditor");
     if (editor != nullptr)
     {
-        check (editor->getWidth() == 1280 && editor->getHeight() == 760,
-               "Editor: default bounds are 1280x760");
-        editor->setSize (1020, 620);
-        check (editor->getWidth() == 1020 && editor->getHeight() == 620,
-               "Editor: resizes cleanly to minimum 1020x620");
-        editor->setSize (1920, 1200);
-        check (editor->getWidth() == 1920 && editor->getHeight() == 1200,
-               "Editor: resizes cleanly to maximum 1920x1200");
+        check (editor->getWidth() == 1024 && editor->getHeight() == 768,
+               "Editor: default Normal preset is 1024x768");
+        editor->setSize (800, 600);
+        check (editor->getWidth() == 800 && editor->getHeight() == 600,
+               "Editor: accepts the native SVG 800x600 size");
+        editor->setSize (1920, 1440);
+        check (editor->getWidth() == 1920 && editor->getHeight() == 1440,
+               "Editor: accepts a larger 4:3 editor size");
     }
 }
 

@@ -212,8 +212,9 @@ void MasterWaveformComponent::paint (juce::Graphics& g)
     }
     else
     {
-        constexpr float kRulerH = 22.0f;
-        auto inner = bounds.reduced (1.0f);
+        const float uiScale = (float) getWidth() / 800.0f;
+        const float kRulerH = 22.0f * uiScale;
+        auto inner = bounds.reduced (1.0f * uiScale);
         auto ruler = inner.removeFromTop (kRulerH);
         paintTimelineWaveforms (g, inner, ruler);
     }
@@ -231,6 +232,7 @@ void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
     g.setColour (ui::kBorder);
     g.drawHorizontalLine (juce::roundToInt (ruler.getBottom() - 0.5f), ruler.getX(), ruler.getRight());
 
+    const float uiScale = (float) getWidth() / 800.0f;
     const float plotX = plot.getX();
     const float plotY = plot.getY();
     const float plotW = plot.getWidth();
@@ -242,7 +244,7 @@ void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
     const float viewEnd = juce::jmin (1.0f, viewStartNorm + span);
     const double windowMs = windowBars * (4.0 * 60000.0) / bpm;
 
-    g.setFont (juce::Font (10.0f));
+    g.setFont (juce::Font (10.0f * uiScale));
     if (gridMode)
     {
         int divisions = 8;
@@ -261,15 +263,19 @@ void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
             g.setColour (major ? ui::kGridLine.withAlpha (0.26f) : ui::kGridLine.withAlpha (0.11f));
             g.drawVerticalLine (juce::roundToInt (tx), plotY, plot.getBottom());
 
-            if (major && tx > (float) masterBtn.getRight() + 14.0f)
+            if (major && tx > (float) masterBtn.getRight() + 14.0f * uiScale)
             {
                 const double beatPos = norm * windowBars * 4.0;
                 const int barNum = (int) std::floor (beatPos / 4.0) + 1;
                 const int beatInBar = ((int) std::floor (beatPos)) % 4 + 1;
                 const juce::String lbl = juce::String (barNum) + "." + juce::String (beatInBar);
                 g.setColour (ui::kSecondaryText);
-                g.drawText (lbl, juce::roundToInt (tx - 24.0f), juce::roundToInt (ruler.getY()),
-                            48, juce::roundToInt (ruler.getHeight()), juce::Justification::centred);
+                g.drawFittedText (lbl,
+                                  juce::Rectangle<int> (juce::roundToInt (tx - 24.0f * uiScale),
+                                                        juce::roundToInt (ruler.getY()),
+                                                        juce::roundToInt (48.0f * uiScale),
+                                                        juce::roundToInt (ruler.getHeight())),
+                                  juce::Justification::centred, 1);
             }
         }
     }
@@ -295,11 +301,15 @@ void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
             g.setColour (major ? ui::kGridLine.withAlpha (0.26f) : ui::kGridLine.withAlpha (0.11f));
             g.drawVerticalLine (juce::roundToInt (tx), plotY, plot.getBottom());
 
-            if (major && tx > (float) masterBtn.getRight() + 14.0f)
+            if (major && tx > (float) masterBtn.getRight() + 14.0f * uiScale)
             {
                 g.setColour (ui::kSecondaryText);
-                g.drawText (formatTimeTickLabel (ms), juce::roundToInt (tx - 28.0f), juce::roundToInt (ruler.getY()),
-                            56, juce::roundToInt (ruler.getHeight()), juce::Justification::centred);
+                g.drawFittedText (formatTimeTickLabel (ms),
+                                  juce::Rectangle<int> (juce::roundToInt (tx - 28.0f * uiScale),
+                                                        juce::roundToInt (ruler.getY()),
+                                                        juce::roundToInt (56.0f * uiScale),
+                                                        juce::roundToInt (ruler.getHeight())),
+                                  juce::Justification::centred, 1);
             }
         }
     }
@@ -489,18 +499,21 @@ void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
     if (loadedCount == 0)
     {
         g.setColour (ui::kSecondaryText);
-        g.setFont (juce::Font (12.5f));
+        g.setFont (juce::Font (12.5f * uiScale));
         g.drawText ((masterOverlay ? "MASTER OVERLAY  -  " : "")
                         + juce::String ("Load samples into SNAPBACK (left) or TRANSIENT (right) below"),
                     plot.toNearestInt(), juce::Justification::centred);
     }
 
     // Top-right badge showing active mode + zoom
-    g.setFont (juce::Font (10.0f, juce::Font::bold));
+    g.setFont (juce::Font (10.0f * uiScale, juce::Font::bold));
     const juce::String badgeText = (masterOverlay ? "MASTER ALL 6" : "SELECTED VIEW")
         + (zoomFactor > 1.02f ? ("  |  " + juce::String (zoomFactor, 1) + "x") : juce::String());
     g.setColour (ui::kSecondaryText);
-    g.drawText (badgeText, plot.reduced (10.0f, 6.0f).removeFromTop (16.0f), juce::Justification::topRight);
+    g.drawFittedText (badgeText,
+                      plot.reduced (10.0f * uiScale, 6.0f * uiScale)
+                          .removeFromTop (16.0f * uiScale).toNearestInt(),
+                      juce::Justification::topRight, 1);
 
     g.restoreState();
 }
@@ -576,22 +589,28 @@ void MasterWaveformComponent::paintLiveOutputMonitor (juce::Graphics& g, juce::R
     else
     {
         g.setColour (ui::kSecondaryText);
-        g.setFont (juce::Font (12.0f));
+        const float uiScale = (float) getWidth() / 800.0f;
+        g.setFont (juce::Font (12.0f * uiScale));
         g.drawText ("OUTPUT MONITOR  -  Trigger audio or MIDI to inspect summed Master output",
                     area.toNearestInt(), juce::Justification::centred);
     }
 
     g.setColour (ui::kMasterWave);
-    g.setFont (juce::Font (10.0f, juce::Font::bold));
-    g.drawText ("MASTER OUTPUT", area.reduced (10.0f, 4.0f).removeFromTop (16.0f), juce::Justification::topRight);
+    const float uiScale = (float) getWidth() / 800.0f;
+    g.setFont (juce::Font (10.0f * uiScale, juce::Font::bold));
+    g.drawFittedText ("MASTER OUTPUT",
+                      area.reduced (10.0f * uiScale, 4.0f * uiScale)
+                          .removeFromTop (16.0f * uiScale).toNearestInt(),
+                      juce::Justification::topRight, 1);
 
     g.restoreState();
 }
 
 void MasterWaveformComponent::paintLiveSpectrum (juce::Graphics& g, juce::Rectangle<float> area)
 {
-    auto plot = area.reduced (38.0f, 18.0f);
-    plot.removeFromBottom (16.0f);
+    const float uiScale = (float) getWidth() / 800.0f;
+    auto plot = area.reduced (38.0f * uiScale, 18.0f * uiScale);
+    plot.removeFromBottom (16.0f * uiScale);
 
     for (float db : { -96.0f, -72.0f, -48.0f, -24.0f, 0.0f })
     {
@@ -599,8 +618,13 @@ void MasterWaveformComponent::paintLiveSpectrum (juce::Graphics& g, juce::Rectan
         g.setColour (ui::kBorder.withAlpha (0.5f));
         g.drawHorizontalLine (juce::roundToInt (y), plot.getX(), plot.getRight());
         g.setColour (ui::kSecondaryText);
-        g.setFont (10.0f);
-        g.drawText (juce::String ((int) db), (int) area.getX(), (int) y - 7, 32, 14, juce::Justification::centredRight);
+        g.setFont (10.0f * uiScale);
+        g.drawFittedText (juce::String ((int) db),
+                          juce::Rectangle<int> (juce::roundToInt (area.getX()),
+                                                juce::roundToInt (y - 7.0f * uiScale),
+                                                juce::roundToInt (32.0f * uiScale),
+                                                juce::roundToInt (14.0f * uiScale)),
+                          juce::Justification::centredRight, 1);
     }
 
     const int mask = proc.connectedMask.load (relaxed);
@@ -623,11 +647,18 @@ void MasterWaveformComponent::paintLiveSpectrum (juce::Graphics& g, juce::Rectan
     }
 
     g.setColour (ui::kMasterWave);
-    g.setFont (juce::Font (10.0f, juce::Font::bold));
-    g.drawText ("OUTPUT SPECTRUM", area.reduced (10.0f, 4.0f).removeFromTop (16.0f), juce::Justification::topRight);
+    g.setFont (juce::Font (10.0f * uiScale, juce::Font::bold));
+    g.drawFittedText ("OUTPUT SPECTRUM",
+                      area.reduced (10.0f * uiScale, 4.0f * uiScale)
+                          .removeFromTop (16.0f * uiScale).toNearestInt(),
+                      juce::Justification::topRight, 1);
 }
 
 void MasterWaveformComponent::resized()
 {
-    masterBtn.setBounds (10, 28, 38, 26);
+    const float uiScale = (float) getWidth() / 800.0f;
+    masterBtn.setBounds (juce::roundToInt (10.0f * uiScale),
+                         juce::roundToInt (28.0f * uiScale),
+                         juce::roundToInt (38.0f * uiScale),
+                         juce::roundToInt (26.0f * uiScale));
 }

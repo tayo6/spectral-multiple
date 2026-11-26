@@ -5,6 +5,7 @@ namespace ui = wavelens::ui;
 void PluginHeaderComponent::IconButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
 {
     auto b = getLocalBounds().toFloat().reduced (0.5f);
+    const float uiScale = (float) getHeight() / 20.0f;
     const bool active = getToggleState();
 
     juce::Colour bg = active ? ui::kSelectedAccent.withAlpha (0.20f) : ui::kControlBg;
@@ -14,9 +15,9 @@ void PluginHeaderComponent::IconButton::paintButton (juce::Graphics& g, bool hig
         bg = active ? ui::kSelectedAccent.withAlpha (0.28f) : ui::kHoverBg;
 
     g.setColour (bg);
-    g.fillRoundedRectangle (b, 4.0f);
+    g.fillRoundedRectangle (b, 4.0f * uiScale);
     g.setColour (active ? ui::kPurpleAccent.withAlpha (0.85f) : ui::kBorder);
-    g.drawRoundedRectangle (b, 4.0f, 1.0f);
+    g.drawRoundedRectangle (b, 4.0f * uiScale, 1.0f * uiScale);
 
     const float cx = b.getCentreX();
     const float cy = b.getCentreY();
@@ -27,32 +28,40 @@ void PluginHeaderComponent::IconButton::paintButton (juce::Graphics& g, bool hig
 
     if (kind == Kind::Power)
     {
-        const float r = 5.5f;
+        const float r = 5.5f * uiScale;
         juce::Path arc;
-        arc.addCentredArc (cx, cy + 0.5f, r, r, 0.0f, 0.55f, juce::MathConstants<float>::twoPi - 0.55f, true);
-        g.strokePath (arc, juce::PathStrokeType (1.7f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        g.drawLine (cx, cy - 6.5f, cx, cy - 1.0f, 1.7f);
+        arc.addCentredArc (cx, cy + 0.5f * uiScale, r, r, 0.0f,
+                           0.55f, juce::MathConstants<float>::twoPi - 0.55f, true);
+        g.strokePath (arc, juce::PathStrokeType (1.7f * uiScale, juce::PathStrokeType::curved,
+                                                 juce::PathStrokeType::rounded));
+        g.drawLine (cx, cy - 6.5f * uiScale, cx, cy - 1.0f * uiScale, 1.7f * uiScale);
     }
     else if (kind == Kind::Menu)
     {
         for (int i = -1; i <= 1; ++i)
         {
-            const float y = cy + (float) i * 4.0f;
-            g.drawLine (cx - 6.0f, y, cx + 6.0f, y, 1.5f);
+            const float y = cy + (float) i * 4.0f * uiScale;
+            g.drawLine (cx - 6.0f * uiScale, y, cx + 6.0f * uiScale, y, 1.5f * uiScale);
         }
     }
     else // Heart
     {
         juce::Path heart;
-        heart.startNewSubPath (cx, cy + 5.2f);
-        heart.cubicTo (cx - 7.5f, cy + 0.8f, cx - 6.5f, cy - 5.5f, cx, cy - 2.2f);
-        heart.cubicTo (cx + 6.5f, cy - 5.5f, cx + 7.5f, cy + 0.8f, cx, cy + 5.2f);
+        heart.startNewSubPath (cx, cy + 5.2f * uiScale);
+        heart.cubicTo (cx - 7.5f * uiScale, cy + 0.8f * uiScale,
+                       cx - 6.5f * uiScale, cy - 5.5f * uiScale,
+                       cx, cy - 2.2f * uiScale);
+        heart.cubicTo (cx + 6.5f * uiScale, cy - 5.5f * uiScale,
+                       cx + 7.5f * uiScale, cy + 0.8f * uiScale,
+                       cx, cy + 5.2f * uiScale);
         heart.closeSubPath();
 
         if (active)
             g.fillPath (heart);
         else
-            g.strokePath (heart, juce::PathStrokeType (1.35f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.strokePath (heart, juce::PathStrokeType (1.35f * uiScale,
+                                                       juce::PathStrokeType::curved,
+                                                       juce::PathStrokeType::rounded));
     }
 }
 
@@ -265,6 +274,11 @@ void PluginHeaderComponent::openMainMenu()
     menu.addItem (2, "Reset Scope & Meters");
     menu.addItem (3, "Reset Timeline Zoom (1.0x)");
     menu.addItem (4, "Trigger Settings");
+    juce::PopupMenu editorSizes;
+    editorSizes.addItem (30, "Extra Large — SVG reference (800 × 600)", true, currentEditorSizePreset == 0);
+    editorSizes.addItem (31, "Large — Fit available screen", true, currentEditorSizePreset == 1);
+    editorSizes.addItem (32, "Normal — 1024 × 768", true, currentEditorSizePreset == 2);
+    menu.addSubMenu ("Editor Size", editorSizes);
     menu.addSeparator();
     menu.addSectionHeader ("TIMELINE TEMPO (" + juce::String ((int) currentBpm) + " BPM)");
     menu.addItem (10, "Set 90 BPM");
@@ -313,6 +327,18 @@ void PluginHeaderComponent::openMainMenu()
                 if (safeThis->onSampleStateChanged)
                     safeThis->onSampleStateChanged();
                 break;
+            case 30:
+                safeThis->setEditorSizePreset (0);
+                if (safeThis->onEditorSizeSelected) safeThis->onEditorSizeSelected (0);
+                break;
+            case 31:
+                safeThis->setEditorSizePreset (1);
+                if (safeThis->onEditorSizeSelected) safeThis->onEditorSizeSelected (1);
+                break;
+            case 32:
+                safeThis->setEditorSizePreset (2);
+                if (safeThis->onEditorSizeSelected) safeThis->onEditorSizeSelected (2);
+                break;
             default:
                 break;
         }
@@ -331,7 +357,8 @@ void PluginHeaderComponent::paint (juce::Graphics& g)
     g.setGradientFill (juce::ColourGradient (
         juce::Colour::fromRGB (0xa8, 0x88, 0xeb), 0.0f, 0.0f,
         juce::Colour::fromRGB (0x8b, 0x9c, 0xf6), (float) getWidth(), 0.0f, false));
-    g.setFont (juce::Font (19.0f, juce::Font::bold));
+    const float uiScale = (float) getWidth() / 800.0f;
+    g.setFont (juce::Font (19.0f * uiScale, juce::Font::bold));
     g.drawText ("W A V E S T A C K",
                 getLocalBounds(), juce::Justification::centred);
 
@@ -339,7 +366,7 @@ void PluginHeaderComponent::paint (juce::Graphics& g)
     if (! bpmValueBounds.isEmpty())
     {
         g.setColour (ui::kMainText);
-        g.setFont (juce::Font (11.0f, juce::Font::bold));
+        g.setFont (juce::Font (11.0f * uiScale, juce::Font::bold));
         g.drawText (juce::String ((int) currentBpm) + " BPM",
                     bpmValueBounds, juce::Justification::centred);
     }
@@ -347,9 +374,14 @@ void PluginHeaderComponent::paint (juce::Graphics& g)
     if (! powerBtn.getToggleState())
     {
         g.setColour (ui::kWarningAmber.withAlpha (0.85f));
-        g.setFont (juce::Font (10.0f, juce::Font::bold));
-        g.drawText ("BYPASSED", juce::jmax (resetBtn.getRight() + 8, menuBtn.getRight() + 8),
-                    0, 68, getHeight(), juce::Justification::centredLeft);
+        g.setFont (juce::Font (10.0f * uiScale, juce::Font::bold));
+        const int labelX = juce::jmax (resetBtn.getRight() + juce::roundToInt (8.0f * uiScale),
+                                       menuBtn.getRight() + juce::roundToInt (8.0f * uiScale));
+        g.drawFittedText ("BYPASSED",
+                          juce::Rectangle<int> (labelX, 0,
+                                                juce::jmax (1, getWidth() - labelX - juce::roundToInt (8.0f * uiScale)),
+                                                getHeight()),
+                          juce::Justification::centredLeft, 1);
     }
 }
 

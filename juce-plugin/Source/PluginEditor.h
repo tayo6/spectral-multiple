@@ -83,6 +83,9 @@ public:
 
 private:
     void timerCallback() override;
+    juce::Rectangle<int> getLargeEditorSize() const;
+    void updateResizeConstraints();
+    void applyEditorSizePreset (int preset);
 
     WaveLensProcessor& proc;
     SpectralMultipleLookAndFeel lnf;
@@ -98,8 +101,9 @@ private:
 
     bool triggerPanelOpen = false;
     bool editorsCollapsed = false;
-    int waveformHeight = -1;
-    int dragStartWaveformHeight = -1;
+    int currentEditorSizePreset = 2;
+    float waveformHeightSvg = 298.0f;
+    float dragStartWaveformHeightSvg = 298.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaveLensEditor)
 };

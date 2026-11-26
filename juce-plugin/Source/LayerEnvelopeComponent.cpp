@@ -191,19 +191,21 @@ juce::Rectangle<float> DualTrimRangeComponent::getTrackBounds() const noexcept
 
 void DualTrimRangeComponent::paint (juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat().reduced (0.5f);
+    const float uiScale = juce::jmin ((float) getWidth() / 134.0f,
+                                      (float) getHeight() / 32.0f);
+    auto bounds = getLocalBounds().toFloat().reduced (0.5f * uiScale);
     g.setColour (ui::kControlBg);
     g.fillRoundedRectangle (bounds, 3.0f);
     g.setColour (ui::kBorder);
     g.drawRoundedRectangle (bounds, 3.0f, 1.0f);
 
-    g.setFont (juce::Font (8.5f, juce::Font::bold));
+    g.setFont (juce::Font (8.5f * uiScale, juce::Font::bold));
     g.setColour (ui::kSecondaryText);
     const float halfW = bounds.getWidth() * 0.5f;
-    g.drawText ("Str Trim", bounds.getX() + 4.0f, bounds.getY() + 1.0f,
-                halfW - 5.0f, 9.0f, juce::Justification::centredLeft);
-    g.drawText ("Bk Trim", bounds.getCentreX() + 1.0f, bounds.getY() + 1.0f,
-                halfW - 5.0f, 9.0f, juce::Justification::centredRight);
+    g.drawText ("Str Trim", bounds.getX() + 4.0f * uiScale, bounds.getY() + 1.0f * uiScale,
+                halfW - 5.0f * uiScale, 9.0f * uiScale, juce::Justification::centredLeft);
+    g.drawText ("Bk Trim", bounds.getCentreX() + 1.0f * uiScale, bounds.getY() + 1.0f * uiScale,
+                halfW - 5.0f * uiScale, 9.0f * uiScale, juce::Justification::centredRight);
 
     if (startValue == nullptr || endValue == nullptr || trackBounds.isEmpty())
         return;
@@ -223,7 +225,8 @@ void DualTrimRangeComponent::paint (juce::Graphics& g)
     g.setColour (accent);
     g.drawLine (startX, cy, endX, cy, 2.0f);
 
-    const float radius = juce::jlimit (3.0f, 4.5f, trackBounds.getHeight() * 0.60f);
+    const float radius = juce::jlimit (3.0f * uiScale, 4.5f * uiScale,
+                                        trackBounds.getHeight() * 0.60f);
     for (const float x : { startX, endX })
     {
         g.setColour (ui::kPanelBg);
@@ -236,23 +239,29 @@ void DualTrimRangeComponent::paint (juce::Graphics& g)
 
 void DualTrimRangeComponent::resized()
 {
-    auto bounds = getLocalBounds().reduced (4, 2);
-    const int labelHeight = juce::jlimit (8, 11, juce::roundToInt (getHeight() * 0.25f));
-    const int inputHeight = juce::jlimit (11, 16, juce::roundToInt (getHeight() * 0.36f));
-    const int inputGap = juce::jmax (3, juce::roundToInt (getWidth() * 0.025f));
+    const float uiScale = juce::jmin ((float) getWidth() / 134.0f,
+                                      (float) getHeight() / 32.0f);
+    auto bounds = getLocalBounds().reduced (juce::roundToInt (4.0f * uiScale),
+                                            juce::roundToInt (2.0f * uiScale));
+    const int labelHeight = juce::jmax (1, juce::roundToInt (8.0f * uiScale));
+    const int inputHeight = juce::jmax (1, juce::roundToInt (11.0f * uiScale));
+    const int inputGap = juce::jmax (1, juce::roundToInt (3.0f * uiScale));
     const int halfWidth = (bounds.getWidth() - inputGap) / 2;
 
+    startEditor.setFont (juce::Font (9.0f * uiScale));
+    endEditor.setFont (juce::Font (9.0f * uiScale));
     startEditor.setBounds (bounds.getX(), bounds.getY() + labelHeight,
                            halfWidth, inputHeight);
     endEditor.setBounds (bounds.getX() + halfWidth + inputGap,
                          bounds.getY() + labelHeight,
                          halfWidth, inputHeight);
 
-    const int trackY = juce::jmin (getHeight() - 5,
-                                   bounds.getY() + labelHeight + inputHeight + 2);
+    const int trackY = juce::jmin (getHeight() - juce::jmax (2, juce::roundToInt (5.0f * uiScale)),
+                                   bounds.getY() + labelHeight + inputHeight + juce::roundToInt (2.0f * uiScale));
     trackBounds = juce::Rectangle<float> ((float) bounds.getX(), (float) trackY,
                                           (float) bounds.getWidth(),
-                                          (float) juce::jmax (4, getHeight() - trackY - 2));
+                                          (float) juce::jmax (juce::roundToInt (4.0f * uiScale),
+                                                              getHeight() - trackY - juce::roundToInt (2.0f * uiScale)));
 }
 
 void DualTrimRangeComponent::mouseDown (const juce::MouseEvent& event)
@@ -305,12 +314,13 @@ void PhaseInvertPlaceholder::paintButton (juce::Graphics& g, bool highlighted, b
 {
     juce::ignoreUnused (highlighted, down);
     const auto b = getLocalBounds().toFloat();
+    const float uiScale = (float) getHeight() / 18.0f;
     const float cx = b.getCentreX();
     const float cy = b.getCentreY();
-    const float r = juce::jmin (3.5f, b.getHeight() * 0.28f);
+    const float r = juce::jmin (3.5f * uiScale, b.getHeight() * 0.28f);
     g.setColour (ui::kDisabledText);
-    g.drawEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f, 1.0f);
-    g.drawLine (cx - r, cy + r, cx + r, cy - r, 1.0f);
+    g.drawEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f, 1.0f * uiScale);
+    g.drawLine (cx - r, cy + r, cx + r, cy - r, 1.0f * uiScale);
 }
 
 //==============================================================================
@@ -408,6 +418,7 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     const juce::Colour secondaryFill = colour.interpolatedWith (ui::kMainText, 0.16f);
     prepareTile (delaySlider,     "SHIFT",    "Layer timing shift (-100 ms to +100 ms)",              colour,        true,  0.0);
     prepareTile (pitchSlider,     "PITCH",    "Layer pitch (-24 to +24 semitones)",                   colour,        true,  0.0);
+    pitchSlider.getProperties().set ("compactPitchReadout", true);
     prepareTile (panSlider,       "PAN",      "Stereo pan (Left / Centre / Right)",                   colour,        true,  0.0);
     prepareTile (widthSlider,     "WIDTH",    "Stereo width (0% mono, 100% original, 200% wide)",    colour,        false, 1.0);
     prepareTile (pogoSlider,      "POGO",     "FL Sampler style pitch-bend envelope (-100% to +100%)", secondaryFill, true,  0.0);
@@ -674,9 +685,10 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry (float tota
     {
         return result.trimX0 + result.trimW * juce::jlimit (0.0f, result.trimmedDurationMs, ms) / result.trimmedDurationMs;
     };
-    const float envTop = result.plot.getY() + 7.0f;
-    const float envBot = result.plot.getBottom() - 15.0f;
-    const float envH = juce::jmax (12.0f, envBot - envTop);
+    const float uiScale = (float) getHeight() / 152.0f;
+    const float envTop = result.plot.getY() + 7.0f * uiScale;
+    const float envBot = result.plot.getBottom() - 15.0f * uiScale;
+    const float envH = juce::jmax (12.0f * uiScale, envBot - envTop);
     auto yAt = [&] (float level)
     {
         return envBot - envH * juce::jlimit (0.0f, 1.0f, level);
@@ -738,6 +750,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
 
     // Top strip is reserved for the sample name and slot navigation overlay.
     const float scaleY = (float) getHeight() / 152.0f;
+    const float uiScale = scaleY;
     auto readoutBar = waveBox.removeFromTop ((float) juce::roundToInt ((float) kHeaderHeight * scaleY));
     g.setColour (ui::kInsetBg.withAlpha (0.92f));
     g.fillRect (readoutBar);
@@ -804,7 +817,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         else
         {
             g.setColour (ui::kSecondaryText.withAlpha (0.78f));
-            g.setFont (juce::Font (12.0f));
+            g.setFont (juce::Font (12.0f * uiScale));
             g.drawText ("Drop audio file here or click sample browser above", plot.toNearestInt(),
                         juce::Justification::centred);
         }
@@ -856,9 +869,9 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         {
             return geometry.trimX0 + geometry.trimW * juce::jlimit (0.0f, geometry.trimmedDurationMs, timeMs) / geometry.trimmedDurationMs;
         };
-        const float envTop = plot.getY() + 7.0f;
-        const float envBot = plot.getBottom() - 15.0f;
-        const float envH = juce::jmax (12.0f, envBot - envTop);
+        const float envTop = plot.getY() + 7.0f * uiScale;
+        const float envBot = plot.getBottom() - 15.0f * uiScale;
+        const float envH = juce::jmax (12.0f * uiScale, envBot - envTop);
         auto yAt = [&] (float level)
         {
             return envBot - envH * juce::jlimit (0.0f, 1.0f, level);
@@ -898,12 +911,12 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
             g.drawVerticalLine (juce::roundToInt (mx), plot.getY(), plot.getBottom());
 
             const float bx = juce::jlimit (plot.getX() + 2.0f, plot.getRight() - 14.0f, mx + 1.0f);
-            const float by = plot.getBottom() - 13.0f;
+            const float by = plot.getBottom() - 13.0f * uiScale;
             g.setColour (envEnabled ? ui::kMainText.withAlpha (0.72f) : ui::kDisabledText);
-            g.fillRoundedRectangle (bx, by, 12.0f, 12.0f, 2.0f);
+            g.fillRoundedRectangle (bx, by, 12.0f * uiScale, 12.0f * uiScale, 2.0f * uiScale);
             g.setColour (ui::kMainBg);
-            g.setFont (juce::Font (8.5f, juce::Font::bold));
-            g.drawText (tag, juce::Rectangle<float> (bx, by, 12.0f, 12.0f), juce::Justification::centred);
+            g.setFont (juce::Font (8.5f * uiScale, juce::Font::bold));
+            g.drawText (tag, juce::Rectangle<float> (bx, by, 12.0f * uiScale, 12.0f * uiScale), juce::Justification::centred);
         };
 
         drawSectionMarker (geometry.holdEndX, "D");
@@ -940,12 +953,11 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         {
             if (! visible)
                 return;
+            const float radius = kTensionRadius * uiScale;
             g.setColour (ui::kPanelBg);
-            g.fillEllipse (pt.x - kTensionRadius, pt.y - kTensionRadius,
-                           2.0f * kTensionRadius, 2.0f * kTensionRadius);
+            g.fillEllipse (pt.x - radius, pt.y - radius, 2.0f * radius, 2.0f * radius);
             g.setColour (envEnabled ? flCurveColour : ui::kSecondaryText.withAlpha (0.5f));
-            g.drawEllipse (pt.x - kTensionRadius, pt.y - kTensionRadius,
-                           2.0f * kTensionRadius, 2.0f * kTensionRadius, 1.6f);
+            g.drawEllipse (pt.x - radius, pt.y - radius, 2.0f * radius, 2.0f, 1.6f * uiScale);
         };
 
         drawTensionHandle (geometry.tensionAttack, geometry.tensionAttackVisible);
@@ -956,18 +968,21 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         {
             if (point.x < plot.getX() - 12.0f || point.x > plot.getRight() + 12.0f)
                 return;
+            const float radius = kHandleRadius * uiScale;
             g.setColour (ui::kMainBg);
-            g.fillEllipse (point.x - kHandleRadius - 1.5f, point.y - kHandleRadius - 1.5f,
-                           2.0f * (kHandleRadius + 1.5f), 2.0f * (kHandleRadius + 1.5f));
+            g.fillEllipse (point.x - radius - 1.5f * uiScale, point.y - radius - 1.5f * uiScale,
+                           2.0f * (radius + 1.5f * uiScale), 2.0f * (radius + 1.5f * uiScale));
             g.setColour (envEnabled ? flControlDot : ui::kDisabledText);
-            g.fillEllipse (point.x - kHandleRadius, point.y - kHandleRadius,
-                           2.0f * kHandleRadius, 2.0f * kHandleRadius);
+            g.fillEllipse (point.x - radius, point.y - radius, 2.0f * radius, 2.0f * radius);
             g.setColour (ui::kMainText);
-            g.setFont (juce::Font (9.0f, juce::Font::bold));
-            const bool nearTop = (point.y - plot.getY()) < 18.0f;
-            const float labelX = juce::jlimit (plot.getX() + 1.0f, plot.getRight() - 15.0f, point.x - 7.0f);
-            const float labelY = nearTop ? (point.y + kHandleRadius + 2.0f) : (point.y - kHandleRadius - 12.0f);
-            g.drawText (label, juce::Rectangle<float> (labelX, labelY, 14.0f, 10.0f),
+            g.setFont (juce::Font (9.0f * uiScale, juce::Font::bold));
+            const bool nearTop = (point.y - plot.getY()) < 18.0f * uiScale;
+            const float labelX = juce::jlimit (plot.getX() + 1.0f * uiScale,
+                                                plot.getRight() - 15.0f * uiScale,
+                                                point.x - 7.0f * uiScale);
+            const float labelY = nearTop ? (point.y + radius + 2.0f * uiScale)
+                                         : (point.y - radius - 12.0f * uiScale);
+            g.drawText (label, juce::Rectangle<float> (labelX, labelY, 14.0f * uiScale, 10.0f * uiScale),
                         juce::Justification::centred);
         };
 
@@ -979,26 +994,56 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         g.restoreState();
     }
 
-    // Bottom Attack / Decay readout and the interactive sample Pitch control.
+    // Bottom readout row follows the SVG's three aligned Attack / Decay / Pitch groups.
     auto bottomReadout = waveBox.removeFromBottom (juce::roundToInt ((float) kBottomReadoutHeight * scaleY));
     g.setColour (ui::kInsetBg.withAlpha (0.92f));
     g.fillRect (bottomReadout);
     g.setColour (ui::kBorder);
     g.drawHorizontalLine (juce::roundToInt (bottomReadout.getY()), bottomReadout.getX(), bottomReadout.getRight());
-    auto envReadout = bottomReadout.reduced (7.0f, 0.0f);
-    envReadout.setRight (juce::jmax (envReadout.getX() + 40.0f, (float) pitchSlider.getX() - 5.0f));
+
+    const float readoutY = bottomReadout.getY() + 3.0f * uiScale;
+    const float readoutH = 13.0f * uiScale;
+    const float baseX = bottomReadout.getX();
     g.setColour (ui::kSecondaryText);
-    g.setFont (juce::Font (9.5f));
-    g.drawText ("ATTACK " + formatEnvelopeTime (pAttack->load())
-                + "    DECAY " + formatEnvelopeTime (pDecay->load()),
-                envReadout, juce::Justification::centredLeft, true);
+    g.setFont (juce::Font (8.5f * uiScale));
+    g.drawFittedText ("Attack",
+                      juce::Rectangle<int> (juce::roundToInt (baseX + 9.0f * uiScale),
+                                            juce::roundToInt (readoutY),
+                                            juce::roundToInt (34.0f * uiScale),
+                                            juce::roundToInt (readoutH)),
+                      juce::Justification::centredLeft, 1);
+    g.setColour (ui::kMainText);
+    g.setFont (juce::Font (9.0f * uiScale, juce::Font::bold));
+    g.drawFittedText (formatEnvelopeTime (pAttack->load()),
+                      juce::Rectangle<int> (juce::roundToInt (baseX + 43.0f * uiScale),
+                                            juce::roundToInt (readoutY),
+                                            juce::roundToInt (34.0f * uiScale),
+                                            juce::roundToInt (readoutH)),
+                      juce::Justification::centredLeft, 1);
+
+    g.setColour (ui::kSecondaryText);
+    g.setFont (juce::Font (8.5f * uiScale));
+    g.drawFittedText ("Decay",
+                      juce::Rectangle<int> (juce::roundToInt (baseX + 84.0f * uiScale),
+                                            juce::roundToInt (readoutY),
+                                            juce::roundToInt (36.0f * uiScale),
+                                            juce::roundToInt (readoutH)),
+                      juce::Justification::centredLeft, 1);
+    g.setColour (ui::kMainText);
+    g.setFont (juce::Font (9.0f * uiScale, juce::Font::bold));
+    g.drawFittedText (formatEnvelopeTime (pDecay->load()),
+                      juce::Rectangle<int> (juce::roundToInt (baseX + 120.0f * uiScale),
+                                            juce::roundToInt (readoutY),
+                                            juce::roundToInt (40.0f * uiScale),
+                                            juce::roundToInt (readoutH)),
+                      juce::Justification::centredLeft, 1);
 
     // Bottom time ruler.
     auto ruler = waveBox.removeFromBottom (juce::roundToInt (kRulerHeight * scaleY));
     g.setColour (ui::kInsetBg.withAlpha (0.85f));
     g.fillRect (ruler);
     g.setColour (ui::kSecondaryText);
-    g.setFont (juce::Font (9.5f));
+    g.setFont (juce::Font (9.5f * uiScale));
     for (int i = 0; i <= 4; ++i)
     {
         const float norm = viewStartNorm + vpSpan * ((float) i / 4.0f);
@@ -1044,16 +1089,27 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
     g.drawRoundedRectangle (controlStripBounds.toFloat().reduced (0.5f), 4.0f, 1.0f);
 
     g.setColour (ui::kControlBg);
-    g.fillRoundedRectangle (gainCardBounds, 3.0f);
+    g.fillRoundedRectangle (gainCardBounds, 3.0f * uiScale);
     g.setColour (ui::kBorder);
-    g.drawRoundedRectangle (gainCardBounds.reduced (0.5f), 3.0f, 1.0f);
+    g.drawRoundedRectangle (gainCardBounds.reduced (0.5f * uiScale), 3.0f * uiScale, 1.0f * uiScale);
+
+    // SVG Volume card: title, vertical track and dB value have independent, non-overlapping zones.
     g.setColour (ui::kSecondaryText);
-    g.setFont (juce::Font (9.0f, juce::Font::bold));
-    g.drawText ("VOLUME", gainCardBounds.withTrimmedBottom (gainCardBounds.getHeight() - 14.0f), juce::Justification::centred);
+    g.setFont (juce::Font (10.0f * uiScale, juce::Font::bold));
+    g.drawFittedText ("Volume",
+                      juce::Rectangle<int> (juce::roundToInt (gainCardBounds.getX()),
+                                            juce::roundToInt (gainCardBounds.getY() + 2.0f * uiScale),
+                                            juce::roundToInt (gainCardBounds.getWidth()),
+                                            juce::roundToInt (14.0f * uiScale)),
+                      juce::Justification::centred, 1);
     g.setColour (ui::kMainText);
-    g.setFont (juce::Font (10.0f, juce::Font::bold));
-    g.drawText (gainSlider.getTextFromValue (gainSlider.getValue()),
-                gainCardBounds.withTrimmedTop (gainCardBounds.getHeight() - 17.0f), juce::Justification::centred);
+    g.setFont (juce::Font (10.5f * uiScale, juce::Font::bold));
+    g.drawFittedText (gainSlider.getTextFromValue (gainSlider.getValue()),
+                      juce::Rectangle<int> (juce::roundToInt (gainCardBounds.getX() + 1.0f * uiScale),
+                                            juce::roundToInt (gainCardBounds.getY() + 59.0f * uiScale),
+                                            juce::roundToInt (gainCardBounds.getWidth() - 2.0f * uiScale),
+                                            juce::roundToInt (15.0f * uiScale)),
+                      juce::Justification::centred, 1);
 
 }
 
@@ -1079,8 +1135,9 @@ void LayerEnvelopeComponent::resized()
     envEnableBtn.setBounds (headerBar.removeFromRight (40));
 
     auto readout = waveArea.removeFromBottom (juce::roundToInt ((float) kBottomReadoutHeight * scaleY));
-    const int pitchWidth = juce::roundToInt ((float) waveArea.getWidth() * (63.0f / 226.0f));
-    pitchSlider.setBounds (readout.removeFromRight (juce::jlimit (52, readout.getWidth(), pitchWidth)));
+    const int pitchWidth = juce::roundToInt (63.0f * scaleY);
+    pitchSlider.setBounds (readout.removeFromRight (juce::jlimit (juce::roundToInt (52.0f * scaleY),
+                                                                  readout.getWidth(), pitchWidth)));
     waveArea.removeFromBottom (juce::roundToInt (kRulerHeight * scaleY));
     overviewBarBounds = (zoomFactor > 1.01f)
         ? waveArea.removeFromBottom (juce::roundToInt (kOverviewHeight * scaleY)).toFloat()
@@ -1112,9 +1169,11 @@ void LayerEnvelopeComponent::resized()
                                       juce::roundToInt (76.0f * scaleY))).toFloat();
     rightCol.removeFromTop (juce::jlimit (0, rightCol.getHeight(), cardGap));
     pogoSlider.setBounds (rightCol.removeFromTop (juce::jmin (rightCol.getHeight(), cardH)));
-    gainSlider.setBounds (gainCardBounds.toNearestInt()
-                              .reduced (juce::jmax (4, juce::roundToInt (gainCardBounds.getWidth() / 4.0f)),
-                                        juce::roundToInt (18.0f * scaleY)));
+    const auto gainCard = gainCardBounds.toNearestInt();
+    gainSlider.setBounds (gainCard.getX(),
+                          gainCard.getY() + juce::roundToInt (21.0f * scaleY),
+                          gainCard.getWidth(),
+                          juce::roundToInt (36.0f * scaleY));
 }
 
 
@@ -1122,6 +1181,8 @@ LayerEnvelopeComponent::Handle LayerEnvelopeComponent::hitTestHandle (juce::Poin
                                                                       const Geometry& g,
                                                                       float maxRadius) const noexcept
 {
+    const float uiScale = (float) getHeight() / 152.0f;
+    maxRadius *= uiScale;
     struct Candidate { Handle h; juce::Point<float> pt; bool active; };
     const Candidate list[] = {
         { Handle::TensionAttack,  g.tensionAttack,  g.tensionAttackVisible },
@@ -1149,15 +1210,15 @@ LayerEnvelopeComponent::Handle LayerEnvelopeComponent::hitTestHandle (juce::Poin
 
     if (best == Handle::None)
     {
-        const bool startVisible = g.trimX0 >= g.plot.getX() - 10.0f
-                               && g.trimX0 <= g.plot.getRight() + 10.0f;
-        const bool endVisible = g.trimX1 >= g.plot.getX() - 10.0f
-                             && g.trimX1 <= g.plot.getRight() + 10.0f;
+        const bool startVisible = g.trimX0 >= g.plot.getX() - 10.0f * uiScale
+                               && g.trimX0 <= g.plot.getRight() + 10.0f * uiScale;
+        const bool endVisible = g.trimX1 >= g.plot.getX() - 10.0f * uiScale
+                             && g.trimX1 <= g.plot.getRight() + 10.0f * uiScale;
         const float distStart = startVisible ? std::abs (pos.x - g.trimX0) : 1.0e6f;
         const float distEnd   = endVisible ? std::abs (pos.x - g.trimX1) : 1.0e6f;
-        if (distStart <= 12.0f && distStart <= distEnd)
+        if (distStart <= 12.0f * uiScale && distStart <= distEnd)
             best = Handle::TrimStart;
-        else if (distEnd <= 12.0f)
+        else if (distEnd <= 12.0f * uiScale)
             best = Handle::TrimEnd;
     }
 
@@ -1368,7 +1429,8 @@ void LayerEnvelopeComponent::applyDrag (juce::Point<float> position)
         || activeHandle == Handle::TensionDecay
         || activeHandle == Handle::TensionRelease)
     {
-        const float delta = (dragStartY - position.y) / 85.0f;
+        const float uiScale = (float) getHeight() / 152.0f;
+        const float delta = (dragStartY - position.y) / (85.0f * juce::jmax (0.1f, uiScale));
         const float nextTen = juce::jlimit (-1.0f, 1.0f, dragStartTension + delta);
         if (activeHandle == Handle::TensionAttack)
             setParameter (ids::layerAttackTension (layer), nextTen);
@@ -1419,8 +1481,9 @@ void LayerEnvelopeComponent::applyDrag (juce::Point<float> position)
         case Handle::Sustain:
         {
             const float envTop = geometry.plot.getY() + 7.0f;
-            const float envBot = geometry.plot.getBottom() - 15.0f;
-            const float envH = juce::jmax (12.0f, envBot - envTop);
+            const float uiScale = (float) getHeight() / 152.0f;
+            const float envBot = geometry.plot.getBottom() - 15.0f * uiScale;
+            const float envH = juce::jmax (12.0f * uiScale, envBot - envTop);
             const float level = juce::jlimit (0.0f, 1.0f, (envBot - position.y) / envH);
             setParameter (ids::layerSustain (layer), level);
             break;

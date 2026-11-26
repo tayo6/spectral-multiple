@@ -151,15 +151,16 @@ int main (int argc, char** argv)
             std::cerr << "failed to write " << file.getFullPathName() << std::endl;
     };
 
-    shoot ("snapback-ui-1280x760.png", 1280, 760);
-    shoot ("snapback-ui-1020x620.png", 1020, 620);
-    shoot ("snapback-ui-1920x1200.png", 1920, 1200);
+    // Validate the three 4:3 editor presets against the same 800 x 600 SVG canvas.
+    shoot ("snapback-ui-extra-large-800x600.png", 800, 600);
+    shoot ("snapback-ui-normal-1024x768.png", 1024, 768);
+    shoot ("snapback-ui-large-1440x1080.png", 1440, 1080);
 
-    // Bonus shot: global Master M overlay (all six traces) at default size
+    // Bonus shot: global Master M overlay (all six traces) at Normal size.
     if (auto* master = findComponentByName (editor.get(), "Master"))
         if (auto* masterButton = dynamic_cast<juce::Button*> (master))
             masterButton->setToggleState (true, juce::dontSendNotification);
-    shoot ("snapback-ui-master-1280x760.png", 1280, 760);
+    shoot ("snapback-ui-master-1024x768.png", 1024, 768);
 
     return 0;
 }
