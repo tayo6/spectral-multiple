@@ -47,22 +47,26 @@ void LayerPadStripComponent::PadCell::setSelected (bool selected)
 void LayerPadStripComponent::PadCell::paint (juce::Graphics& g)
 {
     const auto b = getLocalBounds().toFloat().reduced (0.5f);
+    const float uiScale = (float) getHeight() / 26.0f;
     g.setColour (isSelected ? accent.withAlpha (0.16f) : ui::kPanelBg);
-    g.fillRoundedRectangle (b, 4.0f);
+    g.fillRoundedRectangle (b, 4.0f * uiScale);
     g.setColour (isSelected ? accent.withAlpha (0.95f) : ui::kBorder);
-    g.drawRoundedRectangle (b, 4.0f, isSelected ? 1.4f : 1.0f);
+    g.drawRoundedRectangle (b, 4.0f * uiScale, (isSelected ? 1.4f : 1.0f) * uiScale);
     g.setColour (accent.withAlpha (isSelected ? 0.95f : 0.55f));
-    g.fillRoundedRectangle (b.getX() + 4.0f, b.getY() + 5.0f, 3.0f, b.getHeight() - 10.0f, 1.5f);
+    g.fillRoundedRectangle (b.getX() + 4.0f * uiScale, b.getY() + 5.0f * uiScale,
+                            3.0f * uiScale, b.getHeight() - 10.0f * uiScale, 1.5f * uiScale);
 }
 
 void LayerPadStripComponent::PadCell::resized()
 {
-    auto r = getLocalBounds().reduced (8, 4);
-    const int buttonW = juce::jlimit (22, 30, juce::roundToInt (r.getHeight() * 0.78f));
+    const float uiScale = (float) getHeight() / 26.0f;
+    auto r = getLocalBounds().reduced (juce::roundToInt (8.0f * uiScale),
+                                       juce::roundToInt (4.0f * uiScale));
+    const int buttonW = juce::jmax (1, juce::roundToInt (22.0f * uiScale));
     soloButton.setBounds (r.removeFromRight (buttonW));
-    r.removeFromRight (3);
+    r.removeFromRight (juce::roundToInt (3.0f * uiScale));
     muteButton.setBounds (r.removeFromRight (buttonW));
-    r.removeFromRight (5);
+    r.removeFromRight (juce::roundToInt (5.0f * uiScale));
     selectButton.setBounds (r);
 }
 
@@ -391,8 +395,8 @@ juce::Rectangle<int> WaveLensEditor::getLargeEditorSize() const
 void WaveLensEditor::updateResizeConstraints()
 {
     const auto largeSize = getLargeEditorSize();
-    const int maxWidth = juce::jlimit (1024, 4096, largeSize.getWidth());
-    const int maxHeight = juce::jlimit (768, 3072, largeSize.getHeight());
+    const int maxWidth = juce::jlimit (800, 4096, largeSize.getWidth());
+    const int maxHeight = juce::jlimit (600, 3072, largeSize.getHeight());
     setResizeLimits (800, 600, maxWidth, maxHeight);
     if (auto* constrainer = getConstrainer())
         constrainer->setFixedAspectRatio (4.0 / 3.0);
