@@ -446,18 +446,21 @@ void WaveformControlBar::paint (juce::Graphics& g)
     g.setColour (ui::kBorder);
     g.drawRect (b.reduced (0.5f), 1.0f);
 
+    const float sx = (float) getWidth() / 800.0f;
     const float sy = (float) getHeight() / 42.0f;
     g.setFont (juce::Font (10.0f * sy, juce::Font::bold));
     g.setColour (limiterBtn.getToggleState() ? ui::kMainText : ui::kSecondaryText);
-    g.drawText ("Limiter", 37, limiterBtn.getY(), 39, limiterBtn.getHeight(),
-                juce::Justification::centredLeft);
+    g.drawFittedText ("Limiter",
+                      juce::Rectangle<int> (juce::roundToInt (37.0f * sx), limiterBtn.getY(),
+                                            juce::roundToInt (39.0f * sx), limiterBtn.getHeight()),
+                      juce::Justification::centredLeft, 1);
     g.setFont (juce::Font (10.0f * sy, juce::Font::bold));
-    g.drawText (formatPeakDb (proc.peakNow.load (relaxed)),
-                78, limiterBtn.getY(), 52, limiterBtn.getHeight(),
-                juce::Justification::centredLeft);
+    g.drawFittedText (formatPeakDb (proc.peakNow.load (relaxed)),
+                      juce::Rectangle<int> (juce::roundToInt (78.0f * sx), limiterBtn.getY(),
+                                            juce::roundToInt (52.0f * sx), limiterBtn.getHeight()),
+                      juce::Justification::centredLeft, 1);
 
     // Small output waveform glyph to the right of the Output label.
-    const float sx = (float) getWidth() / 800.0f;
     const float outputCentreY = (float) outputBtn.getBounds().getCentreY();
     const float outputX = 762.0f * sx;
     g.setColour (outputBtn.getToggleState() ? ui::kMasterWave : ui::kSecondaryText);
