@@ -32,6 +32,16 @@ TriggerPanelComponent::TriggerPanelComponent (WaveLensProcessor& processor)
     thresholdAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, ids::threshold, thresholdSlider);
     thresholdSlider.updateText();
 
+    preLeadSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    preLeadSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 42, 18);
+    preLeadSlider.setColour (juce::Slider::trackColourId, ui::kPurpleAccent);
+    preLeadSlider.textFromValueFunction = [] (double v) { return juce::String (v, 1) + " ms"; };
+    preLeadSlider.setTooltip ("PRE lead offset before the dry transient (0 to 100 ms)");
+    addAndMakeVisible (preLeadSlider);
+    preLeadAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+        proc.apvts, ids::preRollMs, preLeadSlider);
+    preLeadSlider.updateText();
+
     if (auto* choice = dynamic_cast<juce::AudioParameterChoice*> (proc.apvts.getParameter (ids::triggerMode)))
         modeBox.addItemList (choice->choices, 1);
     addAndMakeVisible (modeBox);
@@ -130,6 +140,7 @@ void TriggerPanelComponent::paint (juce::Graphics& g)
     g.drawText ("MODE", modeBox.getX() - 36, 0, 32, getHeight(), juce::Justification::centredRight);
     g.drawText ("SPAN", spanBox.getX() - 36, 0, 32, getHeight(), juce::Justification::centredRight);
     g.drawText ("IN FILTER", inputFilter.getX() - 56, 0, 52, getHeight(), juce::Justification::centredRight);
+    g.drawText ("PRE", preLeadSlider.getX() - 30, 0, 26, getHeight(), juce::Justification::centredRight);
 
     // Trigger LED indicator on far left
     const float ledX = 16.0f;
@@ -169,6 +180,11 @@ void TriggerPanelComponent::resized()
     r.removeFromRight (40); // SPAN label
     viewBox.setBounds (r.removeFromRight (92));
     r.removeFromRight (12);
+
+    // PRE lead remains editable from the optional Trigger Settings drawer,
+    // while the default toolbar stays faithful to the supplied SVG.
+    preLeadSlider.setBounds (r.removeFromRight (112));
+    r.removeFromRight (8);
 
     const int filterW = juce::jlimit (120, 220, r.getWidth() - 60);
     if (filterW >= 120)
