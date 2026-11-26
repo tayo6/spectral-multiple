@@ -192,6 +192,20 @@ void TriggerPanelComponent::resized()
 }
 
 //==============================================================================
+void WaveformControlBar::CollapseButton::paintButton (juce::Graphics& g,
+                                                       bool highlighted,
+                                                       bool down)
+{
+    juce::TextButton::paintButton (g, highlighted, down);
+
+    const float cx = (float) getWidth() * 0.5f;
+    const float cy = (float) getHeight() - 8.0f;
+    g.setColour (juce::Colours::white.withAlpha (0.95f));
+    g.drawLine (cx - 4.0f, cy - 2.5f, cx, cy + 1.5f, 1.3f);
+    g.drawLine (cx, cy + 1.5f, cx + 4.0f, cy - 2.5f, 1.3f);
+}
+
+//==============================================================================
 void WaveformControlBar::LimiterButton::paintButton (juce::Graphics& g,
                                                      bool highlighted,
                                                      bool down)
