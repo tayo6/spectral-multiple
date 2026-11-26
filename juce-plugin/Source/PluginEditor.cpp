@@ -339,6 +339,16 @@ void WaveLensEditor::timerCallback()
 void WaveLensEditor::paint (juce::Graphics& g)
 {
     g.fillAll (ui::kMainBg);
+
+    // SVG panel divider between the SNAPBACK and TRANSIENT banks.
+    if (! editorsCollapsed)
+    {
+        const float sx = (float) getWidth() / 800.0f;
+        const float sy = (float) getHeight() / 600.0f;
+        g.setColour (ui::kBorder);
+        g.drawVerticalLine (juce::roundToInt (400.0f * sx),
+                            372.0f * sy, 558.0f * sy);
+    }
 }
 
 void WaveLensEditor::resized()
