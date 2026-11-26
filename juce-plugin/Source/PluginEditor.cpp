@@ -399,8 +399,8 @@ void WaveLensEditor::updateResizeConstraints()
     const int maxWidth = juce::jlimit (1024, 4096, largeSize.getWidth());
     const int maxHeight = juce::jlimit (768, 3072, largeSize.getHeight());
     setResizeLimits (800, 600, maxWidth, maxHeight);
-    if (auto* constrainer = getConstrainer())
-        constrainer->setFixedAspectRatio (4.0 / 3.0);
+    if (auto* resizeLimits = getConstrainer())
+        resizeLimits->setFixedAspectRatio (4.0 / 3.0);
 }
 
 void WaveLensEditor::applyEditorSizePreset (int preset)
