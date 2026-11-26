@@ -50,8 +50,18 @@ function(wavelens_add_opusfile_dependencies)
     FetchContent_MakeAvailable(wavelens_ogg)
     FetchContent_Declare(wavelens_opus GIT_REPOSITORY https://github.com/xiph/opus.git GIT_TAG v1.6.1 GIT_SHALLOW ON)
     FetchContent_MakeAvailable(wavelens_opus)
-    set(Ogg_DIR "${wavelens_ogg_BINARY_DIR}")
-    set(Opus_DIR "${wavelens_opus_BINARY_DIR}")
+    # opusfile searches for CONFIG packages. The upstream Ogg/Opus build-tree
+    # configs are install-oriented and point at files that do not exist until
+    # installation. Provide tiny package shims that reuse the real in-tree
+    # targets created above instead.
+    set(_wavelens_codec_package_dir "${CMAKE_CURRENT_BINARY_DIR}/wavelens-codec-packages")
+    file(MAKE_DIRECTORY "${_wavelens_codec_package_dir}")
+    file(WRITE "${_wavelens_codec_package_dir}/OggConfig.cmake"
+        "if(NOT TARGET Ogg::ogg)\n  message(FATAL_ERROR \"The in-tree Ogg target is unavailable.\")\nendif()\nset(Ogg_FOUND TRUE)\n")
+    file(WRITE "${_wavelens_codec_package_dir}/OpusConfig.cmake"
+        "if(NOT TARGET Opus::opus)\n  message(FATAL_ERROR \"The in-tree Opus target is unavailable.\")\nendif()\nset(Opus_FOUND TRUE)\n")
+    set(Ogg_DIR "${_wavelens_codec_package_dir}")
+    set(Opus_DIR "${_wavelens_codec_package_dir}")
     FetchContent_Declare(wavelens_opusfile
         GIT_REPOSITORY https://github.com/xiph/opusfile.git
         GIT_TAG        6dfd29e7adb87f2e193575fc3fa88cbf1a0b27df)
