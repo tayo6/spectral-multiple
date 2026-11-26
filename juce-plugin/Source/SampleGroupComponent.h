@@ -27,8 +27,10 @@ public:
     int getSelectedLayer() const noexcept { return baseLayer + selectedSlot; }
     void selectSlot (int slotIndex);
     void refreshState();
+    void setViewport (float viewStart, float zoom) noexcept;
 
     std::function<void (int selectedLayer)> onSelectionChanged;
+    std::function<void (float viewStart, float zoom)> onViewportChanged;
     std::function<void()> onSampleStateChanged;
 
     void paint (juce::Graphics&) override;

@@ -5,6 +5,9 @@ namespace ui = wavelens::ui;
 SampleBrowserComponent::SampleBrowserComponent (WaveLensProcessor& processor)
     : proc (processor)
 {
+    // The browser's blank right-hand area is reserved for ENV/REV controls
+    // painted by the underlying layer editor. Let clicks pass through there.
+    setInterceptsMouseClicks (false, true);
     prevBtn.setTooltip ("Select previous sample slot in this section");
     prevBtn.onClick = [this]
     {
