@@ -65,6 +65,14 @@ SampleGroupComponent::SampleGroupComponent (WaveLensProcessor& processor, int gr
         const int layerIdx = baseLayer + i;
         const auto col = ui::layerColour (layerIdx);
         editors[(size_t) i] = std::make_unique<LayerEnvelopeComponent> (proc, layerIdx, col);
+        editors[(size_t) i]->onViewportChanged = [this] (float start, float zoom)
+        {
+            for (auto& sibling : editors)
+                if (sibling != nullptr)
+                    sibling->setViewport (start, zoom);
+            if (onViewportChanged)
+                onViewportChanged (start, zoom);
+        };
         addChildComponent (*editors[(size_t) i]);
     }
 
@@ -173,6 +181,13 @@ void SampleGroupComponent::selectSlot (int slotIndex)
         onSelectionChanged (activeLayer);
 
     repaint();
+}
+
+void SampleGroupComponent::setViewport (float viewStart, float zoom) noexcept
+{
+    for (auto& editor : editors)
+        if (editor != nullptr)
+            editor->setViewport (viewStart, zoom);
 }
 
 void SampleGroupComponent::refreshState()
