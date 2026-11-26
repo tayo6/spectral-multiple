@@ -51,6 +51,14 @@ private:
 };
 
 /** Waveform-backed sample editor with draggable envelope and SVG-positioned controls. */
+/** Disabled SVG phase-invert glyph until the processor exposes a polarity parameter. */
+class PhaseInvertPlaceholder final : public juce::Button
+{
+public:
+    PhaseInvertPlaceholder();
+    void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+};
+
 class LayerEnvelopeComponent final : public juce::Component, private juce::Timer
 {
 public:
@@ -152,6 +160,7 @@ private:
     std::atomic<float>* pFadeOut = nullptr;
 
     juce::TextButton reverseBtn, envEnableBtn;
+    PhaseInvertPlaceholder phaseInvertBtn;
     juce::TextButton focusStartBtn, focusEndBtn, zoomFitBtn, zoomOutBtn, zoomResetBtn, zoomInBtn;
     juce::ComboBox attackCurveBox, decayCurveBox, releaseCurveBox;
     juce::Slider gainSlider, delaySlider, pitchSlider, panSlider, pogoSlider, widthSlider;
