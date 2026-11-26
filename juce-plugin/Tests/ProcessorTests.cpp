@@ -272,7 +272,7 @@ void testRealJuceAiffLoading (const fs::path& dir)
 
 void testRealJuceAacAndM4aLoading()
 {
-#if WAVELENS_ENABLE_MOLE_AUDIO_FORMATS
+#if WAVELENS_ENABLE_MEDIA_FOUNDATION
     WaveLensProcessor proc;
     proc.prepareToPlay (44100.0, 256);
 
