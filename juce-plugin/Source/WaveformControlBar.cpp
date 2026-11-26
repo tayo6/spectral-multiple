@@ -192,15 +192,15 @@ void WaveformControlBar::MagnifierButton::paintButton (juce::Graphics& g, bool h
     g.setColour (active ? ui::kPurpleAccent : ui::kBorder);
     g.drawRoundedRectangle (b, 3.5f, 1.0f);
 
-    // Magnifying glass vector + "DETAIL" text
-    const float iconCx = b.getX() + 12.0f;
+    // SVG order is label first, magnifier second.
+    const float iconCx = b.getRight() - 10.0f;
     const float iconCy = b.getCentreY() - 0.5f;
     g.setColour (active ? ui::kMainText : ui::kSecondaryText);
     g.drawEllipse (iconCx - 4.0f, iconCy - 4.0f, 7.5f, 7.5f, 1.3f);
     g.drawLine (iconCx + 2.2f, iconCy + 2.2f, iconCx + 5.6f, iconCy + 5.6f, 1.4f);
 
     g.setFont (juce::Font (10.0f, juce::Font::bold));
-    g.drawText ("DETAIL", b.withTrimmedLeft (18.0f), juce::Justification::centred);
+    g.drawText ("DETAIL", b.withTrimmedRight (20.0f), juce::Justification::centred);
 }
 
 //==============================================================================
@@ -369,15 +369,26 @@ void WaveformControlBar::paint (juce::Graphics& g)
     g.setColour (ui::kBorder);
     g.drawRoundedRectangle (b.reduced (0.5f), 4.0f, 1.0f);
 
-    g.setFont (juce::Font (10.5f, juce::Font::bold));
+    const float sx = (float) getWidth() / 800.0f;
+    const float sy = (float) getHeight() / 42.0f;
+    const float cx = (float) limiterBtn.getX() + (float) limiterBtn.getWidth() * 0.5f;
+    const float cy = (float) getHeight() * 0.5f;
+    const float radius = 5.0f * sy;
+    juce::Path powerArc;
+    powerArc.addCentredArc (cx, cy + 1.0f * sy, radius, radius, 0.0f,
+                            0.48f, juce::MathConstants<float>::twoPi - 0.48f, true);
     g.setColour (limiterBtn.getToggleState() ? ui::kMainText : ui::kSecondaryText);
-    g.drawText (formatPeakDb (proc.peakNow.load (relaxed)),
-                limiterBtn.getRight() + 6, 0, 64, getHeight(),
-                juce::Justification::centredLeft);
+    g.strokePath (powerArc, juce::PathStrokeType (1.4f * sy));
+    g.drawLine (cx, cy - 7.0f * sy, cx, cy - 0.5f * sy, 1.4f * sy);
 
-    g.setColour (ui::kSecondaryText);
-    g.setFont (juce::Font (9.5f));
-    g.drawText ("Limiter", limiterBtn.getRight() + 4, 0, 48, getHeight(),
+    g.setFont (juce::Font (10.0f * sy, juce::Font::bold));
+    g.setColour (limiterBtn.getToggleState() ? ui::kMainText : ui::kSecondaryText);
+    g.drawText ("Limiter", juce::Rectangle<int> (juce::roundToInt (37.0f * sx), 0,
+                 juce::roundToInt (39.0f * sx), getHeight()), juce::Justification::centredLeft);
+    g.setFont (juce::Font (10.0f * sy, juce::Font::bold));
+    g.drawText (formatPeakDb (proc.peakNow.load (relaxed)),
+                juce::Rectangle<int> (juce::roundToInt (78.0f * sx), 0,
+                                       juce::roundToInt (52.0f * sx), getHeight()),
                 juce::Justification::centredLeft);
 }
 
@@ -388,8 +399,8 @@ void WaveformControlBar::resized()
     auto px = [sx] (float v) { return juce::roundToInt (v * sx); };
     auto py = [sy] (float v) { return juce::roundToInt (v * sy); };
 
-    limiterBtn.setButtonText ("LIMITER");
-    limiterBtn.setBounds (px (18), py (14), px (64), py (22));
+    limiterBtn.setButtonText ({});
+    limiterBtn.setBounds (px (18), py (14), px (16), py (22));
     preLeadSlider.setBounds ({});
 
     collapseTabBtn.setBounds (px (338), 0, px (124), getHeight());
