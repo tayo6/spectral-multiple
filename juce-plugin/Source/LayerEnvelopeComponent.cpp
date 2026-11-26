@@ -988,6 +988,8 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
     // Overview bar when zoomed.
     if (zoomFactor > 1.01f)
     {
+        const float trimStart = juce::jlimit (0.0f, 0.99f, pTrimStart->load());
+        const float trimEnd = juce::jlimit (trimStart + 0.005f, 1.0f, pTrimEnd->load());
         auto ov = waveBox.removeFromBottom (juce::roundToInt (kOverviewHeight * scaleY));
         g.setColour (ui::kMainBg.withAlpha (0.92f));
         g.fillRect (ov);
