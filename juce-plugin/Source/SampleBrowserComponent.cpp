@@ -70,6 +70,7 @@ void SampleBrowserComponent::openBrowserMenu()
     menu.addSectionHeader (layerName.toUpperCase() + " SAMPLE");
     menu.addItem (1, hasSample ? "Replace Audio File..." : "Load Audio File...");
     menu.addItem (2, "Clear Sample", hasSample || proc.isLayerSampleMissing (currentLayer));
+    menu.addItem (4, "Preview Sample", hasSample);
 
     const bool reversed = proc.apvts.getRawParameterValue (ids::layerReverse (currentLayer))->load() > 0.5f;
     menu.addItem (3, "Reverse Sample", true, reversed);
@@ -103,6 +104,10 @@ void SampleBrowserComponent::openBrowserMenu()
             safeThis->onBrowseRequested();
         else if (result == 2 && safeThis->onClearRequested)
             safeThis->onClearRequested();
+        else if (result == 4)
+        {
+            safeThis->proc.requestPreview (safeThis->currentLayer);
+        }
         else if (result == 3)
         {
             if (auto* p = dynamic_cast<juce::RangedAudioParameter*> (
