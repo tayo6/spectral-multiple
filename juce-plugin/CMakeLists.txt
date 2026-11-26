@@ -54,7 +54,7 @@ function(wavelens_add_opusfile_dependencies)
     set(Opus_DIR "${wavelens_opus_BINARY_DIR}")
     FetchContent_Declare(wavelens_opusfile
         GIT_REPOSITORY https://github.com/xiph/opusfile.git
-        GIT_TAG        f92ff8b7f55a05b5205e26d9459441b97a557e39)
+        GIT_TAG        6dfd29e7adb87f2e193575fc3fa88cbf1a0b27df)
     FetchContent_MakeAvailable(wavelens_opusfile)
 endfunction()
 
