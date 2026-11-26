@@ -2,6 +2,40 @@
 
 namespace ui = wavelens::ui;
 
+void SampleGroupComponent::BankSoloButton::paintButton (juce::Graphics& g,
+                                                        bool highlighted,
+                                                        bool down)
+{
+    const auto bounds = getLocalBounds().toFloat().reduced (0.5f);
+    const float scale = juce::jmin (bounds.getWidth(), bounds.getHeight()) / 20.0f;
+    const bool active = getToggleState();
+    auto stroke = active ? accent.brighter (0.18f) : ui::kSecondaryText;
+    if (down || highlighted)
+        stroke = stroke.brighter (0.12f);
+
+    if (active)
+    {
+        g.setColour (accent.withAlpha (0.13f));
+        g.fillRoundedRectangle (bounds, 3.0f * scale);
+    }
+
+    const float cx = bounds.getCentreX();
+    const float cy = bounds.getCentreY() + 1.0f * scale;
+    const float radius = juce::jmin (6.0f * scale, bounds.getHeight() * 0.30f);
+    juce::Path headband;
+    headband.addCentredArc (cx, cy, radius, radius, 0.0f,
+                            juce::MathConstants<float>::pi,
+                            juce::MathConstants<float>::twoPi, true);
+    g.setColour (stroke);
+    g.strokePath (headband, juce::PathStrokeType (1.4f * scale,
+                                                  juce::PathStrokeType::curved,
+                                                  juce::PathStrokeType::rounded));
+    g.fillRoundedRectangle (cx - radius - 1.0f * scale, cy - 1.0f * scale,
+                            2.2f * scale, 5.0f * scale, 1.0f * scale);
+    g.fillRoundedRectangle (cx + radius - 1.2f * scale, cy - 1.0f * scale,
+                            2.2f * scale, 5.0f * scale, 1.0f * scale);
+}
+
 void SampleGroupComponent::BankPowerButton::paintButton (juce::Graphics& g,
                                                           bool highlighted,
                                                           bool down)
