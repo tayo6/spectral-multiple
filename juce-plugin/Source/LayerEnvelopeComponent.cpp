@@ -377,7 +377,7 @@ void LayerEnvelopeComponent::refreshNumericEditor (juce::TextEditor& editor,
                                                     float displayMultiplier,
                                                     int decimalPlaces)
 {
-    if (editor.hasKeyboardFocus())
+    if (editor.hasKeyboardFocus (false))
         return;
 
     if (auto* raw = processor.apvts.getRawParameterValue (parameterId))
