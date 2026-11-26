@@ -44,6 +44,40 @@ void SpectralMultipleLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, in
     const bool hovered = slider.isMouseOverOrDragging();
     const bool isBipolar = static_cast<bool> (slider.getProperties().getWithDefault ("bipolar", false));
 
+    // The compact Pitch control lives in the waveform readout strip. Keep its
+    // title, value and live track in separate vertical zones.
+    if (static_cast<bool> (slider.getProperties().getWithDefault ("compactPitchReadout", false)))
+    {
+        const auto bounds = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height);
+        const float scale = juce::jmax (0.55f, bounds.getHeight() / 20.0f);
+        const float proportion = (float) slider.valueToProportionOfLength (slider.getValue());
+        auto titleArea = juce::Rectangle<int> (juce::roundToInt (2.0f * scale), 0,
+                                               juce::roundToInt (26.0f * scale),
+                                               juce::roundToInt (11.0f * scale));
+        auto valueArea = juce::Rectangle<int> (titleArea.getRight(),
+                                               0,
+                                               juce::jmax (1, width - titleArea.getRight() - juce::roundToInt (2.0f * scale)),
+                                               juce::roundToInt (11.0f * scale));
+        g.setColour (ui::kSecondaryText);
+        g.setFont (juce::Font (7.8f * scale, juce::Font::bold));
+        g.drawFittedText ("Pitch", titleArea, juce::Justification::centredLeft, 1);
+        g.setColour (slider.isEnabled() ? ui::kMainText : ui::kDisabledText);
+        g.setFont (juce::Font (8.8f * scale, juce::Font::bold));
+        g.drawFittedText (slider.getTextFromValue (slider.getValue()), valueArea,
+                          juce::Justification::centredRight, 1);
+
+        const float trackX = bounds.getX() + 2.0f * scale;
+        const float trackW = juce::jmax (4.0f, bounds.getWidth() - 4.0f * scale);
+        const float trackY = bounds.getBottom() - 3.0f * scale;
+        g.setColour (snap::tileTrack);
+        g.drawLine (trackX, trackY, trackX + trackW, trackY, 1.2f * scale);
+        const float thumbX = trackX + juce::jlimit (0.0f, 1.0f, proportion) * trackW;
+        g.setColour (slider.isEnabled() ? accent : ui::kDisabledText);
+        g.fillEllipse (thumbX - 2.0f * scale, trackY - 2.0f * scale,
+                       4.0f * scale, 4.0f * scale);
+        return;
+    }
+
     // Compact SNAPBACK parameter tile: dark rounded tile, grey label, white
     // value, thin accent track near the bottom (bipolar fills from centre).
     if (static_cast<bool> (slider.getProperties().getWithDefault ("isTile", false)))
@@ -57,37 +91,34 @@ void SpectralMultipleLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, in
 
     if (style == juce::Slider::LinearVertical)
     {
-        auto b = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height);
-        const float barW = juce::jlimit (14.0f, 22.0f, b.getWidth() - 10.0f);
-        const float top = b.getY() + 2.0f;
-        const float bot = b.getBottom() - 2.0f;
-        const float barH = juce::jmax (12.0f, bot - top);
-        juce::Rectangle<float> bar (b.getCentreX() - barW * 0.5f, top, barW, barH);
+        // SVG fader: a fine vertical guide, accent active range and a circular
+        // thumb. The title and dB value are drawn by LayerEnvelopeComponent.
+        const auto bounds = juce::Rectangle<float> ((float) x, (float) y,
+                                                     (float) width, (float) height);
+        const float scale = juce::jmax (0.55f, bounds.getHeight() / 36.0f);
+        const float cx = bounds.getCentreX();
+        const float top = bounds.getY();
+        const float bottom = bounds.getBottom();
+        const float pos = juce::jlimit (top + 0.5f * scale,
+                                        bottom - 0.5f * scale, sliderPos);
 
-        g.setColour (snap::inset);
-        g.fillRoundedRectangle (bar, 3.0f);
+        g.setColour (ui::kSecondaryText.withAlpha (0.58f));
+        for (float dashY = top; dashY < bottom; dashY += 7.0f * scale)
+            g.drawLine (cx, dashY, cx, juce::jmin (bottom, dashY + 4.0f * scale),
+                        0.8f * scale);
 
-        // Subtle unity (0 dB) reference tick at 50%
-        if (static_cast<bool> (slider.getProperties().getWithDefault ("unityTick", true)))
+        if (pos < bottom)
         {
-            const float unityY = bar.getCentreY();
-            g.setColour (ui::kBorder.brighter (0.25f));
-            g.drawHorizontalLine (juce::roundToInt (unityY), bar.getX() - 3.0f, bar.getRight() + 3.0f);
-        }
-
-        const float clampedPos = juce::jlimit (bar.getY() + 1.0f, bar.getBottom() - 1.0f, sliderPos);
-        const float fillH = bar.getBottom() - clampedPos;
-        if (fillH > 0.5f)
-        {
-            g.setColour (accent.withAlpha (hovered ? 0.34f : 0.24f));
-            g.fillRoundedRectangle (bar.getX() + 1.0f, clampedPos, bar.getWidth() - 2.0f, fillH - 0.5f, 2.0f);
-
             g.setColour (accent);
-            g.fillRect (bar.getX() + 1.0f, clampedPos, bar.getWidth() - 2.0f, 2.0f);
+            g.drawLine (cx, pos, cx, bottom, 1.3f * scale);
         }
 
-        g.setColour (hovered ? accent.withAlpha (0.75f) : ui::kBorder);
-        g.drawRoundedRectangle (bar, 3.0f, 1.0f);
+        const float radius = 3.0f * scale;
+        g.setColour (ui::kMainText);
+        g.fillEllipse (cx - radius, pos - radius, 2.0f * radius, 2.0f * radius);
+        g.setColour (ui::kBorder.brighter (0.25f));
+        g.drawEllipse (cx - radius, pos - radius, 2.0f * radius, 2.0f * radius,
+                       1.2f * scale);
         return;
     }
 
@@ -181,65 +212,76 @@ void SpectralMultipleLookAndFeel::drawTileSlider (juce::Graphics& g, juce::Recta
         ? ui::kPurpleAccent
         : slider.findColour (juce::Slider::trackColourId);
     const bool isBipolar = static_cast<bool> (slider.getProperties().getWithDefault ("bipolar", false));
+    const float scale = juce::jmax (0.55f, tile.getHeight() / 36.0f);
 
     g.setColour (hovered ? ui::kHoverBg : ui::kControlBg);
-    g.fillRoundedRectangle (tile, 5.5f);
+    g.fillRoundedRectangle (tile, 2.0f * scale);
     g.setColour (enabled ? ui::kBorder : ui::kBorder.withAlpha (0.45f));
-    g.drawRoundedRectangle (tile.reduced (0.5f), 5.5f, 1.0f);
+    g.drawRoundedRectangle (tile.reduced (0.5f * scale), 2.0f * scale, 1.0f * scale);
 
-    auto inner = tile.reduced (7.0f, 4.0f);
     const auto label = slider.getProperties().getWithDefault ("tileLabel", slider.getName()).toString();
     const auto valueText = slider.getTextFromValue (slider.getValue());
-    const float textW = juce::jmax (10.0f, inner.getWidth());
+    const float textW = juce::jmax (10.0f * scale, tile.getWidth() - 14.0f * scale);
 
-    // Shrink long labels/values ("FADE OUT", "20.0 kHz") until they fit the tile.
-    auto shrinkToFit = [] (const juce::String& t, float baseHeight, float maxWidth) -> juce::Font
+    // Preserve the SVG's title/value rhythm; reserve a separate bottom row for the track.
+    auto shrinkToFit = [scale] (const juce::String& text, float baseHeight, float maxWidth) -> juce::Font
     {
-        auto f = juce::Font (baseHeight, juce::Font::bold);
-        while (f.getStringWidthFloat (t) > maxWidth - 1.0f && f.getHeight() > 6.0f)
-            f = f.withHeight (f.getHeight() - 0.5f);
-        return f;
+        auto font = juce::Font (baseHeight * scale, juce::Font::bold);
+        const float minimumHeight = 6.0f * scale;
+        while (font.getStringWidthFloat (text) > maxWidth - 1.0f * scale
+               && font.getHeight() > minimumHeight)
+            font = font.withHeight (font.getHeight() - 0.5f * scale);
+        return font;
     };
 
-    auto labelArea = inner.removeFromTop (11).toNearestInt();
+    const float textLeft = tile.getX() + 7.0f * scale;
+    const float labelTop = tile.getY() + 3.0f * scale;
+    auto labelArea = juce::Rectangle<float> (textLeft, labelTop,
+                                             textW, 11.0f * scale);
     g.setColour (enabled ? ui::kTileLabel : ui::kDisabledText);
     g.setFont (shrinkToFit (label, 9.0f, textW));
     if (label.isNotEmpty())
-        g.drawText (label, labelArea, juce::Justification::centredLeft, false);
+        g.drawText (label, labelArea.toNearestInt(), juce::Justification::centredLeft, false);
 
-    auto valueArea = inner.removeFromTop (15).toNearestInt();
+    auto valueArea = juce::Rectangle<float> (textLeft, tile.getY() + 16.0f * scale,
+                                             textW, 13.0f * scale);
     g.setColour (enabled ? ui::kMainText : ui::kDisabledText);
-    g.setFont (shrinkToFit (valueText, 12.5f, textW));
-    g.drawText (valueText, valueArea, juce::Justification::centredLeft, false);
+    g.setFont (shrinkToFit (valueText, 10.5f, textW));
+    g.drawText (valueText, valueArea.toNearestInt(), juce::Justification::centredLeft, false);
 
-    const float trackY = tile.getBottom() - 9.5f;
-    auto track = juce::Rectangle<float> (tile.getX() + 7.0f, trackY,
-                                         juce::jmax (4.0f, tile.getWidth() - 14.0f), 2.0f);
+    // Track is isolated below the value so it cannot strike through the readout.
+    const float trackY = tile.getBottom() - 4.5f * scale;
+    auto track = juce::Rectangle<float> (tile.getX() + 7.0f * scale, trackY,
+                                         juce::jmax (4.0f * scale, tile.getWidth() - 14.0f * scale),
+                                         1.25f * scale);
     g.setColour (snap::tileTrack);
-    g.fillRoundedRectangle (track, 1.0f);
+    g.fillRoundedRectangle (track, 0.7f * scale);
 
     if (isBipolar)
     {
-        // Bipolar centre marker
         g.setColour (ui::kBorder.brighter (0.30f));
-        g.fillRect (track.getCentreX() - 0.5f, trackY - 3.0f, 1.0f, 8.0f);
+        g.drawLine (track.getCentreX(), trackY - 2.0f * scale,
+                    track.getCentreX(), trackY + 3.0f * scale, 0.85f * scale);
     }
 
-    const float px = track.getX() + proportion * track.getWidth();
+    const float px = track.getX() + juce::jlimit (0.0f, 1.0f, proportion) * track.getWidth();
     juce::Rectangle<float> fill;
     if (isBipolar)
         fill = juce::Rectangle<float> (juce::jmin (px, track.getCentreX()), trackY,
                                        std::abs (px - track.getCentreX()), track.getHeight());
     else
         fill = track.withWidth (juce::jmax (0.0f, px - track.getX()));
-    if (fill.getWidth() > 0.5f)
+    if (fill.getWidth() > 0.5f * scale)
     {
-        g.setColour (accent.withAlpha (enabled ? 0.92f : 0.35f));
-        g.fillRoundedRectangle (fill, 1.0f);
+        g.setColour (accent.withAlpha (enabled ? 0.95f : 0.35f));
+        g.fillRoundedRectangle (fill, 0.7f * scale);
     }
 
+    const float thumbW = 2.6f * scale;
+    const float thumbH = 6.0f * scale;
     g.setColour (enabled ? ui::kMainText : ui::kDisabledText);
-    g.fillRoundedRectangle (px - 1.5f, trackY - 3.5f, 3.0f, 9.0f, 1.5f);
+    g.fillRoundedRectangle (px - thumbW * 0.5f, trackY - (thumbH - track.getHeight()) * 0.5f,
+                            thumbW, thumbH, 1.0f * scale);
 }
 
 void SpectralMultipleLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,
@@ -421,12 +463,12 @@ void SpectralMultipleLookAndFeel::drawPopupMenuItem (juce::Graphics& g, const ju
 
 juce::Font SpectralMultipleLookAndFeel::getComboBoxFont (juce::ComboBox& box)
 {
-    return juce::Font (juce::jlimit (9.5f, 11.5f, (float) box.getHeight() * 0.42f));
+    return juce::Font (juce::jlimit (8.0f, 28.0f, (float) box.getHeight() * 0.42f));
 }
 
 juce::Font SpectralMultipleLookAndFeel::getTextButtonFont (juce::TextButton&, int buttonHeight)
 {
-    return juce::Font (juce::jlimit (9.5f, 11.5f, (float) buttonHeight * 0.42f), juce::Font::bold);
+    return juce::Font (juce::jlimit (8.0f, 28.0f, (float) buttonHeight * 0.42f), juce::Font::bold);
 }
 
 juce::Font SpectralMultipleLookAndFeel::getPopupMenuFont()
