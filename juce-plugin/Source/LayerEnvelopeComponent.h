@@ -8,10 +8,11 @@
     independently editable endpoints, each with a numeric percentage field.
     The existing layerTrimStart/layerTrimEnd APVTS parameters remain unchanged.
 */
-class DualTrimRangeComponent final : public juce::Component
+class DualTrimRangeComponent final : public juce::Component, private juce::Timer
 {
 public:
     DualTrimRangeComponent (WaveLensProcessor&, int layerIndex, juce::Colour accentColour);
+    ~DualTrimRangeComponent() override;
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -22,6 +23,7 @@ public:
 private:
     enum class ActiveThumb { None, Start, End };
 
+    void timerCallback() override;
     void refreshEditors();
     void commitEditor (bool isStart);
     void setTrimValue (bool isStart, float value, bool sendGesture);
