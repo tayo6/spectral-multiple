@@ -255,10 +255,17 @@ void SpectralMultipleLookAndFeel::drawButtonBackground (juce::Graphics& g, juce:
         ? juce::Colour ((juce::uint32) (juce::int64) accentVar)
         : ui::kPurpleAccent;
 
-    // Trapezoid tab (TRIGGER): wide top, narrow bottom, accent filled.
+    // SVG COLLAPSE tab: narrow top edge, wider bottom edge.
     if (static_cast<bool> (button.getProperties().getWithDefault ("isTrapezoid", false)))
     {
-        const auto trap = snap::trapezoidPath (bounds, bounds.getWidth() * 0.16f);
+        const float inset = bounds.getWidth() * 0.20f;
+        juce::Path trap;
+        trap.startNewSubPath (bounds.getX() + inset, bounds.getY());
+        trap.lineTo (bounds.getRight() - inset, bounds.getY());
+        trap.lineTo (bounds.getRight(), bounds.getBottom());
+        trap.lineTo (bounds.getX(), bounds.getBottom());
+        trap.closeSubPath();
+
         juce::Colour fill = isToggleOn ? customAccent.brighter (0.12f) : customAccent;
         if (! button.isEnabled())
             fill = ui::kControlBg;
