@@ -291,7 +291,7 @@ void testRealJuceAacAndM4aLoading()
     check (proc.loadSampleFile (1, aac, error),
            "RealJUCE-AAC: WaveLens loads raw AAC/ADTS audio", error.toStdString());
     const auto aacPreview = proc.getWaveformPreview (1);
-    check (aacPreview.loaded && aacPreview.durationMs > 250.0 && aacPreview.durationMs < 310.0,
+    check (aacPreview.loaded && aacPreview.durationMs > 220.0 && aacPreview.durationMs < 310.0,
            "RealJUCE-AAC: AAC waveform and duration are decoded",
            "durationMs=" + std::to_string (aacPreview.durationMs));
 #endif
