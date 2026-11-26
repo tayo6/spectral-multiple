@@ -1273,7 +1273,7 @@ void LayerEnvelopeComponent::mouseDown (const juce::MouseEvent& event)
 
     // The compact Pitch readout doubles as a drag control, keeping the SVG
     // card layout while retaining direct access to the per-layer pitch value.
-    if (pitchReadoutBounds.contains (event.position))
+    if (pitchReadoutBounds.contains (event.position.roundToInt()))
     {
         dragStartX = event.position.x;
         dragStartPitch = pPitch->load();
@@ -1331,7 +1331,7 @@ void LayerEnvelopeComponent::mouseDoubleClick (const juce::MouseEvent& event)
 {
     const auto preview = processor.getWaveformPreview (layer);
     const auto geometry = getGeometry (preview.loaded ? (float) preview.durationMs : 1000.0f);
-    if (pitchReadoutBounds.contains (event.position))
+    if (pitchReadoutBounds.contains (event.position.roundToInt()))
     {
         setParameter (ids::layerPitch (layer), 0.0f);
         repaint();
