@@ -114,7 +114,7 @@ void LayerPadStripComponent::resized()
 //==============================================================================
 WaveformResizeHandle::WaveformResizeHandle()
 {
-    setTooltip ("Drag to resize the waveform and sample editors; double-click to reset");
+    setName ("Waveform resize handle");
     setMouseCursor (juce::MouseCursor::UpDownResizeCursor);
 }
 
