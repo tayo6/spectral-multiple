@@ -56,11 +56,9 @@ private:
 
 //==============================================================================
 /**
-    36 px control bar directly beneath the main oscilloscope:
-    Left:   Limiter toggle + live peak ceiling dB + PRE lead slider
-    Centre: Trapezoid TRIGGER settings drawer tab + quick-fire trigger button
-    Right:  GRID / SECONDS ruler toggle, DETAIL magnifier toggle,
-            zoom out / zoom level / zoom in, OUTPUT monitor toggle
+    SVG-aligned toolbar. Left: limiter and live peak value. Centre:
+    raised COLLAPSE trapezoid. Right: Detail, Zoom and Output controls.
+    Trigger settings are opened from the header menu.
 */
 class WaveformControlBar final : public juce::Component, private juce::Timer
 {
