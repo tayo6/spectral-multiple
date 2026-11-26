@@ -416,19 +416,24 @@ void WaveformControlBar::paint (juce::Graphics& g)
                limiterBtn.getRight() + 58, 64, juce::Justification::centredLeft,
                juce::Colour (0xff565261));
 
+    // Static label positions are specified in the 800px SVG coordinate
+    // system, just like the buttons below. Scale them with the editor width.
+    const float sx = (float) getWidth() / 800.0f;
+    auto px = [sx] (float value) { return juce::roundToInt (value * sx); };
+
     // PRE lead and ruler mode controls occupy the otherwise-unused middle-left
     // strip, preserving the clean SVG centre tab and right-side controls.
-    stripText ("PRE", 158, 24, juce::Justification::centredLeft,
+    stripText ("PRE", px (158), px (24), juce::Justification::centredLeft,
                juce::Colour (0xff928da1));
     stripText (preLeadSlider.getTextFromValue (preLeadSlider.getValue()),
-               284, 48, juce::Justification::centredLeft, juce::Colour (0xffdcd9e6));
+               px (284), px (48), juce::Justification::centredLeft, juce::Colour (0xffdcd9e6));
 
     // SVG right side: compact GRID/SEC toggles, Detail, Zoom +/- and Output.
-    stripText ("Detail", 567, 42, juce::Justification::centredRight,
+    stripText ("Detail", px (567), px (42), juce::Justification::centredRight,
                juce::Colour (0xff928da1));
-    stripText ("Zoom", 632, 30, juce::Justification::centredRight,
+    stripText ("Zoom", px (632), px (30), juce::Justification::centredRight,
                juce::Colour (0xff928da1));
-    stripText ("Output", 724, 34, juce::Justification::centredRight,
+    stripText ("Output", px (724), px (34), juce::Justification::centredRight,
                juce::Colour (0xff928da1));
 }
 
