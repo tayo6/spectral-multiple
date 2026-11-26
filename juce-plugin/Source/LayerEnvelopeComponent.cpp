@@ -618,9 +618,11 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry (float tota
     const bool isZoomed = zoomFactor > 1.01f;
     auto bounds = getLocalBounds().toFloat();
     bounds.setRight (bounds.getX() + bounds.getWidth() * kWaveformWidthRatio);
-    bounds.removeFromTop ((float) kHeaderHeight);
-    bounds.removeFromBottom ((float) (kBottomReadoutHeight + kRulerHeight
-                                      + (isZoomed ? kOverviewHeight : 0.0f)));
+    const float scaleY = (float) getHeight() / 152.0f;
+    bounds.removeFromTop ((float) juce::roundToInt ((float) kHeaderHeight * scaleY));
+    bounds.removeFromBottom ((float) (juce::roundToInt ((float) kBottomReadoutHeight * scaleY)
+                                      + juce::roundToInt (kRulerHeight * scaleY)
+                                      + (isZoomed ? juce::roundToInt (kOverviewHeight * scaleY) : 0)));
     result.plot = bounds;
 
     const auto layerParams = readLayerParameters();
@@ -708,7 +710,8 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
     const bool reversed = pReverse->load() > 0.5f;
 
     // Top strip is reserved for the sample name and slot navigation overlay.
-    auto readoutBar = waveBox.removeFromTop ((float) kHeaderHeight);
+    const float scaleY = (float) getHeight() / 152.0f;
+    auto readoutBar = waveBox.removeFromTop ((float) juce::roundToInt ((float) kHeaderHeight * scaleY));
     g.setColour (ui::kInsetBg.withAlpha (0.92f));
     g.fillRect (readoutBar);
     g.setColour (ui::kBorder);
@@ -950,7 +953,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
     }
 
     // Bottom Attack / Decay readout and the interactive sample Pitch control.
-    auto bottomReadout = waveBox.removeFromBottom (kBottomReadoutHeight);
+    auto bottomReadout = waveBox.removeFromBottom (juce::roundToInt ((float) kBottomReadoutHeight * scaleY));
     g.setColour (ui::kInsetBg.withAlpha (0.92f));
     g.fillRect (bottomReadout);
     g.setColour (ui::kBorder);
@@ -964,7 +967,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
                 envReadout, juce::Justification::centredLeft, true);
 
     // Bottom time ruler.
-    auto ruler = waveBox.removeFromBottom (kRulerHeight);
+    auto ruler = waveBox.removeFromBottom (juce::roundToInt (kRulerHeight * scaleY));
     g.setColour (ui::kInsetBg.withAlpha (0.85f));
     g.fillRect (ruler);
     g.setColour (ui::kSecondaryText);
@@ -985,7 +988,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
     // Overview bar when zoomed.
     if (zoomFactor > 1.01f)
     {
-        auto ov = waveBox.removeFromBottom (kOverviewHeight);
+        auto ov = waveBox.removeFromBottom (juce::roundToInt (kOverviewHeight * scaleY));
         g.setColour (ui::kMainBg.withAlpha (0.92f));
         g.fillRect (ov);
         g.setColour (ui::kBorder);
@@ -1043,10 +1046,10 @@ void LayerEnvelopeComponent::resized()
     controlStripBounds = controls;
 
     const float scaleY = (float) getHeight() / 152.0f;
-    auto headerBar = waveArea.removeFromTop (kHeaderHeight);
+    auto headerBar = waveArea.removeFromTop (juce::roundToInt ((float) kHeaderHeight * scaleY));
     envEnableBtn.setBounds (headerBar.removeFromRight (40));
 
-    auto readout = waveArea.removeFromBottom (kBottomReadoutHeight);
+    auto readout = waveArea.removeFromBottom (juce::roundToInt ((float) kBottomReadoutHeight * scaleY));
     const int pitchWidth = juce::roundToInt ((float) waveArea.getWidth() * (63.0f / 226.0f));
     pitchSlider.setBounds (readout.removeFromRight (juce::jlimit (52, readout.getWidth(), pitchWidth)));
     waveArea.removeFromBottom (juce::roundToInt (kRulerHeight * scaleY));
@@ -1077,7 +1080,7 @@ void LayerEnvelopeComponent::resized()
     rightCol.removeFromTop (juce::jlimit (0, rightCol.getHeight(), cardGap));
     pogoSlider.setBounds (rightCol.removeFromTop (juce::jmin (rightCol.getHeight(), cardH)));
     gainSlider.setBounds (gainCardBounds.toNearestInt()
-                              .reduced (juce::jmax (4, gainCardBounds.getWidth() / 4.0f),
+                              .reduced (juce::jmax (4, juce::roundToInt (gainCardBounds.getWidth() / 4.0f)),
                                         juce::roundToInt (18.0f * scaleY)));
 }
 
