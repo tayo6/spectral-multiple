@@ -273,6 +273,12 @@ void PluginHeaderComponent::openMainMenu()
     menu.addItem (1, "Fire Manual Trigger");
     menu.addItem (2, "Reset Scope & Meters");
     menu.addItem (3, "Reset Timeline Zoom (1.0x)");
+    menu.addItem (4, "Trigger Settings");
+    juce::PopupMenu editorSizes;
+    editorSizes.addItem (30, "Extra Large — SVG reference (800 × 600)", true, currentEditorSizePreset == 0);
+    editorSizes.addItem (31, "Large — Fit available screen", true, currentEditorSizePreset == 1);
+    editorSizes.addItem (32, "Normal — 1024 × 768", true, currentEditorSizePreset == 2);
+    menu.addSubMenu ("Editor Size", editorSizes);
     menu.addSeparator();
     menu.addSectionHeader ("TIMELINE TEMPO (" + juce::String ((int) currentBpm) + " BPM)");
     menu.addItem (10, "Set 90 BPM");
@@ -306,6 +312,9 @@ void PluginHeaderComponent::openMainMenu()
             case 3:
                 if (safeThis->onResetZoom) safeThis->onResetZoom();
                 break;
+            case 4:
+                if (safeThis->onOpenTriggerSettings) safeThis->onOpenTriggerSettings();
+                break;
             case 10: safeThis->setBpm (90.0); break;
             case 11: safeThis->setBpm (120.0); break;
             case 12: safeThis->setBpm (140.0); break;
@@ -317,6 +326,18 @@ void PluginHeaderComponent::openMainMenu()
                     safeThis->proc.clearSample (l);
                 if (safeThis->onSampleStateChanged)
                     safeThis->onSampleStateChanged();
+                break;
+            case 30:
+                safeThis->setEditorSizePreset (0);
+                if (safeThis->onEditorSizeSelected) safeThis->onEditorSizeSelected (0);
+                break;
+            case 31:
+                safeThis->setEditorSizePreset (1);
+                if (safeThis->onEditorSizeSelected) safeThis->onEditorSizeSelected (1);
+                break;
+            case 32:
+                safeThis->setEditorSizePreset (2);
+                if (safeThis->onEditorSizeSelected) safeThis->onEditorSizeSelected (2);
                 break;
             default:
                 break;
