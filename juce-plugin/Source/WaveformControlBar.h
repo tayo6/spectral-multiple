@@ -45,7 +45,7 @@ private:
     juce::ComboBox spanBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> spanAtt;
 
-    juce::TextButton listenBtn { "MONITOR IN" };
+    juce::TextButton listenBtn { "MONITOR OUT" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> listenAtt;
 
     uint32_t lastTrigCount = 0;
