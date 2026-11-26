@@ -74,25 +74,17 @@ add_library(WaveLensAudioCodecDependencies INTERFACE)
 target_link_libraries(WaveLensAudioCodecDependencies INTERFACE OpusFile::opusfile)
 
 if(WIN32)
-    FetchContent_Declare(wavelens_mole
-        GIT_REPOSITORY https://github.com/perob/MOLE.git
-        GIT_TAG f92ff8b7f55a05b5205e26d9459441b97a557e39)
-    if(POLICY CMP0169)
-        cmake_policy(PUSH)
-        cmake_policy(SET CMP0169 OLD)
-    endif()
-    FetchContent_GetProperties(wavelens_mole)
-    if(NOT wavelens_mole_POPULATED)
-        FetchContent_Populate(wavelens_mole)
-    endif()
-    if(POLICY CMP0169)
-        cmake_policy(POP)
-    endif()
-    juce_add_module("${wavelens_mole_SOURCE_DIR}/modules/mole_audio_formats")
-    target_link_libraries(WaveLensAudioCodecDependencies INTERFACE mole_audio_formats)
-    target_compile_definitions(WaveLensAudioCodecDependencies INTERFACE WAVELENS_ENABLE_MOLE_AUDIO_FORMATS=1)
+    # Windows 7 Media Foundation provides the AAC/MP4 source reader and AAC decoder.
+    # Link the platform libraries directly rather than adding a JUCE-version-specific
+    # third-party audio-format module.
+    target_link_libraries(WaveLensAudioCodecDependencies INTERFACE
+        mfplat
+        mfreadwrite
+        mfuuid
+        ole32)
+    target_compile_definitions(WaveLensAudioCodecDependencies INTERFACE WAVELENS_ENABLE_MEDIA_FOUNDATION=1)
 else()
-    target_compile_definitions(WaveLensAudioCodecDependencies INTERFACE WAVELENS_ENABLE_MOLE_AUDIO_FORMATS=0)
+    target_compile_definitions(WaveLensAudioCodecDependencies INTERFACE WAVELENS_ENABLE_MEDIA_FOUNDATION=0)
 endif()
 
 juce_add_plugin(WaveLens
@@ -174,7 +166,7 @@ if(BUILD_ENGINE_TESTS)
 
     target_compile_features(SpectralMultipleEngineTests PRIVATE cxx_std_17)
     target_compile_definitions(SpectralMultipleEngineTests PRIVATE
-        WAVELENS_ENABLE_MOLE_AUDIO_FORMATS=0
+        WAVELENS_ENABLE_MEDIA_FOUNDATION=0
         WAVELENS_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Tests/fixtures")
 
     if(MSVC)
