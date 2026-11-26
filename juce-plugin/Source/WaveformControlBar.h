@@ -29,6 +29,9 @@ private:
     juce::Slider thresholdSlider;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> thresholdAtt;
 
+    juce::Slider preLeadSlider;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> preLeadAtt;
+
     juce::ComboBox modeBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> modeAtt;
 
