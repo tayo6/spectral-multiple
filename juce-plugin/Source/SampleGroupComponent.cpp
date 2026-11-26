@@ -112,8 +112,12 @@ SampleGroupComponent::SampleGroupComponent (WaveLensProcessor& processor, int gr
 
     // The SVG header only shows power + title + headphone solo; audition and
     // clear stay available (hidden) so existing behaviour is preserved.
-    auditionBtn.setVisible (false);
-    clearBtn.setVisible (false);
+    auditionBtn.setButtonText ("AUD");
+    auditionBtn.setTooltip ("Audition the selected layer sample");
+    auditionBtn.setVisible (true);
+    clearBtn.setButtonText ("CLR");
+    clearBtn.setTooltip ("Clear the selected layer sample");
+    clearBtn.setVisible (true);
 
     selectSlot (0);
 }
@@ -165,7 +169,7 @@ void SampleGroupComponent::promptLoadActiveLayer()
     const int targetLayer = getSelectedLayer();
     auto chooser = std::make_shared<juce::FileChooser> (
         "Load sample for " + ui::layerFullName (targetLayer),
-        juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
+        juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3;*.opus;*.aac;*.adts;*.m4a;*.mp4;*.3gp");
 
     juce::Component::SafePointer<SampleGroupComponent> safeThis (this);
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
@@ -200,7 +204,9 @@ bool SampleGroupComponent::isInterestedInFileDrag (const juce::StringArray& file
 {
     for (const auto& f : files)
         if (f.endsWithIgnoreCase (".wav") || f.endsWithIgnoreCase (".aif") || f.endsWithIgnoreCase (".aiff")
-            || f.endsWithIgnoreCase (".flac") || f.endsWithIgnoreCase (".ogg") || f.endsWithIgnoreCase (".mp3"))
+            || f.endsWithIgnoreCase (".flac") || f.endsWithIgnoreCase (".ogg") || f.endsWithIgnoreCase (".mp3")
+            || f.endsWithIgnoreCase (".opus") || f.endsWithIgnoreCase (".aac") || f.endsWithIgnoreCase (".adts")
+            || f.endsWithIgnoreCase (".m4a") || f.endsWithIgnoreCase (".mp4") || f.endsWithIgnoreCase (".3gp"))
             return true;
     return false;
 }
@@ -275,8 +281,8 @@ void SampleGroupComponent::resized()
     // SVG sample-name row: the browser sits INSIDE the sample box header
     // ("Reverse Whip > Scraping By" @ x 28..206 + prev/next chevrons).
     sampleBrowser.setBounds (at (16, 402, 226, 20));
-    auditionBtn.setBounds (at (0, 0, 0, 0));
-    clearBtn.setBounds (at (0, 0, 0, 0));
+    auditionBtn.setBounds (at (316, 376, 24, 20));
+    clearBtn.setBounds (at (342, 376, 24, 20));
 
     // The editor fills everything below the header row.
     editorBounds = area.withTrimmedTop (juce::roundToInt (0.0f * sy))

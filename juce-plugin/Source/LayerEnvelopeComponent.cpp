@@ -651,6 +651,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         drawFlPoint (geometry.attack);
         drawFlPoint (geometry.hold);
         drawFlPoint (geometry.decay);
+        drawFlPoint (geometry.sustain);
         drawFlPoint (geometry.release);
         drawTensionPoint (geometry.tensionAttack, geometry.tensionAttackVisible);
         drawTensionPoint (geometry.tensionDecay, geometry.tensionDecayVisible);
@@ -668,6 +669,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
     const auto bottomReadout = svg (16, 528, 226, 18);
     const auto labelFont = juce::Font (juce::jlimit (8.5f, 10.5f, 10.5f));
 
+    pitchReadoutBounds = svg (208.0f, 528.0f, 32.0f, 18.0f).toNearestInt();
     const auto attackPct = juce::String (juce::roundToInt (juce::jlimit (0.0f, 1.0f,
                     pAttack->load() / juce::jmax (1.0f, pAttack->load() + pHold->load() + pDecay->load())) * 100.0f));
     const auto decayPct = juce::String (juce::roundToInt (juce::jlimit (0.0f, 1.0f,
@@ -683,11 +685,11 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
     g.setColour (ui::kSecondaryText);
     g.drawText ("Attack", cell (10.0f, 40.0f), juce::Justification::centredLeft, true);
     g.drawText ("Decay", cell (87.0f, 40.0f), juce::Justification::centredLeft, true);
-    g.drawText ("Pitch", cell (163.0f, 34.0f), juce::Justification::centredLeft, true);
+    g.drawText ("Pitch", cell (162.0f, 30.0f), juce::Justification::centredLeft, true);
     g.setColour (ui::kMainText);
     g.drawText (attackPct + "%", cell (47.0f, 40.0f), juce::Justification::centredLeft, true);
     g.drawText (decayPct + "%", cell (123.0f, 40.0f), juce::Justification::centredLeft, true);
-    g.drawText (pitchTxt, cell (192.0f, 40.0f), juce::Justification::centredLeft, true);
+    g.drawText (pitchTxt, cell (193.0f, 32.0f), juce::Justification::centredLeft, true);
 
     // ---- SVG "Volume" fader card (59x76, #17151d): centred label on top,
     // vertical track 421..457, thumb r3, centred value at 470 ----
@@ -1052,6 +1054,7 @@ void LayerEnvelopeComponent::beginGesture (Handle handle)
     {
         case Handle::TrimStart:      parameterId = ids::layerTrimStart (layer); break;
         case Handle::TrimEnd:        parameterId = ids::layerTrimEnd (layer); break;
+        case Handle::Pitch:           parameterId = ids::layerPitch (layer); break;
         case Handle::Attack:         parameterId = ids::layerAttack (layer); break;
         case Handle::Hold:           parameterId = ids::layerHold (layer); break;
         case Handle::Decay:          parameterId = ids::layerDecay (layer); break;
@@ -1078,6 +1081,7 @@ void LayerEnvelopeComponent::endGesture()
     {
         case Handle::TrimStart:      parameterId = ids::layerTrimStart (layer); break;
         case Handle::TrimEnd:        parameterId = ids::layerTrimEnd (layer); break;
+        case Handle::Pitch:           parameterId = ids::layerPitch (layer); break;
         case Handle::Attack:         parameterId = ids::layerAttack (layer); break;
         case Handle::Hold:           parameterId = ids::layerHold (layer); break;
         case Handle::Decay:          parameterId = ids::layerDecay (layer); break;
@@ -1094,6 +1098,7 @@ void LayerEnvelopeComponent::endGesture()
             parameter->endChangeGesture();
 
     activeHandle = Handle::None;
+    draggingTrimCard = false;
 }
 
 void LayerEnvelopeComponent::setParameter (const juce::String& parameterId, float value)
@@ -1127,6 +1132,14 @@ void LayerEnvelopeComponent::applyDrag (juce::Point<float> position)
         return;
     }
 
+    if (activeHandle == Handle::Pitch)
+    {
+        const float delta = (position.x - dragStartX) * 0.5f;
+        setParameter (ids::layerPitch (layer), juce::jlimit (-24.0f, 24.0f, dragStartPitch + delta));
+        repaint();
+        return;
+    }
+
     if (activeHandle == Handle::TensionAttack
         || activeHandle == Handle::TensionDecay
         || activeHandle == Handle::TensionRelease)
@@ -1146,10 +1159,11 @@ void LayerEnvelopeComponent::applyDrag (juce::Point<float> position)
     // Dragging on the dual-handle trim card updates the matching trim end.
     if (activeHandle == Handle::TrimStart)
     {
-        if (trimCardBounds.contains (position))
+        if (draggingTrimCard)
         {
-            const float trackX0 = trimCardBounds.getX() + 12.0f;
-            const float trackX1 = trimCardBounds.getRight() - 12.0f;
+            const float ux = trimCardBounds.getWidth() / 134.0f;
+            const float trackX0 = trimCardBounds.getX() + 14.0f * ux;
+            const float trackX1 = trimCardBounds.getRight() - 14.0f * ux;
             const float norm = juce::jlimit (0.0f, juce::jmax (0.0f, pTrimEnd->load() - 0.005f),
                                              (position.x - trackX0) / juce::jmax (1.0f, trackX1 - trackX0));
             setParameter (ids::layerTrimStart (layer), norm);
@@ -1164,10 +1178,11 @@ void LayerEnvelopeComponent::applyDrag (juce::Point<float> position)
     }
     if (activeHandle == Handle::TrimEnd)
     {
-        if (trimCardBounds.contains (position))
+        if (draggingTrimCard)
         {
-            const float trackX0 = trimCardBounds.getX() + 12.0f;
-            const float trackX1 = trimCardBounds.getRight() - 12.0f;
+            const float ux = trimCardBounds.getWidth() / 134.0f;
+            const float trackX0 = trimCardBounds.getX() + 14.0f * ux;
+            const float trackX1 = trimCardBounds.getRight() - 14.0f * ux;
             const float norm = juce::jlimit (juce::jmin (1.0f, pTrimStart->load() + 0.005f), 1.0f,
                                              (position.x - trackX0) / juce::jmax (1.0f, trackX1 - trackX0));
             setParameter (ids::layerTrimEnd (layer), norm);
@@ -1238,6 +1253,7 @@ void LayerEnvelopeComponent::mouseDown (const juce::MouseEvent& event)
     }
 
     endGesture();
+    draggingTrimCard = false;
 
     if (zoomFactor > 1.01f && overviewBarBounds.contains (event.position))
     {
@@ -1255,11 +1271,24 @@ void LayerEnvelopeComponent::mouseDown (const juce::MouseEvent& event)
         return;
     }
 
-    // Dual-handle trim card: nearest handle wins
+    // The compact Pitch readout doubles as a drag control, keeping the SVG
+    // card layout while retaining direct access to the per-layer pitch value.
+    if (pitchReadoutBounds.contains (event.position))
+    {
+        dragStartX = event.position.x;
+        dragStartPitch = pPitch->load();
+        beginGesture (Handle::Pitch);
+        return;
+    }
+
+    // Dual-handle trim card: nearest handle wins, using the same inset span
+    // as the painted trim track.
     if (trimCardBounds.contains (event.position))
     {
-        const float trackX0 = trimCardBounds.getX() + 12.0f;
-        const float trackX1 = trimCardBounds.getRight() - 12.0f;
+        draggingTrimCard = true;
+        const float ux = trimCardBounds.getWidth() / 134.0f;
+        const float trackX0 = trimCardBounds.getX() + 14.0f * ux;
+        const float trackX1 = trimCardBounds.getRight() - 14.0f * ux;
         const float startX = trackX0 + pTrimStart->load() * (trackX1 - trackX0);
         const float backX = trackX0 + pTrimEnd->load() * (trackX1 - trackX0);
         const Handle h = (std::abs (event.position.x - startX) <= std::abs (event.position.x - backX))
@@ -1302,6 +1331,12 @@ void LayerEnvelopeComponent::mouseDoubleClick (const juce::MouseEvent& event)
 {
     const auto preview = processor.getWaveformPreview (layer);
     const auto geometry = getGeometry (preview.loaded ? (float) preview.durationMs : 1000.0f);
+    if (pitchReadoutBounds.contains (event.position))
+    {
+        setParameter (ids::layerPitch (layer), 0.0f);
+        repaint();
+        return;
+    }
     const Handle hit = hitTestHandle (event.position, geometry);
     if (hit == Handle::TensionAttack) setParameter (ids::layerAttackTension (layer), 0.0f);
     else if (hit == Handle::TensionDecay) setParameter (ids::layerDecayTension (layer), 0.0f);

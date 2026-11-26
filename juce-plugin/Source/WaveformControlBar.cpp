@@ -338,11 +338,13 @@ WaveformControlBar::WaveformControlBar (WaveLensProcessor& processor)
     // the rest stay functional but invisible.
     triggerSettingsBtn.setVisible (false);
     fireTriggerBtn.setVisible (false);
-    gridBtn.setVisible (false);
-    secondsBtn.setVisible (false);
-    zoomOutBtn.setVisible (false);
-    zoomInBtn.setVisible (false);
-    preLeadSlider.setVisible (false);
+    // Restore compact secondary controls in the empty toolbar spaces.
+    // Trigger settings and manual fire remain available in the header menu.
+    gridBtn.setVisible (true);
+    secondsBtn.setVisible (true);
+    zoomOutBtn.setVisible (true);
+    zoomInBtn.setVisible (true);
+    preLeadSlider.setVisible (true);
 
     startTimerHz (15);
 }
@@ -379,12 +381,14 @@ void WaveformControlBar::setZoomLevel (float zoomFactor) noexcept
                                : juce::String (zoomFactor, 1) + "x");
     // The value is shown by the button itself (ui-val #dcd9e6)
     zoomLevelBtn.setButtonText (zoomText);
+    zoomOutBtn.setEnabled (zoomFactor > 1.05f);
+    zoomInBtn.setEnabled (zoomFactor < 31.5f);
     repaint();
 }
 
 void WaveformControlBar::timerCallback()
 {
-    repaint (0, 0, 175, getHeight());
+    repaint();
 }
 
 void WaveformControlBar::paint (juce::Graphics& g)
@@ -412,13 +416,19 @@ void WaveformControlBar::paint (juce::Graphics& g)
                limiterBtn.getRight() + 58, 64, juce::Justification::centredLeft,
                juce::Colour (0xff565261));
 
-    // SVG right side: labels #928da1; the zoom value lives on the button
-    // itself (ui-val #dcd9e6).
-    stripText ("Detail", detailBtn.getX() - 46, 42, juce::Justification::centredRight,
+    // PRE lead and ruler mode controls occupy the otherwise-unused middle-left
+    // strip, preserving the clean SVG centre tab and right-side controls.
+    stripText ("PRE", 158, 24, juce::Justification::centredLeft,
                juce::Colour (0xff928da1));
-    stripText ("Zoom", zoomLevelBtn.getX() - 40, 36, juce::Justification::centredRight,
+    stripText (preLeadSlider.getTextFromValue (preLeadSlider.getValue()),
+               284, 48, juce::Justification::centredLeft, juce::Colour (0xffdcd9e6));
+
+    // SVG right side: compact GRID/SEC toggles, Detail, Zoom +/- and Output.
+    stripText ("Detail", 567, 42, juce::Justification::centredRight,
                juce::Colour (0xff928da1));
-    stripText ("Output", outputBtn.getX() - 48, 44, juce::Justification::centredRight,
+    stripText ("Zoom", 632, 30, juce::Justification::centredRight,
+               juce::Colour (0xff928da1));
+    stripText ("Output", 724, 34, juce::Justification::centredRight,
                juce::Colour (0xff928da1));
 }
 
@@ -447,8 +457,16 @@ void WaveformControlBar::resized()
     collapseTabBtn.setBounds (juce::roundToInt (338.0f * sx), 0,
                               juce::roundToInt (124.0f * sx), getHeight());
 
+    preLeadSlider.setBounds (at (184, 349, 96, 16));
+    gridBtn.setButtonText ("GRID");
+    gridBtn.setBounds (at (478, 349, 34, 16));
+    secondsBtn.setButtonText ("SEC");
+    secondsBtn.setBounds (at (516, 349, 44, 16));
+
     detailBtn.setBounds (at (613, 349, 16, 16));
-    zoomLevelBtn.setBounds (at (674, 348, 40, 18));
+    zoomOutBtn.setBounds (at (666, 349, 12, 16));
+    zoomLevelBtn.setBounds (at (679, 348, 30, 18));
+    zoomInBtn.setBounds (at (710, 349, 12, 16));
     outputBtn.setBounds (at (760, 349, 20, 16));
 }
 

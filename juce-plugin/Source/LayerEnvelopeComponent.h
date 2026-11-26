@@ -36,6 +36,7 @@ private:
         None,
         TrimStart,
         TrimEnd,
+        Pitch,
         Attack,
         Hold,
         Decay,
@@ -138,6 +139,7 @@ private:
     juce::Rectangle<float> gainCardBounds;
     juce::Rectangle<float> volCardBounds;
     juce::Rectangle<float> trimCardBounds;
+    juce::Rectangle<int> pitchReadoutBounds;
     juce::Rectangle<float> controlStripBounds;
     juce::Rectangle<float> overviewBarBounds;
     Handle activeHandle = Handle::None;
@@ -146,7 +148,9 @@ private:
     float dragStartX = 0.0f;
     float dragStartY = 0.0f;
     float dragStartTension = 0.0f;
+    float dragStartPitch = 0.0f;
     float dragStartViewStart = 0.0f;
+    bool draggingTrimCard = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LayerEnvelopeComponent)
 };
