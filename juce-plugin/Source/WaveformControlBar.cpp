@@ -71,6 +71,7 @@ TriggerPanelComponent::TriggerPanelComponent (WaveLensProcessor& processor)
 
     listenBtn.setClickingTogglesState (true);
     listenBtn.getProperties().set ("accentColour", (juce::int64) ui::kCyanAccent.getARGB());
+    listenBtn.setTooltip ("Monitor the rendered instrument output through the selected frequency range");
     addAndMakeVisible (listenBtn);
     listenAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (proc.apvts, ids::listen, listenBtn);
 
@@ -129,7 +130,7 @@ void TriggerPanelComponent::paint (juce::Graphics& g)
     g.drawText ("THRESH", thresholdSlider.getX() - 48, 0, 44, getHeight(), juce::Justification::centredRight);
     g.drawText ("MODE", modeBox.getX() - 36, 0, 32, getHeight(), juce::Justification::centredRight);
     g.drawText ("SPAN", spanBox.getX() - 36, 0, 32, getHeight(), juce::Justification::centredRight);
-    g.drawText ("IN FILTER", inputFilter.getX() - 56, 0, 52, getHeight(), juce::Justification::centredRight);
+    g.drawText ("FREQ RANGE", inputFilter.getX() - 68, 0, 64, getHeight(), juce::Justification::centredRight);
 
     // Trigger LED indicator on far left
     const float ledX = 16.0f;
@@ -230,7 +231,7 @@ WaveformControlBar::WaveformControlBar (WaveLensProcessor& processor)
     preLeadSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     preLeadSlider.setColour (juce::Slider::trackColourId, ui::kPurpleAccent);
     preLeadSlider.textFromValueFunction = [] (double v) { return juce::String (v, 1) + " ms"; };
-    preLeadSlider.setTooltip ("PRE lead offset before dry transient (0 ms to 100 ms)");
+    preLeadSlider.setTooltip ("PRE bank lead relative to the MAIN layers (0 ms to 100 ms)");
     addAndMakeVisible (preLeadSlider);
     preLeadAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, ids::preRollMs, preLeadSlider);
     preLeadSlider.updateText();
