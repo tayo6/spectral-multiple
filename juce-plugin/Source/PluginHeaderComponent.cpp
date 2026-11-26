@@ -5,6 +5,7 @@ namespace ui = wavelens::ui;
 void PluginHeaderComponent::IconButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
 {
     auto b = getLocalBounds().toFloat().reduced (0.5f);
+    const float uiScale = (float) getHeight() / 20.0f;
     const bool active = getToggleState();
 
     juce::Colour bg = active ? ui::kSelectedAccent.withAlpha (0.20f) : ui::kControlBg;
@@ -14,9 +15,9 @@ void PluginHeaderComponent::IconButton::paintButton (juce::Graphics& g, bool hig
         bg = active ? ui::kSelectedAccent.withAlpha (0.28f) : ui::kHoverBg;
 
     g.setColour (bg);
-    g.fillRoundedRectangle (b, 4.0f);
+    g.fillRoundedRectangle (b, 4.0f * uiScale);
     g.setColour (active ? ui::kPurpleAccent.withAlpha (0.85f) : ui::kBorder);
-    g.drawRoundedRectangle (b, 4.0f, 1.0f);
+    g.drawRoundedRectangle (b, 4.0f * uiScale, 1.0f * uiScale);
 
     const float cx = b.getCentreX();
     const float cy = b.getCentreY();
@@ -27,32 +28,40 @@ void PluginHeaderComponent::IconButton::paintButton (juce::Graphics& g, bool hig
 
     if (kind == Kind::Power)
     {
-        const float r = 5.5f;
+        const float r = 5.5f * uiScale;
         juce::Path arc;
-        arc.addCentredArc (cx, cy + 0.5f, r, r, 0.0f, 0.55f, juce::MathConstants<float>::twoPi - 0.55f, true);
-        g.strokePath (arc, juce::PathStrokeType (1.7f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        g.drawLine (cx, cy - 6.5f, cx, cy - 1.0f, 1.7f);
+        arc.addCentredArc (cx, cy + 0.5f * uiScale, r, r, 0.0f,
+                           0.55f, juce::MathConstants<float>::twoPi - 0.55f, true);
+        g.strokePath (arc, juce::PathStrokeType (1.7f * uiScale, juce::PathStrokeType::curved,
+                                                 juce::PathStrokeType::rounded));
+        g.drawLine (cx, cy - 6.5f * uiScale, cx, cy - 1.0f * uiScale, 1.7f * uiScale);
     }
     else if (kind == Kind::Menu)
     {
         for (int i = -1; i <= 1; ++i)
         {
-            const float y = cy + (float) i * 4.0f;
-            g.drawLine (cx - 6.0f, y, cx + 6.0f, y, 1.5f);
+            const float y = cy + (float) i * 4.0f * uiScale;
+            g.drawLine (cx - 6.0f * uiScale, y, cx + 6.0f * uiScale, y, 1.5f * uiScale);
         }
     }
     else // Heart
     {
         juce::Path heart;
-        heart.startNewSubPath (cx, cy + 5.2f);
-        heart.cubicTo (cx - 7.5f, cy + 0.8f, cx - 6.5f, cy - 5.5f, cx, cy - 2.2f);
-        heart.cubicTo (cx + 6.5f, cy - 5.5f, cx + 7.5f, cy + 0.8f, cx, cy + 5.2f);
+        heart.startNewSubPath (cx, cy + 5.2f * uiScale);
+        heart.cubicTo (cx - 7.5f * uiScale, cy + 0.8f * uiScale,
+                       cx - 6.5f * uiScale, cy - 5.5f * uiScale,
+                       cx, cy - 2.2f * uiScale);
+        heart.cubicTo (cx + 6.5f * uiScale, cy - 5.5f * uiScale,
+                       cx + 7.5f * uiScale, cy + 0.8f * uiScale,
+                       cx, cy + 5.2f * uiScale);
         heart.closeSubPath();
 
         if (active)
             g.fillPath (heart);
         else
-            g.strokePath (heart, juce::PathStrokeType (1.35f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.strokePath (heart, juce::PathStrokeType (1.35f * uiScale,
+                                                       juce::PathStrokeType::curved,
+                                                       juce::PathStrokeType::rounded));
     }
 }
 
