@@ -62,7 +62,7 @@ void LayerPadStripComponent::PadCell::resized()
     const float uiScale = (float) getHeight() / 26.0f;
     auto r = getLocalBounds().reduced (juce::roundToInt (8.0f * uiScale),
                                        juce::roundToInt (4.0f * uiScale));
-    const int buttonW = juce::jmax (1, juce::roundToInt (22.0f * uiScale));
+    const int buttonW = juce::jmax (1, juce::roundToInt (16.0f * uiScale));
     soloButton.setBounds (r.removeFromRight (buttonW));
     r.removeFromRight (juce::roundToInt (3.0f * uiScale));
     muteButton.setBounds (r.removeFromRight (buttonW));
