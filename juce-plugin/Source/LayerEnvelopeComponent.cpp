@@ -290,6 +290,31 @@ void DualTrimRangeComponent::mouseUp (const juce::MouseEvent&)
 
 //==============================================================================
 
+//==============================================================================
+// SVG phase-invert marker. Disabled until polarity inversion is implemented.
+
+PhaseInvertPlaceholder::PhaseInvertPlaceholder()
+    : juce::Button ("PhaseInvertUnavailable")
+{
+    setTooltip ("Phase inversion is not supported by the current audio engine");
+    setEnabled (false);
+    setMouseCursor (juce::MouseCursor::NormalCursor);
+}
+
+void PhaseInvertPlaceholder::paintButton (juce::Graphics& g, bool highlighted, bool down)
+{
+    juce::ignoreUnused (highlighted, down);
+    const auto b = getLocalBounds().toFloat();
+    const float cx = b.getCentreX();
+    const float cy = b.getCentreY();
+    const float r = juce::jmin (3.5f, b.getHeight() * 0.28f);
+    g.setColour (ui::kDisabledText);
+    g.drawEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f, 1.0f);
+    g.drawLine (cx - r, cy + r, cx + r, cy - r, 1.0f);
+}
+
+//==============================================================================
+
 LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
                                                 int layerIndex,
                                                 juce::Colour traceColour)
@@ -329,6 +354,7 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     reverseBtn.setClickingTogglesState (true);
     reverseBtn.setTooltip ("Reverse sample playback");
     reverseBtn.getProperties().set ("accentColour", (juce::int64) colour.getARGB());
+    addAndMakeVisible (phaseInvertBtn);
     addAndMakeVisible (reverseBtn);
     reverseAttachment = std::make_unique<ButtonAtt> (state, ids::layerReverse (layer), reverseBtn);
 
@@ -1073,6 +1099,9 @@ void LayerEnvelopeComponent::resized()
     const int cardGap = juce::roundToInt (4.0f * scaleY);
 
     delaySlider.setBounds (leftCol.removeFromTop (juce::jlimit (1, leftCol.getHeight(), cardH)));
+    const int phaseSize = juce::jlimit (12, 16, juce::roundToInt (14.0f * scaleY));
+    phaseInvertBtn.setBounds (delaySlider.getRight() - phaseSize - 4,
+                              delaySlider.getY() + 2, phaseSize, phaseSize);
     leftCol.removeFromTop (juce::jlimit (0, leftCol.getHeight(), cardGap));
     widthSlider.setBounds (leftCol.removeFromTop (juce::jlimit (1, leftCol.getHeight(), cardH)));
     leftCol.removeFromTop (juce::jlimit (0, leftCol.getHeight(), cardGap));
