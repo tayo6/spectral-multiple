@@ -124,24 +124,30 @@ bool decodeMediaFoundationAacFile (const juce::File& file,
     }
 
     UINT32 sampleRate = 0;
+    UINT32 nativeChannels = 0;
     hr = nativeType->GetUINT32 (MF_MT_AUDIO_SAMPLES_PER_SECOND, &sampleRate);
-    if (FAILED (hr) || sampleRate < 8000 || sampleRate > 192000)
+    if (SUCCEEDED (hr))
+        hr = nativeType->GetUINT32 (MF_MT_AUDIO_NUM_CHANNELS, &nativeChannels);
+    if (FAILED (hr) || sampleRate < 8000 || sampleRate > 192000 || nativeChannels == 0)
     {
-        error = "The AAC file reports an unsupported sample rate.";
+        error = "The AAC file reports unsupported audio properties.";
         return false;
     }
 
-    // Ask Media Foundation to decode to predictable interleaved stereo PCM16.
-    // This keeps the sampler engine independent of compressed input formats.
+    // Keep mono input mono and duplicate it into the sampler's stereo buffer.
+    // Stereo and wider input are decoded to interleaved stereo PCM16.
+    const UINT32 outputChannels = nativeChannels == 1 ? 1u : 2u;
+    const UINT32 blockAlignment = outputChannels * (UINT32) sizeof (int16_t);
+
     MfComPtr<IMFMediaType> outputType;
     hr = MFCreateMediaType (outputType.put());
     if (SUCCEEDED (hr)) hr = outputType->SetGUID (MF_MT_MAJOR_TYPE, MFMediaType_Audio);
     if (SUCCEEDED (hr)) hr = outputType->SetGUID (MF_MT_SUBTYPE, MFAudioFormat_PCM);
-    if (SUCCEEDED (hr)) hr = outputType->SetUINT32 (MF_MT_AUDIO_NUM_CHANNELS, 2);
+    if (SUCCEEDED (hr)) hr = outputType->SetUINT32 (MF_MT_AUDIO_NUM_CHANNELS, outputChannels);
     if (SUCCEEDED (hr)) hr = outputType->SetUINT32 (MF_MT_AUDIO_SAMPLES_PER_SECOND, sampleRate);
     if (SUCCEEDED (hr)) hr = outputType->SetUINT32 (MF_MT_AUDIO_BITS_PER_SAMPLE, 16);
-    if (SUCCEEDED (hr)) hr = outputType->SetUINT32 (MF_MT_AUDIO_BLOCK_ALIGNMENT, 4);
-    if (SUCCEEDED (hr)) hr = outputType->SetUINT32 (MF_MT_AUDIO_AVG_BYTES_PER_SECOND, sampleRate * 4);
+    if (SUCCEEDED (hr)) hr = outputType->SetUINT32 (MF_MT_AUDIO_BLOCK_ALIGNMENT, blockAlignment);
+    if (SUCCEEDED (hr)) hr = outputType->SetUINT32 (MF_MT_AUDIO_AVG_BYTES_PER_SECOND, sampleRate * blockAlignment);
     if (FAILED (hr))
     {
         error = "The AAC decoder output format could not be configured (HRESULT 0x"
@@ -159,7 +165,7 @@ bool decodeMediaFoundationAacFile (const juce::File& file,
 
     std::vector<float> left;
     std::vector<float> right;
-    constexpr size_t bytesPerFrame = 2 * sizeof (int16_t);
+    const size_t bytesPerFrame = (size_t) blockAlignment;
     const size_t maximumFrames = (size_t) sampleRate * 180u;
 
     bool reachedEnd = false;
@@ -215,7 +221,11 @@ bool decodeMediaFoundationAacFile (const juce::File& file,
                 int16_t channelL = 0;
                 int16_t channelR = 0;
                 std::memcpy (&channelL, bytes + frame * bytesPerFrame, sizeof (channelL));
-                std::memcpy (&channelR, bytes + frame * bytesPerFrame + sizeof (channelL), sizeof (channelR));
+                if (outputChannels == 2)
+                    std::memcpy (&channelR, bytes + frame * bytesPerFrame + sizeof (channelL), sizeof (channelR));
+                else
+                    channelR = channelL;
+
                 left.push_back ((float) channelL / 32768.0f);
                 right.push_back ((float) channelR / 32768.0f);
             }
