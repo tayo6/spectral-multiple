@@ -1,22 +1,251 @@
+#ifndef NOMINMAX
+ #define NOMINMAX 1
+#endif
+
 #include "LayeredSampleEngine.h"
 
 #include <cmath>
 #include <array>
 #include <cstdio>
+#include <cstring>
 #include <limits>
 #include <memory>
+#include <vector>
 #include <opusfile.h>
 
-#ifndef WAVELENS_ENABLE_MOLE_AUDIO_FORMATS
- #define WAVELENS_ENABLE_MOLE_AUDIO_FORMATS 0
+#ifndef WAVELENS_ENABLE_MEDIA_FOUNDATION
+ #define WAVELENS_ENABLE_MEDIA_FOUNDATION 0
 #endif
 
-#if WAVELENS_ENABLE_MOLE_AUDIO_FORMATS
- #include "mole_audio_formats.h"
+#if WAVELENS_ENABLE_MEDIA_FOUNDATION
+ #include <windows.h>
+ #include <mfapi.h>
+ #include <mfidl.h>
+ #include <mfreadwrite.h>
 #endif
 
 namespace
 {
+#if WAVELENS_ENABLE_MEDIA_FOUNDATION
+template <typename Interface>
+class MfComPtr final
+{
+public:
+    MfComPtr() = default;
+    ~MfComPtr() { reset(); }
+
+    MfComPtr (const MfComPtr&) = delete;
+    MfComPtr& operator= (const MfComPtr&) = delete;
+
+    Interface** put()
+    {
+        reset();
+        return &pointer;
+    }
+
+    Interface* get() const noexcept { return pointer; }
+    Interface* operator->() const noexcept { return pointer; }
+    explicit operator bool() const noexcept { return pointer != nullptr; }
+
+    void reset() noexcept
+    {
+        if (pointer != nullptr)
+        {
+            pointer->Release();
+            pointer = nullptr;
+        }
+    }
+
+private:
+    Interface* pointer = nullptr;
+};
+
+bool decodeMediaFoundationAacFile (const juce::File& file,
+                                   juce::AudioBuffer<float>& destination,
+                                   double& decodedSampleRate,
+                                   juce::String& error)
+{
+    const HRESULT comResult = CoInitializeEx (nullptr, COINIT_MULTITHREADED);
+    const bool uninitialiseCom = SUCCEEDED (comResult);
+    if (FAILED (comResult) && comResult != RPC_E_CHANGED_MODE)
+    {
+        error = "Windows COM could not be initialised for AAC decoding (HRESULT 0x"
+              + juce::String::toHexString ((int) comResult) + ").";
+        return false;
+    }
+
+    struct ComUninitializer
+    {
+        explicit ComUninitializer (bool shouldUninitialise) : active (shouldUninitialise) {}
+        ~ComUninitializer() { if (active) CoUninitialize(); }
+        bool active;
+    } comUninitializer (uninitialiseCom);
+
+    const HRESULT startupResult = MFStartup (MF_VERSION, MFSTARTUP_FULL);
+    if (FAILED (startupResult))
+    {
+        error = "Windows Media Foundation could not start (HRESULT 0x"
+              + juce::String::toHexString ((int) startupResult) + ").";
+        return false;
+    }
+
+    struct MfUninitializer
+    {
+        ~MfUninitializer() { MFShutdown(); }
+    } mfUninitializer;
+
+    MfComPtr<IMFSourceReader> sourceReader;
+    const auto path = file.getFullPathName();
+    HRESULT hr = MFCreateSourceReaderFromURL (path.toWideCharPointer(), nullptr, sourceReader.put());
+    if (FAILED (hr) || ! sourceReader)
+    {
+        error = "Windows Media Foundation could not open this AAC/MP4 file (HRESULT 0x"
+              + juce::String::toHexString ((int) hr) + ").";
+        return false;
+    }
+
+    hr = sourceReader->SetStreamSelection (MF_SOURCE_READER_ALL_STREAMS, FALSE);
+    if (SUCCEEDED (hr))
+        hr = sourceReader->SetStreamSelection (MF_SOURCE_READER_FIRST_AUDIO_STREAM, TRUE);
+    if (FAILED (hr))
+    {
+        error = "The file does not expose a readable audio stream (HRESULT 0x"
+              + juce::String::toHexString ((int) hr) + ").";
+        return false;
+    }
+
+    MfComPtr<IMFMediaType> nativeType;
+    hr = sourceReader->GetNativeMediaType (MF_SOURCE_READER_FIRST_AUDIO_STREAM, 0, nativeType.put());
+    if (FAILED (hr) || ! nativeType)
+    {
+        error = "Windows Media Foundation could not identify the AAC stream format (HRESULT 0x"
+              + juce::String::toHexString ((int) hr) + ").";
+        return false;
+    }
+
+    UINT32 sampleRate = 0;
+    hr = nativeType->GetUINT32 (MF_MT_AUDIO_SAMPLES_PER_SECOND, &sampleRate);
+    if (FAILED (hr) || sampleRate < 8000 || sampleRate > 192000)
+    {
+        error = "The AAC file reports an unsupported sample rate.";
+        return false;
+    }
+
+    // Ask Media Foundation to decode to predictable interleaved stereo PCM16.
+    // This keeps the sampler engine independent of compressed input formats.
+    MfComPtr<IMFMediaType> outputType;
+    hr = MFCreateMediaType (outputType.put());
+    if (SUCCEEDED (hr)) hr = outputType->SetGUID (MF_MT_MAJOR_TYPE, MFMediaType_Audio);
+    if (SUCCEEDED (hr)) hr = outputType->SetGUID (MF_MT_SUBTYPE, MFAudioFormat_PCM);
+    if (SUCCEEDED (hr)) hr = outputType->SetUINT32 (MF_MT_AUDIO_NUM_CHANNELS, 2);
+    if (SUCCEEDED (hr)) hr = outputType->SetUINT32 (MF_MT_AUDIO_SAMPLES_PER_SECOND, sampleRate);
+    if (SUCCEEDED (hr)) hr = outputType->SetUINT32 (MF_MT_AUDIO_BITS_PER_SAMPLE, 16);
+    if (SUCCEEDED (hr)) hr = outputType->SetUINT32 (MF_MT_AUDIO_BLOCK_ALIGNMENT, 4);
+    if (SUCCEEDED (hr)) hr = outputType->SetUINT32 (MF_MT_AUDIO_AVG_BYTES_PER_SECOND, sampleRate * 4);
+    if (FAILED (hr))
+    {
+        error = "The AAC decoder output format could not be configured (HRESULT 0x"
+              + juce::String::toHexString ((int) hr) + ").";
+        return false;
+    }
+
+    hr = sourceReader->SetCurrentMediaType (MF_SOURCE_READER_FIRST_AUDIO_STREAM, nullptr, outputType.get());
+    if (FAILED (hr))
+    {
+        error = "Windows could not configure PCM output for this AAC file (HRESULT 0x"
+              + juce::String::toHexString ((int) hr) + ").";
+        return false;
+    }
+
+    std::vector<float> left;
+    std::vector<float> right;
+    constexpr size_t bytesPerFrame = 2 * sizeof (int16_t);
+    const size_t maximumFrames = (size_t) sampleRate * 180u;
+
+    bool reachedEnd = false;
+    while (! reachedEnd)
+    {
+        DWORD actualStream = 0;
+        DWORD streamFlags = 0;
+        LONGLONG timestamp = 0;
+        MfComPtr<IMFSample> sample;
+
+        hr = sourceReader->ReadSample (MF_SOURCE_READER_FIRST_AUDIO_STREAM, 0,
+                                       &actualStream, &streamFlags, &timestamp, sample.put());
+        if (FAILED (hr) || (streamFlags & MF_SOURCE_READERF_ERROR) != 0)
+        {
+            error = "Windows Media Foundation encountered an AAC decoding error (HRESULT 0x"
+                  + juce::String::toHexString ((int) hr) + ").";
+            return false;
+        }
+
+        if (sample)
+        {
+            MfComPtr<IMFMediaBuffer> mediaBuffer;
+            hr = sample->ConvertToContiguousBuffer (mediaBuffer.put());
+            if (FAILED (hr) || ! mediaBuffer)
+            {
+                error = "The AAC decoder returned an unreadable audio buffer.";
+                return false;
+            }
+
+            BYTE* bytes = nullptr;
+            DWORD maximumLength = 0;
+            DWORD currentLength = 0;
+            hr = mediaBuffer->Lock (&bytes, &maximumLength, &currentLength);
+            if (FAILED (hr))
+            {
+                error = "The AAC audio buffer could not be accessed.";
+                return false;
+            }
+
+            const bool aligned = (currentLength % bytesPerFrame) == 0;
+            const size_t frames = aligned ? (size_t) currentLength / bytesPerFrame : 0;
+            const bool withinLimit = frames <= maximumFrames - juce::jmin (maximumFrames, left.size());
+            if (! aligned || ! withinLimit)
+            {
+                mediaBuffer->Unlock();
+                error = aligned ? "Samples longer than three minutes are not supported yet."
+                                : "The AAC decoder returned incomplete PCM frames.";
+                return false;
+            }
+
+            for (size_t frame = 0; frame < frames; ++frame)
+            {
+                int16_t channelL = 0;
+                int16_t channelR = 0;
+                std::memcpy (&channelL, bytes + frame * bytesPerFrame, sizeof (channelL));
+                std::memcpy (&channelR, bytes + frame * bytesPerFrame + sizeof (channelL), sizeof (channelR));
+                left.push_back ((float) channelL / 32768.0f);
+                right.push_back ((float) channelR / 32768.0f);
+            }
+
+            const HRESULT unlockResult = mediaBuffer->Unlock();
+            if (FAILED (unlockResult))
+            {
+                error = "The AAC decoder buffer could not be released.";
+                return false;
+            }
+        }
+
+        reachedEnd = (streamFlags & MF_SOURCE_READERF_ENDOFSTREAM) != 0;
+    }
+
+    if (left.empty())
+    {
+        error = "The AAC file contains no decodable audio.";
+        return false;
+    }
+
+    destination.setSize (2, (int) left.size(), false, true, false);
+    destination.copyFrom (0, 0, left.data(), (int) left.size());
+    destination.copyFrom (1, 0, right.data(), (int) right.size());
+    decodedSampleRate = (double) sampleRate;
+    error.clear();
+    return true;
+}
+#endif
+
 int opusStreamRead (void* source, unsigned char* destination, int numBytes)
 {
     return static_cast<juce::FileInputStream*> (source)->read (destination, numBytes);
@@ -160,13 +389,6 @@ struct LayeredSampleEngine::AudioBlockEpochGuard
 LayeredSampleEngine::LayeredSampleEngine()
 {
     formatManager.registerBasicFormats();
-
-#if WAVELENS_ENABLE_MOLE_AUDIO_FORMATS
-    // MOLE uses Windows Media Foundation to decode AAC in MP4, AAC and 3GP
-    // containers. M4A is opened explicitly because its extension is not in the
-    // MP4AudioFormat extension list.
-    formatManager.registerFormat (new mole::MP4AudioFormat(), false);
-#endif
 
     for (int i = 0; i < kNumLayers; ++i)
     {
@@ -381,64 +603,61 @@ bool LayeredSampleEngine::loadSampleFromFile (int layer, const juce::File& file,
     }
     else
     {
-        std::unique_ptr<juce::AudioFormatReader> reader;
+        const auto extension = file.getFileExtension();
+        bool decodedByPlatform = false;
 
-#if WAVELENS_ENABLE_MOLE_AUDIO_FORMATS
-        if (file.getFileExtension().equalsIgnoreCase (".m4a"))
+#if WAVELENS_ENABLE_MEDIA_FOUNDATION
+        if (extension.equalsIgnoreCase (".m4a") || extension.equalsIgnoreCase (".aac")
+            || extension.equalsIgnoreCase (".mp4") || extension.equalsIgnoreCase (".3gp"))
         {
-            mole::MP4AudioFormat aacFormat;
-            auto input = std::make_unique<juce::FileInputStream> (file);
-            if (! input->openedOk())
+            if (! decodeMediaFoundationAacFile (file, data->audio, data->sourceSampleRate, error))
+                return false;
+            decodedByPlatform = true;
+        }
+#endif
+
+        if (! decodedByPlatform)
+        {
+            std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor (file));
+            if (reader == nullptr || reader->lengthInSamples <= 0 || reader->sampleRate <= 0.0)
             {
-                error = "The selected AAC/M4A file could not be opened.";
+                error = "No decoder could read this audio file.";
                 return false;
             }
-            reader.reset (aacFormat.createReaderFor (input.release(), true));
-        }
-        else
-#endif
-        {
-            reader.reset (formatManager.createReaderFor (file));
-        }
 
-        if (reader == nullptr || reader->lengthInSamples <= 0 || reader->sampleRate <= 0.0)
-        {
-            error = "No decoder could read this audio file.";
-            return false;
-        }
-
-        // Keep memory use bounded while allowing real multi-second samples.
-        const auto maximumSamples = (juce::int64) (reader->sampleRate * 180.0);
-        if (reader->lengthInSamples > maximumSamples)
-        {
-            error = "Samples longer than three minutes are not supported yet.";
-            return false;
-        }
-
-        const int sampleCount = (int) reader->lengthInSamples;
-        data->audio.setSize (2, sampleCount, false, true, false);
-        data->sourceSampleRate = reader->sampleRate;
-
-        bool readOk = false;
-        if (reader->numChannels == 1)
-        {
-            juce::AudioBuffer<float> mono (1, sampleCount);
-            readOk = reader->read (&mono, 0, sampleCount, 0, true, false);
-            if (readOk)
+            // Keep memory use bounded while allowing real multi-second samples.
+            const auto maximumSamples = (juce::int64) (reader->sampleRate * 180.0);
+            if (reader->lengthInSamples > maximumSamples)
             {
-                data->audio.copyFrom (0, 0, mono, 0, 0, sampleCount);
-                data->audio.copyFrom (1, 0, mono, 0, 0, sampleCount);
+                error = "Samples longer than three minutes are not supported yet.";
+                return false;
             }
-        }
-        else
-        {
-            readOk = reader->read (&data->audio, 0, sampleCount, 0, true, true);
-        }
 
-        if (! readOk)
-        {
-            error = "The audio file could not be decoded.";
-            return false;
+            const int decodedSamples = (int) reader->lengthInSamples;
+            data->audio.setSize (2, decodedSamples, false, true, false);
+            data->sourceSampleRate = reader->sampleRate;
+
+            bool readOk = false;
+            if (reader->numChannels == 1)
+            {
+                juce::AudioBuffer<float> mono (1, decodedSamples);
+                readOk = reader->read (&mono, 0, decodedSamples, 0, true, false);
+                if (readOk)
+                {
+                    data->audio.copyFrom (0, 0, mono, 0, 0, decodedSamples);
+                    data->audio.copyFrom (1, 0, mono, 0, 0, decodedSamples);
+                }
+            }
+            else
+            {
+                readOk = reader->read (&data->audio, 0, decodedSamples, 0, true, true);
+            }
+
+            if (! readOk)
+            {
+                error = "The audio file could not be decoded.";
+                return false;
+            }
         }
     }
 
