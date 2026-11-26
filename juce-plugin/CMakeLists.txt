@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(WaveLens VERSION 1.0.0 LANGUAGES CXX)
+project(WaveLens VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,6 +25,66 @@ else()
         GIT_TAG        7.0.12
         GIT_SHALLOW    ON)
     FetchContent_MakeAvailable(juce)
+endif()
+
+# Additional sample decoders. Keep JUCE pinned at 7.0.12 so the existing
+# Windows 7 deployment target is unchanged.
+include(FetchContent)
+
+function(wavelens_add_opusfile_dependencies)
+    set(BUILD_TESTING OFF)
+    set(BUILD_SHARED_LIBS OFF)
+    set(INSTALL_DOCS OFF CACHE BOOL "" FORCE)
+    set(INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+    set(INSTALL_CMAKE_PACKAGE_MODULE ON CACHE BOOL "" FORCE)
+    set(OPUS_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
+    set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+    set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+    set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+    set(OPUS_INSTALL_CMAKE_CONFIG_MODULE ON CACHE BOOL "" FORCE)
+    set(OPUS_STATIC_RUNTIME ON CACHE BOOL "" FORCE)
+    set(OP_DISABLE_HTTP ON CACHE BOOL "" FORCE)
+    set(OP_DISABLE_EXAMPLES ON CACHE BOOL "" FORCE)
+    set(OP_DISABLE_DOCS ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(wavelens_ogg GIT_REPOSITORY https://github.com/xiph/ogg.git GIT_TAG v1.3.6 GIT_SHALLOW ON)
+    FetchContent_MakeAvailable(wavelens_ogg)
+    FetchContent_Declare(wavelens_opus GIT_REPOSITORY https://github.com/xiph/opus.git GIT_TAG v1.6.1 GIT_SHALLOW ON)
+    FetchContent_MakeAvailable(wavelens_opus)
+    # opusfile searches for CONFIG packages. The upstream Ogg/Opus build-tree
+    # configs are install-oriented and point at files that do not exist until
+    # installation. Provide tiny package shims that reuse the real in-tree
+    # targets created above instead.
+    set(_wavelens_codec_package_dir "${CMAKE_CURRENT_BINARY_DIR}/wavelens-codec-packages")
+    file(MAKE_DIRECTORY "${_wavelens_codec_package_dir}")
+    file(WRITE "${_wavelens_codec_package_dir}/OggConfig.cmake"
+        "if(NOT TARGET Ogg::ogg)\n  message(FATAL_ERROR \"The in-tree Ogg target is unavailable.\")\nendif()\nset(Ogg_FOUND TRUE)\n")
+    file(WRITE "${_wavelens_codec_package_dir}/OpusConfig.cmake"
+        "if(NOT TARGET Opus::opus)\n  message(FATAL_ERROR \"The in-tree Opus target is unavailable.\")\nendif()\nset(Opus_FOUND TRUE)\n")
+    set(Ogg_DIR "${_wavelens_codec_package_dir}")
+    set(Opus_DIR "${_wavelens_codec_package_dir}")
+    FetchContent_Declare(wavelens_opusfile
+        GIT_REPOSITORY https://github.com/xiph/opusfile.git
+        GIT_TAG        6dfd29e7adb87f2e193575fc3fa88cbf1a0b27df)
+    FetchContent_MakeAvailable(wavelens_opusfile)
+endfunction()
+
+wavelens_add_opusfile_dependencies()
+
+add_library(WaveLensAudioCodecDependencies INTERFACE)
+target_link_libraries(WaveLensAudioCodecDependencies INTERFACE OpusFile::opusfile)
+
+if(WIN32)
+    # Windows 7 Media Foundation provides the AAC/MP4 source reader and AAC decoder.
+    # Link the platform libraries directly rather than adding a JUCE-version-specific
+    # third-party audio-format module.
+    target_link_libraries(WaveLensAudioCodecDependencies INTERFACE
+        mfplat
+        mfreadwrite
+        mfuuid
+        ole32)
+    target_compile_definitions(WaveLensAudioCodecDependencies INTERFACE WAVELENS_ENABLE_MEDIA_FOUNDATION=1)
+else()
+    target_compile_definitions(WaveLensAudioCodecDependencies INTERFACE WAVELENS_ENABLE_MEDIA_FOUNDATION=0)
 endif()
 
 juce_add_plugin(WaveLens
@@ -84,6 +144,7 @@ target_link_libraries(WaveLens
     PRIVATE
         juce::juce_audio_utils
         juce::juce_dsp
+        WaveLensAudioCodecDependencies
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
@@ -104,6 +165,9 @@ if(BUILD_ENGINE_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/Source)
 
     target_compile_features(SpectralMultipleEngineTests PRIVATE cxx_std_17)
+    target_compile_definitions(SpectralMultipleEngineTests PRIVATE
+        WAVELENS_ENABLE_MEDIA_FOUNDATION=0
+        WAVELENS_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Tests/fixtures")
 
     if(MSVC)
         target_compile_options(SpectralMultipleEngineTests PRIVATE /W4)
@@ -116,6 +180,7 @@ if(BUILD_ENGINE_TESTS)
         target_link_libraries(SpectralMultipleEngineTests PRIVATE Threads::Threads)
     endif()
 
+    target_link_libraries(SpectralMultipleEngineTests PRIVATE OpusFile::opusfile)
     add_test(NAME SpectralMultipleEngineTests COMMAND SpectralMultipleEngineTests)
 endif()
 
@@ -158,6 +223,8 @@ if(BUILD_PROCESSOR_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/Source)
 
     target_compile_features(WaveLensProcessorTests PRIVATE cxx_std_17)
+    target_compile_definitions(WaveLensProcessorTests PRIVATE
+        WAVELENS_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Tests/fixtures")
 
     target_compile_definitions(WaveLensProcessorTests PRIVATE
         JUCE_WEB_BROWSER=0
@@ -175,6 +242,7 @@ if(BUILD_PROCESSOR_TESTS)
         PRIVATE
             juce::juce_audio_utils
             juce::juce_dsp
+            WaveLensAudioCodecDependencies
             juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags)
 
@@ -234,6 +302,7 @@ if(BUILD_UI_SNAPSHOT)
         PRIVATE
             juce::juce_audio_utils
             juce::juce_dsp
+            WaveLensAudioCodecDependencies
             juce::juce_recommended_warning_flags)
 endif()
 

@@ -1,6 +1,383 @@
+#ifndef NOMINMAX
+ #define NOMINMAX 1
+#endif
+
 #include "LayeredSampleEngine.h"
 
 #include <cmath>
+#include <array>
+#include <cstdio>
+#include <cstring>
+#include <limits>
+#include <memory>
+#include <vector>
+#include <opusfile.h>
+
+#ifndef WAVELENS_ENABLE_MEDIA_FOUNDATION
+ #define WAVELENS_ENABLE_MEDIA_FOUNDATION 0
+#endif
+
+#if WAVELENS_ENABLE_MEDIA_FOUNDATION
+ #include <windows.h>
+ #include <mfapi.h>
+ #include <mfidl.h>
+ #include <mfreadwrite.h>
+#endif
+
+namespace
+{
+#if WAVELENS_ENABLE_MEDIA_FOUNDATION
+template <typename Interface>
+class MfComPtr final
+{
+public:
+    MfComPtr() = default;
+    ~MfComPtr() { reset(); }
+
+    MfComPtr (const MfComPtr&) = delete;
+    MfComPtr& operator= (const MfComPtr&) = delete;
+
+    Interface** put()
+    {
+        reset();
+        return &pointer;
+    }
+
+    Interface* get() const noexcept { return pointer; }
+    Interface* operator->() const noexcept { return pointer; }
+    explicit operator bool() const noexcept { return pointer != nullptr; }
+
+    void reset() noexcept
+    {
+        if (pointer != nullptr)
+        {
+            pointer->Release();
+            pointer = nullptr;
+        }
+    }
+
+private:
+    Interface* pointer = nullptr;
+};
+
+bool decodeMediaFoundationAacFile (const juce::File& file,
+                                   juce::AudioBuffer<float>& destination,
+                                   double& decodedSampleRate,
+                                   juce::String& error)
+{
+    const HRESULT comResult = CoInitializeEx (nullptr, COINIT_MULTITHREADED);
+    const bool uninitialiseCom = SUCCEEDED (comResult);
+    if (FAILED (comResult) && comResult != RPC_E_CHANGED_MODE)
+    {
+        error = "Windows COM could not be initialised for AAC decoding (HRESULT 0x"
+              + juce::String::toHexString ((int) comResult) + ").";
+        return false;
+    }
+
+    struct ComUninitializer
+    {
+        explicit ComUninitializer (bool shouldUninitialise) : active (shouldUninitialise) {}
+        ~ComUninitializer() { if (active) CoUninitialize(); }
+        bool active;
+    } comUninitializer (uninitialiseCom);
+
+    const HRESULT startupResult = MFStartup (MF_VERSION, MFSTARTUP_FULL);
+    if (FAILED (startupResult))
+    {
+        error = "Windows Media Foundation could not start (HRESULT 0x"
+              + juce::String::toHexString ((int) startupResult) + ").";
+        return false;
+    }
+
+    struct MfUninitializer
+    {
+        ~MfUninitializer() { MFShutdown(); }
+    } mfUninitializer;
+
+    MfComPtr<IMFSourceReader> sourceReader;
+    const auto path = file.getFullPathName();
+    HRESULT hr = MFCreateSourceReaderFromURL (path.toWideCharPointer(), nullptr, sourceReader.put());
+    if (FAILED (hr) || ! sourceReader)
+    {
+        error = "Windows Media Foundation could not open this AAC/MP4 file (HRESULT 0x"
+              + juce::String::toHexString ((int) hr) + ").";
+        return false;
+    }
+
+    hr = sourceReader->SetStreamSelection (MF_SOURCE_READER_ALL_STREAMS, FALSE);
+    if (SUCCEEDED (hr))
+        hr = sourceReader->SetStreamSelection (MF_SOURCE_READER_FIRST_AUDIO_STREAM, TRUE);
+    if (FAILED (hr))
+    {
+        error = "The file does not expose a readable audio stream (HRESULT 0x"
+              + juce::String::toHexString ((int) hr) + ").";
+        return false;
+    }
+
+    MfComPtr<IMFMediaType> nativeType;
+    hr = sourceReader->GetNativeMediaType (MF_SOURCE_READER_FIRST_AUDIO_STREAM, 0, nativeType.put());
+    if (FAILED (hr) || ! nativeType)
+    {
+        error = "Windows Media Foundation could not identify the AAC stream format (HRESULT 0x"
+              + juce::String::toHexString ((int) hr) + ").";
+        return false;
+    }
+
+    UINT32 sampleRate = 0;
+    UINT32 nativeChannels = 0;
+    hr = nativeType->GetUINT32 (MF_MT_AUDIO_SAMPLES_PER_SECOND, &sampleRate);
+    if (SUCCEEDED (hr))
+        hr = nativeType->GetUINT32 (MF_MT_AUDIO_NUM_CHANNELS, &nativeChannels);
+    if (FAILED (hr) || sampleRate < 8000 || sampleRate > 192000 || nativeChannels == 0)
+    {
+        error = "The AAC file reports unsupported audio properties.";
+        return false;
+    }
+
+    // Keep mono input mono and duplicate it into the sampler's stereo buffer.
+    // Stereo and wider input are decoded to interleaved stereo PCM16.
+    const UINT32 outputChannels = nativeChannels == 1 ? 1u : 2u;
+    const UINT32 blockAlignment = outputChannels * (UINT32) sizeof (int16_t);
+
+    MfComPtr<IMFMediaType> outputType;
+    hr = MFCreateMediaType (outputType.put());
+    if (SUCCEEDED (hr)) hr = outputType->SetGUID (MF_MT_MAJOR_TYPE, MFMediaType_Audio);
+    if (SUCCEEDED (hr)) hr = outputType->SetGUID (MF_MT_SUBTYPE, MFAudioFormat_PCM);
+    if (SUCCEEDED (hr)) hr = outputType->SetUINT32 (MF_MT_AUDIO_NUM_CHANNELS, outputChannels);
+    if (SUCCEEDED (hr)) hr = outputType->SetUINT32 (MF_MT_AUDIO_SAMPLES_PER_SECOND, sampleRate);
+    if (SUCCEEDED (hr)) hr = outputType->SetUINT32 (MF_MT_AUDIO_BITS_PER_SAMPLE, 16);
+    if (SUCCEEDED (hr)) hr = outputType->SetUINT32 (MF_MT_AUDIO_BLOCK_ALIGNMENT, blockAlignment);
+    if (SUCCEEDED (hr)) hr = outputType->SetUINT32 (MF_MT_AUDIO_AVG_BYTES_PER_SECOND, sampleRate * blockAlignment);
+    if (FAILED (hr))
+    {
+        error = "The AAC decoder output format could not be configured (HRESULT 0x"
+              + juce::String::toHexString ((int) hr) + ").";
+        return false;
+    }
+
+    hr = sourceReader->SetCurrentMediaType (MF_SOURCE_READER_FIRST_AUDIO_STREAM, nullptr, outputType.get());
+    if (FAILED (hr))
+    {
+        error = "Windows could not configure PCM output for this AAC file (HRESULT 0x"
+              + juce::String::toHexString ((int) hr) + ").";
+        return false;
+    }
+
+    std::vector<float> left;
+    std::vector<float> right;
+    const size_t bytesPerFrame = (size_t) blockAlignment;
+    const size_t maximumFrames = (size_t) sampleRate * 180u;
+
+    bool reachedEnd = false;
+    while (! reachedEnd)
+    {
+        DWORD actualStream = 0;
+        DWORD streamFlags = 0;
+        LONGLONG timestamp = 0;
+        MfComPtr<IMFSample> sample;
+
+        hr = sourceReader->ReadSample (MF_SOURCE_READER_FIRST_AUDIO_STREAM, 0,
+                                       &actualStream, &streamFlags, &timestamp, sample.put());
+        if (FAILED (hr) || (streamFlags & MF_SOURCE_READERF_ERROR) != 0)
+        {
+            error = "Windows Media Foundation encountered an AAC decoding error (HRESULT 0x"
+                  + juce::String::toHexString ((int) hr) + ").";
+            return false;
+        }
+
+        if (sample)
+        {
+            MfComPtr<IMFMediaBuffer> mediaBuffer;
+            hr = sample->ConvertToContiguousBuffer (mediaBuffer.put());
+            if (FAILED (hr) || ! mediaBuffer)
+            {
+                error = "The AAC decoder returned an unreadable audio buffer.";
+                return false;
+            }
+
+            BYTE* bytes = nullptr;
+            DWORD maximumLength = 0;
+            DWORD currentLength = 0;
+            hr = mediaBuffer->Lock (&bytes, &maximumLength, &currentLength);
+            if (FAILED (hr))
+            {
+                error = "The AAC audio buffer could not be accessed.";
+                return false;
+            }
+
+            const bool aligned = (currentLength % bytesPerFrame) == 0;
+            const size_t frames = aligned ? (size_t) currentLength / bytesPerFrame : 0;
+            const bool withinLimit = frames <= maximumFrames - juce::jmin (maximumFrames, left.size());
+            if (! aligned || ! withinLimit)
+            {
+                mediaBuffer->Unlock();
+                error = aligned ? "Samples longer than three minutes are not supported yet."
+                                : "The AAC decoder returned incomplete PCM frames.";
+                return false;
+            }
+
+            for (size_t frame = 0; frame < frames; ++frame)
+            {
+                int16_t channelL = 0;
+                int16_t channelR = 0;
+                std::memcpy (&channelL, bytes + frame * bytesPerFrame, sizeof (channelL));
+                if (outputChannels == 2)
+                    std::memcpy (&channelR, bytes + frame * bytesPerFrame + sizeof (channelL), sizeof (channelR));
+                else
+                    channelR = channelL;
+
+                left.push_back ((float) channelL / 32768.0f);
+                right.push_back ((float) channelR / 32768.0f);
+            }
+
+            const HRESULT unlockResult = mediaBuffer->Unlock();
+            if (FAILED (unlockResult))
+            {
+                error = "The AAC decoder buffer could not be released.";
+                return false;
+            }
+        }
+
+        reachedEnd = (streamFlags & MF_SOURCE_READERF_ENDOFSTREAM) != 0;
+    }
+
+    if (left.empty())
+    {
+        error = "The AAC file contains no decodable audio.";
+        return false;
+    }
+
+    destination.setSize (2, (int) left.size(), false, true, false);
+    destination.copyFrom (0, 0, left.data(), (int) left.size());
+    destination.copyFrom (1, 0, right.data(), (int) right.size());
+    decodedSampleRate = (double) sampleRate;
+    error.clear();
+    return true;
+}
+#endif
+
+int opusStreamRead (void* source, unsigned char* destination, int numBytes)
+{
+    return static_cast<juce::FileInputStream*> (source)->read (destination, numBytes);
+}
+
+int opusStreamSeek (void* source, opus_int64 offset, int origin)
+{
+    auto& stream = *static_cast<juce::FileInputStream*> (source);
+    juce::int64 base = 0;
+
+    switch (origin)
+    {
+        case SEEK_SET: base = 0; break;
+        case SEEK_CUR: base = stream.getPosition(); break;
+        case SEEK_END: base = stream.getTotalLength(); break;
+        default: return -1;
+    }
+
+    const auto length = stream.getTotalLength();
+    if (base < 0 || (offset > 0 && base > std::numeric_limits<juce::int64>::max() - offset)
+        || (offset < 0 && base < std::numeric_limits<juce::int64>::min() - offset))
+        return -1;
+
+    const auto destinationPosition = base + static_cast<juce::int64> (offset);
+    if (destinationPosition < 0 || destinationPosition > length)
+        return -1;
+
+    return stream.setPosition (destinationPosition) ? 0 : -1;
+}
+
+opus_int64 opusStreamTell (void* source)
+{
+    return static_cast<opus_int64> (static_cast<juce::FileInputStream*> (source)->getPosition());
+}
+
+int opusStreamClose (void*)
+{
+    // The FileInputStream is owned by the caller and outlives op_free().
+    return 0;
+}
+
+bool decodeOggOpusFile (const juce::File& file,
+                        juce::AudioBuffer<float>& destination,
+                        juce::String& error)
+{
+    juce::FileInputStream input (file);
+    if (! input.openedOk())
+    {
+        error = "The Ogg Opus file could not be opened.";
+        return false;
+    }
+
+    static const OpusFileCallbacks callbacks {
+        opusStreamRead, opusStreamSeek, opusStreamTell, opusStreamClose
+    };
+
+    int openError = 0;
+    auto* rawReader = op_open_callbacks (&input, &callbacks, nullptr, 0, &openError);
+    if (rawReader == nullptr)
+    {
+        error = "The Ogg Opus file could not be opened or decoded.";
+        return false;
+    }
+
+    std::unique_ptr<OggOpusFile, decltype (&op_free)> reader (rawReader, &op_free);
+    const opus_int64 totalFrames = op_pcm_total (reader.get(), -1);
+    constexpr opus_int64 opusSampleRate = 48000;
+    constexpr opus_int64 maximumFrames = opusSampleRate * 180;
+
+    if (totalFrames <= 0)
+    {
+        error = "The Ogg Opus file contains no decodable audio.";
+        return false;
+    }
+
+    if (totalFrames > maximumFrames || totalFrames > std::numeric_limits<int>::max())
+    {
+        error = "Samples longer than three minutes are not supported yet.";
+        return false;
+    }
+
+    destination.setSize (2, static_cast<int> (totalFrames), false, true, false);
+
+    // op_read_float_stereo returns interleaved stereo floats and a frame count.
+    std::array<float, 8192> interleaved {};
+    const int frameCapacity = static_cast<int> (interleaved.size() / 2);
+    juce::int64 framesWritten = 0;
+
+    while (framesWritten < totalFrames)
+    {
+        const int framesRead = op_read_float_stereo (reader.get(), interleaved.data(),
+                                                     static_cast<int> (interleaved.size()));
+        if (framesRead <= 0)
+        {
+            destination.setSize (0, 0);
+            error = "The Ogg Opus file ended unexpectedly or contains a decoding error.";
+            return false;
+        }
+
+        const int framesToCopy = juce::jmin (framesRead,
+            static_cast<int> (totalFrames - framesWritten));
+        for (int frame = 0; frame < framesToCopy; ++frame)
+        {
+            const auto sourceIndex = static_cast<size_t> (frame) * 2;
+            const int destinationIndex = static_cast<int> (framesWritten) + frame;
+            destination.setSample (0, destinationIndex, interleaved[sourceIndex]);
+            destination.setSample (1, destinationIndex, interleaved[sourceIndex + 1]);
+        }
+
+        framesWritten += framesToCopy;
+        if (framesRead > frameCapacity)
+        {
+            destination.setSize (0, 0);
+            error = "The Ogg Opus decoder returned an invalid frame count.";
+            return false;
+        }
+    }
+
+    error.clear();
+    return true;
+}
+} // namespace
 
 struct LayeredSampleEngine::AudioBlockEpochGuard
 {
@@ -223,50 +600,85 @@ bool LayeredSampleEngine::loadSampleFromFile (int layer, const juce::File& file,
         return false;
     }
 
-    std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor (file));
-    if (reader == nullptr || reader->lengthInSamples <= 0 || reader->sampleRate <= 0.0)
-    {
-        error = "JUCE could not read this audio file.";
-        return false;
-    }
-
-    // Keep memory use bounded while allowing real multi-second samples.
-    const auto maximumSamples = (juce::int64) (reader->sampleRate * 180.0);
-    if (reader->lengthInSamples > maximumSamples)
-    {
-        error = "Samples longer than three minutes are not supported yet.";
-        return false;
-    }
-
-    const int sampleCount = (int) reader->lengthInSamples;
     auto data = std::make_unique<SampleData>();
-    data->audio.setSize (2, sampleCount, false, true, false);
-    data->sourceSampleRate = reader->sampleRate;
     data->displayName = file.getFileNameWithoutExtension();
 
-    bool readOk = false;
-    if (reader->numChannels == 1)
+    if (file.getFileExtension().equalsIgnoreCase (".opus"))
     {
-        juce::AudioBuffer<float> mono (1, sampleCount);
-        readOk = reader->read (&mono, 0, sampleCount, 0, true, false);
-        if (readOk)
-        {
-            data->audio.copyFrom (0, 0, mono, 0, 0, sampleCount);
-            data->audio.copyFrom (1, 0, mono, 0, 0, sampleCount);
-        }
+        if (! decodeOggOpusFile (file, data->audio, error))
+            return false;
+
+        // Opus is decoded to the format standard 48 kHz PCM output.
+        data->sourceSampleRate = 48000.0;
     }
     else
     {
-        readOk = reader->read (&data->audio, 0, sampleCount, 0, true, true);
+        const auto extension = file.getFileExtension();
+        bool decodedByPlatform = false;
+
+#if WAVELENS_ENABLE_MEDIA_FOUNDATION
+        if (extension.equalsIgnoreCase (".m4a") || extension.equalsIgnoreCase (".aac")
+            || extension.equalsIgnoreCase (".mp4") || extension.equalsIgnoreCase (".3gp"))
+        {
+            if (! decodeMediaFoundationAacFile (file, data->audio, data->sourceSampleRate, error))
+                return false;
+            decodedByPlatform = true;
+        }
+#endif
+
+        if (! decodedByPlatform)
+        {
+            std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor (file));
+            if (reader == nullptr || reader->lengthInSamples <= 0 || reader->sampleRate <= 0.0)
+            {
+                error = "No decoder could read this audio file.";
+                return false;
+            }
+
+            // Keep memory use bounded while allowing real multi-second samples.
+            const auto maximumSamples = (juce::int64) (reader->sampleRate * 180.0);
+            if (reader->lengthInSamples > maximumSamples)
+            {
+                error = "Samples longer than three minutes are not supported yet.";
+                return false;
+            }
+
+            const int decodedSamples = (int) reader->lengthInSamples;
+            data->audio.setSize (2, decodedSamples, false, true, false);
+            data->sourceSampleRate = reader->sampleRate;
+
+            bool readOk = false;
+            if (reader->numChannels == 1)
+            {
+                juce::AudioBuffer<float> mono (1, decodedSamples);
+                readOk = reader->read (&mono, 0, decodedSamples, 0, true, false);
+                if (readOk)
+                {
+                    data->audio.copyFrom (0, 0, mono, 0, 0, decodedSamples);
+                    data->audio.copyFrom (1, 0, mono, 0, 0, decodedSamples);
+                }
+            }
+            else
+            {
+                readOk = reader->read (&data->audio, 0, decodedSamples, 0, true, true);
+            }
+
+            if (! readOk)
+            {
+                error = "The audio file could not be decoded.";
+                return false;
+            }
+        }
     }
 
-    if (! readOk)
+    const int sampleCount = data->audio.getNumSamples();
+    if (sampleCount <= 0 || data->sourceSampleRate <= 0.0)
     {
-        error = "The audio file could not be decoded.";
+        error = "The audio file decoded to an empty sample.";
         return false;
     }
 
-    data->preview.durationMs = (double) sampleCount * 1000.0 / reader->sampleRate;
+    data->preview.durationMs = (double) sampleCount * 1000.0 / data->sourceSampleRate;
     data->preview.loaded = true;
     for (int point = 0; point < kPreviewPoints; ++point)
     {
@@ -307,7 +719,6 @@ bool LayeredSampleEngine::loadSampleFromFile (int layer, const juce::File& file,
     error.clear();
     return true;
 }
-
 void LayeredSampleEngine::clearSample (int layer)
 {
     if (! juce::isPositiveAndBelow (layer, kNumLayers))

@@ -270,6 +270,33 @@ void testRealJuceAiffLoading (const fs::path& dir)
     }
 }
 
+void testRealJuceAacAndM4aLoading()
+{
+#if WAVELENS_ENABLE_MEDIA_FOUNDATION
+    WaveLensProcessor proc;
+    proc.prepareToPlay (44100.0, 256);
+
+    const auto fixtures = fs::path (WAVELENS_TEST_FIXTURE_DIR);
+    juce::String error;
+
+    const auto m4a = juce::File ((fixtures / "tone.m4a").string());
+    check (proc.loadSampleFile (0, m4a, error),
+           "RealJUCE-AAC: WaveLens loads AAC audio in an M4A container", error.toStdString());
+    const auto m4aPreview = proc.getWaveformPreview (0);
+    check (m4aPreview.loaded && m4aPreview.durationMs > 230.0 && m4aPreview.durationMs < 275.0,
+           "RealJUCE-AAC: M4A waveform and duration are decoded",
+           "durationMs=" + std::to_string (m4aPreview.durationMs));
+
+    const auto aac = juce::File ((fixtures / "tone.aac").string());
+    check (proc.loadSampleFile (1, aac, error),
+           "RealJUCE-AAC: WaveLens loads raw AAC/ADTS audio", error.toStdString());
+    const auto aacPreview = proc.getWaveformPreview (1);
+    check (aacPreview.loaded && aacPreview.durationMs > 220.0 && aacPreview.durationMs < 310.0,
+           "RealJUCE-AAC: AAC waveform and duration are decoded",
+           "durationMs=" + std::to_string (aacPreview.durationMs));
+#endif
+}
+
 void testProcessorMonitorOversizedBlockAndDisabledBuses (const fs::path& dir)
 {
     // Segmented 2048-sample signal so we can distinguish chunk 0, middle chunks, and final chunk:
@@ -610,6 +637,7 @@ void testProcessorEditorLifecycle()
 void runAllProcessorTests (const fs::path& dir)
 {
     testRealJuceAiffLoading (dir);
+    testRealJuceAacAndM4aLoading();
     testProcessorMonitorOversizedBlockAndDisabledBuses (dir);
     testRealProcessorStateSerializationAndMigration (dir);
     testProcessorEditorLifecycle();

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -65,6 +66,16 @@ public:
     const std::string& toStdString() const noexcept { return data; }
     bool operator== (const String& o) const noexcept { return data == o.data; }
     bool operator!= (const String& o) const noexcept { return data != o.data; }
+    bool equalsIgnoreCase (const String& o) const noexcept
+    {
+        if (data.size() != o.data.size())
+            return false;
+        for (size_t i = 0; i < data.size(); ++i)
+            if (std::tolower (static_cast<unsigned char> (data[i]))
+                != std::tolower (static_cast<unsigned char> (o.data[i])))
+                return false;
+        return true;
+    }
 
     String operator+ (const String& o) const { return String (data + o.data); }
 
@@ -108,6 +119,14 @@ public:
 
     String getFullPathName() const { return String (path); }
 
+    String getFileExtension() const
+    {
+        const auto slash = path.find_last_of ("/\\");
+        const auto dot = path.find_last_of ('.');
+        return dot == std::string::npos || (slash != std::string::npos && dot < slash)
+            ? String() : String (path.substr (dot));
+    }
+
     String getFileNameWithoutExtension() const
     {
         auto slash = path.find_last_of ("/\\");
@@ -122,6 +141,53 @@ public:
 
 private:
     std::string path;
+};
+
+class FileInputStream
+{
+public:
+    explicit FileInputStream (const File& file) : stream (file.getPath(), std::ios::binary) {}
+
+    bool openedOk() const noexcept { return stream.is_open() && ! stream.bad(); }
+
+    int read (void* destination, int maxBytes)
+    {
+        if (maxBytes <= 0 || ! openedOk())
+            return 0;
+        stream.read (static_cast<char*> (destination), maxBytes);
+        const int bytesRead = static_cast<int> (stream.gcount());
+        position += bytesRead;
+        return bytesRead;
+    }
+
+    int64 getPosition() const noexcept { return position; }
+
+    int64 getTotalLength()
+    {
+        const auto savedPosition = position;
+        stream.clear();
+        stream.seekg (0, std::ios::end);
+        const auto end = stream.tellg();
+        stream.clear();
+        stream.seekg (savedPosition, std::ios::beg);
+        return end < 0 ? 0 : static_cast<int64> (end);
+    }
+
+    bool setPosition (int64 newPosition)
+    {
+        if (newPosition < 0)
+            return false;
+        stream.clear();
+        stream.seekg (newPosition, std::ios::beg);
+        if (stream.fail())
+            return false;
+        position = newPosition;
+        return true;
+    }
+
+private:
+    std::ifstream stream;
+    int64 position = 0;
 };
 
 template <typename SampleType>
