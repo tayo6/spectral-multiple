@@ -12,6 +12,7 @@ public:
 
     std::function<void()> onResetScope;
     std::function<void()> onResetZoom;
+    std::function<void()> onOpenTriggerSettings;
     std::function<void (double newBpm)> onBpmChanged;
     std::function<void()> onSampleStateChanged;
 
