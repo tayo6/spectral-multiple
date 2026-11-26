@@ -1,5 +1,6 @@
 #include "LayerEnvelopeComponent.h"
 
+#include <array>
 #include <cmath>
 #include <vector>
 
@@ -9,7 +10,6 @@ namespace
 {
     constexpr float kHandleRadius = 4.6f;
     constexpr float kTensionRadius = 3.6f;
-    constexpr int kCurveSteps = 96;
     constexpr int kHeaderHeight = 22;
     constexpr float kRulerHeight = 16.0f;
     constexpr float kOverviewHeight = 14.0f;
@@ -117,10 +117,11 @@ namespace
         The anchor array remains untouched; drag calculations use those anchors
         so the visual fan-out never changes the underlying parameter value.
     */
-    void fanOutNearbyHandles (std::array<juce::Point<float>, 5>& points)
+    void fanOutNearbyHandles (std::array<juce::Point<float>, 5>& points,
+                              float visibleLeft, float visibleRight)
     {
-        constexpr float minimumSeparation = 12.0f;
-        constexpr float fanStep = 8.0f;
+        constexpr float minimumSeparation = 13.5f;
+        constexpr float fanStep = 10.0f;
         const auto anchors = points;
         std::array<bool, 5> assigned {};
 
@@ -160,11 +161,26 @@ namespace
             if (memberCount < 2)
                 continue;
 
+            float centreX = 0.0f;
+            for (int rank = 0; rank < memberCount; ++rank)
+                centreX += anchors[(size_t) members[(size_t) rank]].x;
+            centreX /= (float) memberCount;
+
+            const float availableWidth = juce::jmax (1.0f, visibleRight - visibleLeft);
+            const float step = juce::jmin (fanStep, availableWidth / (float) (memberCount - 1));
+            const float groupWidth = step * (float) (memberCount - 1);
+            float firstX = centreX - groupWidth * 0.5f;
+            // Keep an on-screen cluster on-screen, while leaving handles that
+            // are genuinely outside a zoomed viewport outside the plot too.
+            if (centreX >= visibleLeft && centreX <= visibleRight)
+                firstX = juce::jlimit (visibleLeft, visibleRight - groupWidth, firstX);
+
             for (int rank = 0; rank < memberCount; ++rank)
             {
                 const int index = members[(size_t) rank];
-                const float offset = ((float) rank - (float) (memberCount - 1) * 0.5f) * fanStep;
-                points[(size_t) index] = anchors[(size_t) index].translated (offset, 0.0f);
+                const float displayX = firstX + (float) rank * step;
+                points[(size_t) index] = anchors[(size_t) index].translated (
+                    displayX - anchors[(size_t) index].x, 0.0f);
             }
         }
     }
@@ -699,7 +715,9 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry (float tota
         result.attackAnchor, result.holdAnchor, result.decayAnchor,
         result.sustainAnchor, result.releaseAnchor
     };
-    fanOutNearbyHandles (displayHandles);
+    fanOutNearbyHandles (displayHandles,
+                         result.plot.getX() + kHandleRadius + 1.0f,
+                         result.plot.getRight() - kHandleRadius - 1.0f);
     result.attack = displayHandles[0];
     result.hold = displayHandles[1];
     result.decay = displayHandles[2];
@@ -716,21 +734,21 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry (float tota
         xAt (attMidMs),
         yAt (LayeredSampleEngine::flSegmentLevel (0.5f, 0.0f, 1.0f, layerParams.attackCurve, layerParams.attackTension))
     };
-    result.tensionAttackVisible = (result.attack.x - result.trimX0) >= 10.0f;
+    result.tensionAttackVisible = (result.attackAnchor.x - result.trimX0) >= 10.0f;
 
     const float decMidMs = holdEnd + (decayEnd - holdEnd) * 0.5f;
     result.tensionDecay = {
         xAt (decMidMs),
         yAt (LayeredSampleEngine::flSegmentLevel (0.5f, 1.0f, sustain, layerParams.decayCurve, layerParams.decayTension))
     };
-    result.tensionDecayVisible = (result.decay.x - result.hold.x) >= 10.0f;
+    result.tensionDecayVisible = (result.decayAnchor.x - result.holdAnchor.x) >= 10.0f;
 
     const float relMidMs = releaseStart + sched.releaseMs * 0.5f;
     result.tensionRelease = {
         xAt (relMidMs),
         yAt (LayeredSampleEngine::flSegmentLevel (0.5f, relStartLevel, 0.0f, layerParams.releaseCurve, layerParams.releaseTension))
     };
-    result.tensionReleaseVisible = (result.trimX1 - result.release.x) >= 10.0f;
+    result.tensionReleaseVisible = (result.trimX1 - result.releaseAnchor.x) >= 10.0f;
 
     return result;
 }
@@ -919,13 +937,18 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
             g.fillEllipse (point.x - radius, point.y - radius,
                            2.0f * radius, 2.0f * radius);
         };
-        auto drawTensionPoint = [&] (juce::Point<float> point, bool visible)
+        auto drawTensionPoint = [&] (juce::Point<float> point, bool visible, Handle handle)
         {
             if (! visible || point.x < plot.getX() - 8.0f || point.x > plot.getRight() + 8.0f)
                 return;
-            g.setColour (snap::bankAccent (layer).brighter (0.35f));
-            g.drawEllipse (point.x - kTensionRadius, point.y - kTensionRadius,
-                           2.0f * kTensionRadius, 2.0f * kTensionRadius, 1.3f);
+            const bool selected = activeHandle == handle;
+            const float radius = kTensionRadius + (selected ? 1.4f : 0.0f);
+            g.setColour (snap::bankAccent (layer).brighter (selected ? 0.65f : 0.35f));
+            if (selected)
+                g.fillEllipse (point.x - radius - 2.0f, point.y - radius - 2.0f,
+                               2.0f * (radius + 2.0f), 2.0f * (radius + 2.0f));
+            g.drawEllipse (point.x - radius, point.y - radius,
+                           2.0f * radius, 2.0f * radius, 1.3f);
         };
 
         drawFlPoint (geometry.attack, Handle::Attack);
@@ -933,9 +956,9 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         drawFlPoint (geometry.decay, Handle::Decay);
         drawFlPoint (geometry.sustain, Handle::Sustain);
         drawFlPoint (geometry.release, Handle::Release);
-        drawTensionPoint (geometry.tensionAttack, geometry.tensionAttackVisible);
-        drawTensionPoint (geometry.tensionDecay, geometry.tensionDecayVisible);
-        drawTensionPoint (geometry.tensionRelease, geometry.tensionReleaseVisible);
+        drawTensionPoint (geometry.tensionAttack, geometry.tensionAttackVisible, Handle::TensionAttack);
+        drawTensionPoint (geometry.tensionDecay, geometry.tensionDecayVisible, Handle::TensionDecay);
+        drawTensionPoint (geometry.tensionRelease, geometry.tensionReleaseVisible, Handle::TensionRelease);
 
         // Trim lines in the bank accent
         g.setColour (snap::bankAccent (layer).withAlpha (0.9f));
@@ -1110,14 +1133,15 @@ LayerEnvelopeComponent::Handle LayerEnvelopeComponent::hitTestHandle (juce::Poin
 {
     struct Candidate { Handle h; juce::Point<float> pt; bool active; };
     const Candidate list[] = {
-        { Handle::TensionAttack,  g.tensionAttack,  g.tensionAttackVisible },
-        { Handle::TensionDecay,   g.tensionDecay,   g.tensionDecayVisible },
-        { Handle::TensionRelease, g.tensionRelease, g.tensionReleaseVisible },
+        // ADSR nodes win exact-distance ties with their nearby tension handles.
         { Handle::Attack,         g.attack,         true },
         { Handle::Hold,           g.hold,           true },
         { Handle::Decay,          g.decay,          true },
         { Handle::Sustain,        g.sustain,        true },
         { Handle::Release,        g.release,        true },
+        { Handle::TensionAttack,  g.tensionAttack,  g.tensionAttackVisible },
+        { Handle::TensionDecay,   g.tensionDecay,   g.tensionDecayVisible },
+        { Handle::TensionRelease, g.tensionRelease, g.tensionReleaseVisible },
     };
 
     float bestDist = maxRadius;
