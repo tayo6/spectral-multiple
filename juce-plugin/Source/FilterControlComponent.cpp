@@ -57,10 +57,11 @@ void FilterControlComponent::timerCallback()
 
 juce::Rectangle<float> FilterControlComponent::getTrackBounds() const noexcept
 {
+    const float uiScale = (float) getHeight() / 30.0f;
     auto r = getLocalBounds().toFloat();
-    r.removeFromLeft (44.0f);
-    r.removeFromRight (44.0f);
-    return r.reduced (4.0f, 0.0f);
+    r.removeFromLeft (44.0f * uiScale);
+    r.removeFromRight (44.0f * uiScale);
+    return r.reduced (4.0f * uiScale, 0.0f);
 }
 
 float FilterControlComponent::hzToNorm (float hz) const noexcept
@@ -111,52 +112,56 @@ void FilterControlComponent::paint (juce::Graphics& g)
     lastPaintedHp = hp;
     lastPaintedLp = lp;
 
+    const float uiScale = (float) getHeight() / 30.0f;
     const auto full = getLocalBounds().toFloat();
     g.setColour (ui::kMainBg.withAlpha (0.85f));
-    g.fillRoundedRectangle (full.reduced (0.5f), 3.0f);
+    g.fillRoundedRectangle (full.reduced (0.5f * uiScale), 3.0f * uiScale);
     g.setColour (ui::kBorder);
-    g.drawRoundedRectangle (full.reduced (0.5f), 3.0f, 1.0f);
+    g.drawRoundedRectangle (full.reduced (0.5f * uiScale), 3.0f * uiScale, 1.0f * uiScale);
 
     // HP and LP labels/values on the ends
-    g.setFont (juce::Font (9.5f, juce::Font::bold));
+    g.setFont (juce::Font (9.5f * uiScale, juce::Font::bold));
     g.setColour (hp > hpMin + 0.5f ? accent : ui::kSecondaryText);
-    g.drawText ("HP " + formatFreqShort (hp),
-                full.withWidth (44.0f).reduced (3.0f, 0.0f),
-                juce::Justification::centredLeft, false);
+    g.drawFittedText ("HP " + formatFreqShort (hp),
+                      full.withWidth (44.0f * uiScale).reduced (3.0f * uiScale, 0.0f).toNearestInt(),
+                      juce::Justification::centredLeft, 1);
 
     g.setColour (lp < lpMax - 10.0f ? accent : ui::kSecondaryText);
-    g.drawText (formatFreqShort (lp) + " LP",
-                full.withLeft (full.getRight() - 44.0f).reduced (3.0f, 0.0f),
-                juce::Justification::centredRight, false);
+    g.drawFittedText (formatFreqShort (lp) + " LP",
+                      full.withLeft (full.getRight() - 44.0f * uiScale)
+                          .reduced (3.0f * uiScale, 0.0f).toNearestInt(),
+                      juce::Justification::centredRight, 1);
 
     const auto track = getTrackBounds();
-    if (track.getWidth() < 12.0f)
+    if (track.getWidth() < 12.0f * uiScale)
         return;
 
     const float cy = track.getCentreY();
-    const float barH = juce::jmax (10.0f, track.getHeight() - 8.0f);
+    const float barH = juce::jmax (10.0f * uiScale, track.getHeight() - 8.0f * uiScale);
     juce::Rectangle<float> groove (track.getX(), cy - barH * 0.5f, track.getWidth(), barH);
     g.setColour (ui::kControlBg.darker (0.25f));
-    g.fillRoundedRectangle (groove, 2.5f);
+    g.fillRoundedRectangle (groove, 2.5f * uiScale);
 
     const float xHp = track.getX() + hzToNorm (hp) * track.getWidth();
-    const float xLp = juce::jmax (xHp + 6.0f, track.getX() + hzToNorm (lp) * track.getWidth());
+    const float xLp = juce::jmax (xHp + 6.0f * uiScale, track.getX() + hzToNorm (lp) * track.getWidth());
 
     // Active passband fill inside bar
     g.setColour (accent.withAlpha (0.24f));
-    g.fillRoundedRectangle (xHp, groove.getY(), juce::jmax (2.0f, xLp - xHp), groove.getHeight(), 2.0f);
+    g.fillRoundedRectangle (xHp, groove.getY(), juce::jmax (2.0f * uiScale, xLp - xHp),
+                            groove.getHeight(), 2.0f * uiScale);
     g.setColour (accent.withAlpha (0.80f));
-    g.fillRect (xHp, groove.getY(), juce::jmax (2.0f, xLp - xHp), 1.5f);
+    g.fillRect (xHp, groove.getY(), juce::jmax (2.0f * uiScale, xLp - xHp),
+                1.5f * uiScale);
 
     auto drawHandle = [&] (float hx, bool highlighted)
     {
-        const float w = highlighted ? 4.5f : 3.2f;
-        const float h = groove.getHeight() + 4.0f;
+        const float w = (highlighted ? 4.5f : 3.2f) * uiScale;
+        const float h = groove.getHeight() + 4.0f * uiScale;
         juce::Rectangle<float> tab (hx - w * 0.5f, cy - h * 0.5f, w, h);
         g.setColour (accent);
-        g.fillRoundedRectangle (tab, 1.5f);
+        g.fillRoundedRectangle (tab, 1.5f * uiScale);
         g.setColour (ui::kMainText.withAlpha (highlighted ? 0.95f : 0.70f));
-        g.drawRoundedRectangle (tab, 1.5f, 0.75f);
+        g.drawRoundedRectangle (tab, 1.5f * uiScale, 0.75f * uiScale);
     };
 
     drawHandle (xHp, activeHandle == DragHandle::HighPass || hoveredHandle == DragHandle::HighPass);
@@ -165,17 +170,19 @@ void FilterControlComponent::paint (juce::Graphics& g)
 
 void FilterControlComponent::mouseMove (const juce::MouseEvent& e)
 {
+    const float uiScale = (float) getHeight() / 30.0f;
     const auto track = getTrackBounds();
     const float hp = pHp != nullptr ? pHp->load() : hpMin;
     const float lp = pLp != nullptr ? pLp->load() : lpMax;
     const float xHp = track.getX() + hzToNorm (hp) * track.getWidth();
-    const float xLp = juce::jmax (xHp + 6.0f, track.getX() + hzToNorm (lp) * track.getWidth());
+    const float xLp = juce::jmax (xHp + 6.0f * uiScale, track.getX() + hzToNorm (lp) * track.getWidth());
 
     const float dHp = std::abs (e.position.x - xHp);
     const float dLp = std::abs (e.position.x - xLp);
     DragHandle nextHover = DragHandle::None;
-    if (track.expanded (8.0f, 6.0f).contains (e.position))
-        nextHover = (dHp <= dLp && dHp <= 12.0f) ? DragHandle::HighPass : (dLp <= 12.0f ? DragHandle::LowPass : DragHandle::None);
+    if (track.expanded (8.0f * uiScale, 6.0f * uiScale).contains (e.position))
+        nextHover = (dHp <= dLp && dHp <= 12.0f * uiScale) ? DragHandle::HighPass
+            : (dLp <= 12.0f * uiScale ? DragHandle::LowPass : DragHandle::None);
 
     setMouseCursor (nextHover != DragHandle::None ? juce::MouseCursor::LeftRightResizeCursor
                                                   : juce::MouseCursor::NormalCursor);
@@ -188,14 +195,15 @@ void FilterControlComponent::mouseMove (const juce::MouseEvent& e)
 
 void FilterControlComponent::mouseDown (const juce::MouseEvent& e)
 {
+    const float uiScale = (float) getHeight() / 30.0f;
     const auto track = getTrackBounds();
-    if (! track.expanded (10.0f, 6.0f).contains (e.position))
+    if (! track.expanded (10.0f * uiScale, 6.0f * uiScale).contains (e.position))
         return;
 
     const float hp = pHp != nullptr ? pHp->load() : hpMin;
     const float lp = pLp != nullptr ? pLp->load() : lpMax;
     const float xHp = track.getX() + hzToNorm (hp) * track.getWidth();
-    const float xLp = juce::jmax (xHp + 6.0f, track.getX() + hzToNorm (lp) * track.getWidth());
+    const float xLp = juce::jmax (xHp + 6.0f * uiScale, track.getX() + hzToNorm (lp) * track.getWidth());
 
     const float dHp = std::abs (e.position.x - xHp);
     const float dLp = std::abs (e.position.x - xLp);
@@ -232,11 +240,12 @@ void FilterControlComponent::mouseUp (const juce::MouseEvent&)
 
 void FilterControlComponent::mouseDoubleClick (const juce::MouseEvent& e)
 {
+    const float uiScale = (float) getHeight() / 30.0f;
     const auto track = getTrackBounds();
     const float hp = pHp != nullptr ? pHp->load() : hpMin;
     const float lp = pLp != nullptr ? pLp->load() : lpMax;
     const float xHp = track.getX() + hzToNorm (hp) * track.getWidth();
-    const float xLp = juce::jmax (xHp + 6.0f, track.getX() + hzToNorm (lp) * track.getWidth());
+    const float xLp = juce::jmax (xHp + 6.0f * uiScale, track.getX() + hzToNorm (lp) * track.getWidth());
 
     const DragHandle target = (std::abs (e.position.x - xHp) <= std::abs (e.position.x - xLp))
         ? DragHandle::HighPass
