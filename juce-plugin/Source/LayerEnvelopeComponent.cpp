@@ -1,6 +1,7 @@
 #include "LayerEnvelopeComponent.h"
 
 #include <cmath>
+#include <vector>
 
 namespace ui = wavelens::ui;
 
@@ -55,6 +56,32 @@ namespace
             best = positive ? juce::jmax (best, v) : juce::jmin (best, v);
         }
         return best;
+    }
+
+    /** Add a Catmull-Rom smoothed curve through the supplied points. */
+    void appendSmoothPath (juce::Path& path,
+                           const std::vector<juce::Point<float>>& points,
+                           bool startPath)
+    {
+        if (points.empty())
+            return;
+
+        if (startPath)
+            path.startNewSubPath (points.front().x, points.front().y);
+
+        for (size_t i = 0; i + 1 < points.size(); ++i)
+        {
+            const auto& p0 = points[i == 0 ? 0 : i - 1];
+            const auto& p1 = points[i];
+            const auto& p2 = points[i + 1];
+            const auto& p3 = points[juce::jmin (i + 2, points.size() - 1)];
+
+            const float c1x = p1.x + (p2.x - p0.x) / 6.0f;
+            const float c1y = p1.y + (p2.y - p0.y) / 6.0f;
+            const float c2x = p2.x - (p3.x - p1.x) / 6.0f;
+            const float c2y = p2.y - (p3.y - p1.y) / 6.0f;
+            path.cubicTo (c1x, c1y, c2x, c2y, p2.x, p2.y);
+        }
     }
 }
 
@@ -227,6 +254,23 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
                      &hpSlider, &lpSlider })
         s->updateText();
 
+    configureNumericEditor (attackValueEditor, "Attack time in milliseconds");
+    configureNumericEditor (releaseValueEditor, "Release time in milliseconds");
+    configureNumericEditor (pitchValueEditor, "Pitch in semitones");
+    configureNumericEditor (trimStartValueEditor, "Front trim position in percent");
+    configureNumericEditor (trimEndValueEditor, "Back trim position in percent");
+
+    attackValueEditor.onReturnKey = [this] { commitNumericEditor (attackValueEditor, ids::layerAttack (layer), 0.1f, 2000.0f); };
+    attackValueEditor.onFocusLost = [this] { commitNumericEditor (attackValueEditor, ids::layerAttack (layer), 0.1f, 2000.0f); };
+    releaseValueEditor.onReturnKey = [this] { commitNumericEditor (releaseValueEditor, ids::layerRelease (layer), 0.1f, 10000.0f); };
+    releaseValueEditor.onFocusLost = [this] { commitNumericEditor (releaseValueEditor, ids::layerRelease (layer), 0.1f, 10000.0f); };
+    pitchValueEditor.onReturnKey = [this] { commitNumericEditor (pitchValueEditor, ids::layerPitch (layer), -24.0f, 24.0f); };
+    pitchValueEditor.onFocusLost = [this] { commitNumericEditor (pitchValueEditor, ids::layerPitch (layer), -24.0f, 24.0f); };
+    trimStartValueEditor.onReturnKey = [this] { commitNumericEditor (trimStartValueEditor, ids::layerTrimStart (layer), 0.0f, 1.0f, 100.0f); };
+    trimStartValueEditor.onFocusLost = [this] { commitNumericEditor (trimStartValueEditor, ids::layerTrimStart (layer), 0.0f, 1.0f, 100.0f); };
+    trimEndValueEditor.onReturnKey = [this] { commitNumericEditor (trimEndValueEditor, ids::layerTrimEnd (layer), 0.0f, 1.0f, 100.0f); };
+    trimEndValueEditor.onFocusLost = [this] { commitNumericEditor (trimEndValueEditor, ids::layerTrimEnd (layer), 0.0f, 1.0f, 100.0f); };
+
     auto prepareZoomBtn = [this] (juce::TextButton& b, const juce::String& text, const juce::String& tip,
                                   juce::Colour textCol = ui::kMainText)
     {
@@ -289,10 +333,10 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     releaseCurveBox.setVisible (false);
     focusStartBtn.setVisible (false);
     focusEndBtn.setVisible (false);
-    zoomFitBtn.setVisible (false);
-    zoomOutBtn.setVisible (false);
-    zoomResetBtn.setVisible (false);
-    zoomInBtn.setVisible (false);
+    zoomFitBtn.setVisible (true);
+    zoomOutBtn.setVisible (true);
+    zoomResetBtn.setVisible (true);
+    zoomInBtn.setVisible (true);
     fadeInSlider.setVisible (false);
     fadeOutSlider.setVisible (false);
     hpSlider.setVisible (false);
@@ -301,10 +345,89 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     trimEndSlider.setVisible (false);
 
     updateZoomReadout();
+    refreshNumericEditor (attackValueEditor, ids::layerAttack (layer), 1.0f, 1);
+    refreshNumericEditor (releaseValueEditor, ids::layerRelease (layer), 1.0f, 1);
+    refreshNumericEditor (pitchValueEditor, ids::layerPitch (layer), 1.0f, 2);
+    refreshNumericEditor (trimStartValueEditor, ids::layerTrimStart (layer), 100.0f, 1);
+    refreshNumericEditor (trimEndValueEditor, ids::layerTrimEnd (layer), 100.0f, 1);
 
     setMouseCursor (juce::MouseCursor::CrosshairCursor);
     setOpaque (false);
     startTimerHz (15);
+}
+
+void LayerEnvelopeComponent::configureNumericEditor (juce::TextEditor& editor, const juce::String& tooltip)
+{
+    editor.setMultiLine (false);
+    editor.setReturnKeyStartsNewLine (false);
+    editor.setScrollbarsShown (false);
+    editor.setPopupMenuEnabled (true);
+    editor.setJustification (juce::Justification::centred);
+    editor.setFont (juce::Font (9.5f));
+    editor.setInputRestrictions (10, "0123456789.+-");
+    editor.setTooltip (tooltip);
+    editor.setColour (juce::TextEditor::backgroundColourId, snap::tile);
+    editor.setColour (juce::TextEditor::textColourId, ui::kMainText);
+    editor.setColour (juce::TextEditor::outlineColourId, ui::kBorder);
+    editor.setColour (juce::TextEditor::focusedOutlineColourId, colour.brighter (0.25f));
+    addAndMakeVisible (editor);
+}
+
+void LayerEnvelopeComponent::refreshNumericEditor (juce::TextEditor& editor,
+                                                    const juce::String& parameterId,
+                                                    float displayMultiplier,
+                                                    int decimalPlaces)
+{
+    if (editor.hasKeyboardFocus())
+        return;
+
+    if (auto* raw = processor.apvts.getRawParameterValue (parameterId))
+        editor.setText (juce::String (raw->load() * displayMultiplier, decimalPlaces),
+                        juce::dontSendNotification);
+}
+
+void LayerEnvelopeComponent::commitNumericEditor (juce::TextEditor& editor,
+                                                   const juce::String& parameterId,
+                                                   float minimum,
+                                                   float maximum,
+                                                   float displayMultiplier)
+{
+    const auto entered = editor.getText().trim();
+    if (entered.isEmpty() || entered == "+" || entered == "-" || entered == "." || entered == "-.")
+    {
+        repaint();
+        return;
+    }
+
+    const double parsed = entered.getDoubleValue();
+    if (! std::isfinite (parsed) || displayMultiplier <= 0.0f)
+        return;
+
+    float value = juce::jlimit (minimum, maximum, (float) (parsed / displayMultiplier));
+    if (parameterId == ids::layerTrimStart (layer))
+        value = juce::jmin (value, juce::jmax (0.0f, pTrimEnd->load() - 0.005f));
+    else if (parameterId == ids::layerTrimEnd (layer))
+        value = juce::jmax (value, juce::jmin (1.0f, pTrimStart->load() + 0.005f));
+
+    if (auto* parameter = dynamic_cast<juce::RangedAudioParameter*> (processor.apvts.getParameter (parameterId)))
+    {
+        parameter->beginChangeGesture();
+        parameter->setValueNotifyingHost (parameter->convertTo0to1 (value));
+        parameter->endChangeGesture();
+    }
+
+    editor.giveAwayKeyboardFocus();
+    repaint();
+}
+
+void LayerEnvelopeComponent::timerCallback()
+{
+    refreshNumericEditor (attackValueEditor, ids::layerAttack (layer), 1.0f, 1);
+    refreshNumericEditor (releaseValueEditor, ids::layerRelease (layer), 1.0f, 1);
+    refreshNumericEditor (pitchValueEditor, ids::layerPitch (layer), 1.0f, 2);
+    refreshNumericEditor (trimStartValueEditor, ids::layerTrimStart (layer), 100.0f, 1);
+    refreshNumericEditor (trimEndValueEditor, ids::layerTrimEnd (layer), 100.0f, 1);
+    repaint();
 }
 
 LayerEnvelopeComponent::~LayerEnvelopeComponent()
@@ -337,8 +460,10 @@ LayeredSampleEngine::LayerParameters LayerEnvelopeComponent::readLayerParameters
     return p;
 }
 
-void LayerEnvelopeComponent::clampViewport (float nextViewStart, float nextZoom) noexcept
+void LayerEnvelopeComponent::clampViewport (float nextViewStart, float nextZoom, bool notify) noexcept
 {
+    const float oldStart = viewStartNorm;
+    const float oldZoom = zoomFactor;
     const float safeZoom = juce::jlimit (1.0f, kMaxWaveformZoom, nextZoom);
     if (safeZoom <= 1.0001f)
     {
@@ -352,6 +477,16 @@ void LayerEnvelopeComponent::clampViewport (float nextViewStart, float nextZoom)
         viewStartNorm = juce::jlimit (0.0f, maxStart, nextViewStart);
     }
     updateZoomReadout();
+    if (notify && onViewportChanged
+        && (std::abs (oldStart - viewStartNorm) > 1.0e-5f || std::abs (oldZoom - zoomFactor) > 1.0e-5f))
+        onViewportChanged (viewStartNorm, zoomFactor);
+}
+
+void LayerEnvelopeComponent::setViewport (float nextViewStart, float nextZoom) noexcept
+{
+    clampViewport (nextViewStart, nextZoom, false);
+    resized();
+    repaint();
 }
 
 void LayerEnvelopeComponent::zoomAroundNormalized (float anchorNorm, float factor) noexcept
@@ -437,8 +572,14 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry (float tota
     const float safeTotal = juce::jmax (1.0f, totalDurationMs);
     const float pitchSpeed = std::pow (2.0f, layerParams.pitchSemitones / 12.0f);
     result.trimmedDurationMs = juce::jmax (1.0f, safeTotal * (trimEnd - trimStart) / juce::jmax (0.01f, pitchSpeed));
+    // Keep the ADSR preview readable on long loops: the display uses the
+    // envelope's own time span while the audio engine retains true sample time.
+    const float nominalEnvelopeMs = layerParams.attackMs + layerParams.holdMs
+                                  + layerParams.decayMs + layerParams.releaseMs;
+    result.envelopeDisplayDurationMs = juce::jmin (result.trimmedDurationMs,
+                                                    juce::jmax (1.0f, nominalEnvelopeMs));
 
-    const auto sched = LayeredSampleEngine::computeEnvelopeSchedule (layerParams, result.trimmedDurationMs);
+    const auto sched = LayeredSampleEngine::computeEnvelopeSchedule (layerParams, result.envelopeDisplayDurationMs);
     const float attackEnd = sched.attackEndMs;
     const float holdEnd = sched.holdEndMs;
     const float decayEnd = sched.decayEndMs;
@@ -584,11 +725,12 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
 
         // FL envelope curve: bank-accent stroke, translucent fill under it.
         const auto layerParams = readLayerParameters();
-        const auto sched = LayeredSampleEngine::computeEnvelopeSchedule (layerParams, geometry.trimmedDurationMs);
+        const auto sched = LayeredSampleEngine::computeEnvelopeSchedule (layerParams, geometry.envelopeDisplayDurationMs);
 
         auto xAt = [&] (float timeMs)
         {
-            return geometry.trimX0 + geometry.trimW * juce::jlimit (0.0f, geometry.trimmedDurationMs, timeMs) / geometry.trimmedDurationMs;
+            return geometry.trimX0 + geometry.trimW * juce::jlimit (0.0f, geometry.envelopeDisplayDurationMs, timeMs)
+                 / geometry.envelopeDisplayDurationMs;
         };
         const float envTop = plot.getY() + 7.0f;
         const float envBot = plot.getBottom() - 15.0f;
@@ -607,22 +749,21 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         for (int i = 1; i <= totalSteps; ++i)
         {
             const float t = (float) i / (float) totalSteps;
-            const float timeMs = t * geometry.trimmedDurationMs;
+            const float timeMs = t * geometry.envelopeDisplayDurationMs;
             envelope.lineTo (xAt (timeMs), yAt (LayeredSampleEngine::evaluateCompleteEnvelopeAtMs (layerParams, sched, timeMs)));
         }
 
-        if (envEnabled)
-        {
-            auto fill = envelope;
-            fill.lineTo (geometry.trimX1, envBot);
-            fill.lineTo (geometry.trimX0, envBot);
-            fill.closeSubPath();
-            g.setColour (snap::bankAccent (layer).withAlpha (0.12f));
-            g.fillPath (fill);
-        }
+        auto fill = envelope;
+        fill.lineTo (geometry.trimX1, envBot);
+        fill.lineTo (geometry.trimX0, envBot);
+        fill.closeSubPath();
+        g.setColour (snap::bankAccent (layer).withAlpha (envEnabled ? 0.13f : 0.06f));
+        g.fillPath (fill);
 
-        g.setColour (envEnabled ? snap::bankAccent (layer) : ui::kDisabledText);
-        g.strokePath (envelope, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved,
+        // Keep the shape visible when ENV is bypassed; the lower opacity is
+        // a status cue, not a hidden envelope graph.
+        g.setColour (snap::bankAccent (layer).withAlpha (envEnabled ? 1.0f : 0.62f));
+        g.strokePath (envelope, juce::PathStrokeType (1.55f, juce::PathStrokeType::curved,
                                                       juce::PathStrokeType::rounded));
 
         // FL-style handles (always visible, envelope on or off):
@@ -665,30 +806,13 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         g.restoreState();
     }
 
-    // Bottom "Attack x% / Decay y% / Pitch z" readout row (SVG y=542)
-    const auto bottomReadout = svg (16, 528, 226, 18);
-    const auto labelFont = juce::Font (juce::jlimit (8.5f, 10.5f, 10.5f));
-
-    const auto attackPct = juce::String (juce::roundToInt (juce::jlimit (0.0f, 1.0f,
-                    pAttack->load() / juce::jmax (1.0f, pAttack->load() + pHold->load() + pDecay->load())) * 100.0f));
-    const auto decayPct = juce::String (juce::roundToInt (juce::jlimit (0.0f, 1.0f,
-                    pDecay->load() / juce::jmax (1.0f, pAttack->load() + pHold->load() + pDecay->load())) * 100.0f));
-    const auto pitchTxt = pitchSlider.getTextFromValue (pitchSlider.getValue());
-
-    // SVG layout: Attack @26/63, Decay @103/139, Pitch @179/208
-    const auto cell = [&] (float x, float w)
-    {
-        return bottomReadout.toFloat().withX ((16.0f + x) * sx).withWidth (w * sx);
-    };
-    g.setFont (labelFont);
+    // Compact numeric fields in the waveform footer. TextEditors are child
+    // components above the labels and remain independently editable.
+    g.setFont (juce::Font (9.5f));
     g.setColour (ui::kSecondaryText);
-    g.drawText ("Attack", cell (10.0f, 40.0f), juce::Justification::centredLeft, true);
-    g.drawText ("Decay", cell (87.0f, 40.0f), juce::Justification::centredLeft, true);
-    g.drawText ("Pitch", cell (162.0f, 30.0f), juce::Justification::centredLeft, true);
-    g.setColour (ui::kMainText);
-    g.drawText (attackPct + "%", cell (47.0f, 40.0f), juce::Justification::centredLeft, true);
-    g.drawText (decayPct + "%", cell (123.0f, 40.0f), juce::Justification::centredLeft, true);
-    g.drawText (pitchTxt, cell (193.0f, 32.0f), juce::Justification::centredLeft, true);
+    g.drawText ("A", svg (17, 529, 8, 16), juce::Justification::centredLeft);
+    g.drawText ("R", svg (91, 529, 8, 16), juce::Justification::centredLeft);
+    g.drawText ("P", svg (165, 529, 8, 16), juce::Justification::centredLeft);
 
     // ---- SVG "Volume" fader card (59x76, #17151d): centred label on top,
     // vertical track 421..457, thumb r3, centred value at 470 ----
@@ -725,10 +849,10 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
 
         g.setFont (juce::Font (juce::jmax (9.0f, 10.0f * uy)));
         g.setColour (ui::kSecondaryText);
-        g.drawText ("Str Trim", card.getX() + 8.0f * ux, card.getY() + 6.0f * uy,
-                    50.0f * ux, 12.0f * uy, juce::Justification::centredLeft, false);
-        g.drawText ("Bk Trim", card.getRight() - 58.0f * ux, card.getY() + 6.0f * uy,
-                    50.0f * ux, 12.0f * uy, juce::Justification::centredRight, false);
+        g.drawText ("S", card.getX() + 4.0f * ux, card.getY() + 6.0f * uy,
+                    8.0f * ux, 12.0f * uy, juce::Justification::centredLeft, false);
+        g.drawText ("E", card.getX() + 70.0f * ux, card.getY() + 6.0f * uy,
+                    8.0f * ux, 12.0f * uy, juce::Justification::centredLeft, false);
 
         const float trackY = card.getY() + 23.0f * uy;
         const float trackX0 = card.getX() + 12.0f * ux;
@@ -773,7 +897,7 @@ void LayerEnvelopeComponent::resized()
 
     // ---- sample box content (box x 16..242, y 400..552) ----
     sampleHeaderBounds = at (16, 400, 226, 20);
-    pitchReadoutBounds = at (208, 528, 32, 18);
+    pitchReadoutBounds = at (176, 529, 60, 16);
     auto headerBar = sampleHeaderBounds.reduced (3, 1);
     // REV sits next to ENV; the phase invert icon lives on the Shift card
     // per the SVG. Both are 30px text pills with a ~12px gap between them.
@@ -805,8 +929,15 @@ void LayerEnvelopeComponent::resized()
 
     pogoSlider.setBounds (at (325, 480, 59, 36));   // Pogo
 
-    // Dual-handle trim card 134x32 at the bottom of the grid
+    // Numeric attack / release / pitch fields in the waveform footer.
+    attackValueEditor.setBounds (at (27, 529, 52, 16));
+    releaseValueEditor.setBounds (at (101, 529, 52, 16));
+    pitchValueEditor.setBounds (at (175, 529, 62, 16));
+
+    // Dual-handle trim card 134x32 at the bottom of the grid.
     trimCardBounds = at (250, 520, 134, 32).toFloat();
+    trimStartValueEditor.setBounds (at (263, 525, 45, 14));
+    trimEndValueEditor.setBounds (at (330, 525, 45, 14));
     // Hidden standalone trim sliders cover the same span so drags on the
     // card hit real Slider components.
     trimStartSlider.setBounds (trimCardBounds.withWidth (trimCardBounds.getWidth() * 0.5f).toNearestInt());
@@ -824,10 +955,11 @@ void LayerEnvelopeComponent::resized()
     park (releaseCurveBox);
     park (focusStartBtn);
     park (focusEndBtn);
-    park (zoomFitBtn);
-    park (zoomOutBtn);
-    park (zoomResetBtn);
-    park (zoomInBtn);
+    // Zoom controls are visible in the upper-right of the sample waveform.
+    zoomFitBtn.setBounds (at (165, 421, 19, 15));
+    zoomOutBtn.setBounds (at (185, 421, 15, 15));
+    zoomResetBtn.setBounds (at (201, 421, 28, 15));
+    zoomInBtn.setBounds (at (230, 421, 13, 15));
 
     overviewBarBounds = juce::Rectangle<float>();
     controlStripBounds = full.toFloat();
@@ -1196,7 +1328,7 @@ void LayerEnvelopeComponent::applyDrag (juce::Point<float> position)
         return;
     }
 
-    const float duration = juce::jmax (1.0f, geometry.trimmedDurationMs);
+    const float duration = juce::jmax (1.0f, geometry.envelopeDisplayDurationMs);
     const float x = juce::jlimit (0.0f, 1.0f,
                                   (position.x - geometry.trimX0)
                                       / juce::jmax (1.0f, geometry.trimW));
