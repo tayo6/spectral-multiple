@@ -264,6 +264,7 @@ void PluginHeaderComponent::openMainMenu()
     menu.addItem (1, "Fire Manual Trigger");
     menu.addItem (2, "Reset Scope & Meters");
     menu.addItem (3, "Reset Timeline Zoom (1.0x)");
+    menu.addItem (4, "Trigger Settings");
     menu.addSeparator();
     menu.addSectionHeader ("TIMELINE TEMPO (" + juce::String ((int) currentBpm) + " BPM)");
     menu.addItem (10, "Set 90 BPM");
@@ -296,6 +297,9 @@ void PluginHeaderComponent::openMainMenu()
                 break;
             case 3:
                 if (safeThis->onResetZoom) safeThis->onResetZoom();
+                break;
+            case 4:
+                if (safeThis->onOpenTriggerSettings) safeThis->onOpenTriggerSettings();
                 break;
             case 10: safeThis->setBpm (90.0); break;
             case 11: safeThis->setBpm (120.0); break;
@@ -351,38 +355,20 @@ void PluginHeaderComponent::paint (juce::Graphics& g)
 
 void PluginHeaderComponent::resized()
 {
-    auto r = getLocalBounds().reduced (12, 10);
+    const float sx = (float) getWidth() / 800.0f;
+    const float sy = (float) getHeight() / 44.0f;
+    auto px = [sx] (float v) { return juce::roundToInt (v * sx); };
+    auto py = [sy] (float v) { return juce::roundToInt (v * sy); };
 
-    powerBtn.setBounds (r.removeFromLeft (28));
-    r.removeFromLeft (6);
-    menuBtn.setBounds (r.removeFromLeft (28));
-    r.removeFromLeft (10);
-    resetBtn.setBounds (r.removeFromLeft (60).withSizeKeepingCentre (60, 26));
+    powerBtn.setBounds (px (19), py (12), px (22), py (20));
+    menuBtn.setBounds (px (49), py (12), px (24), py (20));
+    resetBtn.setBounds ({});
+    bpmDownBtn.setBounds ({});
+    bpmUpBtn.setBounds ({});
+    bpmValueBounds = {};
 
-    // Right cluster: preset navigation + favourite
-    nextPresetBtn.setBounds (r.removeFromRight (26).withSizeKeepingCentre (26, 26));
-    r.removeFromRight (4);
-    const int comboW = juce::jlimit (140, 200, getWidth() / 6);
-    presetBox.setBounds (r.removeFromRight (comboW).withSizeKeepingCentre (comboW, 28));
-    r.removeFromRight (4);
-    prevPresetBtn.setBounds (r.removeFromRight (26).withSizeKeepingCentre (26, 26));
-    r.removeFromRight (6);
-    favBtn.setBounds (r.removeFromRight (26).withSizeKeepingCentre (26, 26));
-
-    // Compact BPM cluster to the left of the preset cluster
-    if (r.getWidth() > 240)
-    {
-        r.removeFromRight (16);
-        bpmUpBtn.setBounds (r.removeFromRight (24).withSizeKeepingCentre (24, 24));
-        r.removeFromRight (4);
-        bpmValueBounds = r.removeFromRight (62).withSizeKeepingCentre (62, 24);
-        r.removeFromRight (4);
-        bpmDownBtn.setBounds (r.removeFromRight (24).withSizeKeepingCentre (24, 24));
-    }
-    else
-    {
-        bpmDownBtn.setBounds ({});
-        bpmUpBtn.setBounds ({});
-        bpmValueBounds = {};
-    }
+    favBtn.setBounds (px (582), py (10), px (24), py (24));
+    presetBox.setBounds (px (610), py (8), px (132), py (28));
+    prevPresetBtn.setBounds (px (748), py (10), px (20), py (24));
+    nextPresetBtn.setBounds (px (776), py (10), px (20), py (24));
 }

@@ -7,7 +7,7 @@
 #include <memory>
 
 /**
-    Horizontal Trigger Settings drawer revealed by the separate TRIG control in WaveformControlBar.
+    Optional Trigger Settings drawer opened from the header menu.
 */
 class TriggerPanelComponent final : public juce::Component, private juce::Timer
 {
@@ -28,6 +28,9 @@ private:
 
     juce::Slider thresholdSlider;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> thresholdAtt;
+
+    juce::Slider preLeadSlider;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> preLeadAtt;
 
     juce::ComboBox modeBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> modeAtt;
@@ -56,11 +59,9 @@ private:
 
 //==============================================================================
 /**
-    36 px control bar directly beneath the main oscilloscope:
-    Left:   Limiter toggle + live peak ceiling dB + PRE lead slider
-    Centre: Trapezoid TRIGGER settings drawer tab + quick-fire trigger button
-    Right:  GRID / SECONDS ruler toggle, DETAIL magnifier toggle,
-            zoom out / zoom level / zoom in, OUTPUT monitor toggle
+    SVG-aligned toolbar. Left: limiter and live peak value. Centre:
+    raised COLLAPSE trapezoid. Right: Detail, Zoom and Output controls.
+    Trigger settings are opened from the header menu.
 */
 class WaveformControlBar final : public juce::Component, private juce::Timer
 {
@@ -86,6 +87,25 @@ public:
     void resized() override;
 
 private:
+    class CollapseButton final : public juce::TextButton
+    {
+    public:
+        CollapseButton() : juce::TextButton ("COLLAPSE") {}
+        void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+    };
+
+    class LimiterButton final : public juce::Button
+    {
+    public:
+        LimiterButton() : juce::Button ("Limiter")
+        {
+            setClickingTogglesState (true);
+            setTooltip ("Limiter protection display toggle");
+            setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        }
+        void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+    };
+
     class MagnifierButton final : public juce::Button
     {
     public:
@@ -103,11 +123,11 @@ private:
 
     WaveLensProcessor& proc;
 
-    juce::TextButton limiterBtn { "LIMITER" };
+    LimiterButton limiterBtn;
     juce::Slider preLeadSlider;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> preLeadAtt;
 
-    juce::TextButton collapseTabBtn { "COLLAPSE" };
+    CollapseButton collapseTabBtn;
     juce::TextButton triggerSettingsBtn { "TRIG" };
     juce::TextButton fireTriggerBtn { ">" };
 

@@ -4,11 +4,61 @@
 #include "SpectralMultipleLookAndFeel.h"
 
 /**
-    Waveform-backed sample editor, FL-style tension envelope, and SNAPBACK
-    parameter tile deck for one individual SNAPBACK (0..2) or TRANSIENT (3..5)
-    layer. The 11 parameter controls are compact tiles rendered by
-    SpectralMultipleLookAndFeel (see the "isTile" slider property).
+    Combined front/back sample trim control. One shared range track has two
+    independently editable endpoints, each with a numeric percentage field.
+    The existing layerTrimStart/layerTrimEnd APVTS parameters remain unchanged.
 */
+class DualTrimRangeComponent final : public juce::Component, private juce::Timer
+{
+public:
+    DualTrimRangeComponent (WaveLensProcessor&, int layerIndex, juce::Colour accentColour);
+    ~DualTrimRangeComponent() override;
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+
+private:
+    enum class ActiveThumb { None, Start, End };
+
+    void timerCallback() override;
+    void refreshEditors();
+    void commitEditor (bool isStart);
+    void setTrimValue (bool isStart, float value, bool sendGesture);
+    void beginThumbGesture();
+    void endThumbGesture();
+    juce::Rectangle<float> getTrackBounds() const noexcept;
+
+    WaveLensProcessor& processor;
+    const int layer;
+    const juce::Colour accent;
+    std::atomic<float>* startValue = nullptr;
+    std::atomic<float>* endValue = nullptr;
+    juce::RangedAudioParameter* startParameter = nullptr;
+    juce::RangedAudioParameter* endParameter = nullptr;
+
+    juce::TextEditor startEditor;
+    juce::TextEditor endEditor;
+    juce::Rectangle<float> trackBounds;
+    ActiveThumb activeThumb = ActiveThumb::None;
+    float lastStart = -1.0f;
+    float lastEnd = -1.0f;
+    bool gestureActive = false;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DualTrimRangeComponent)
+};
+
+/** Waveform-backed sample editor with draggable envelope and SVG-positioned controls. */
+/** Disabled SVG phase-invert glyph until the processor exposes a polarity parameter. */
+class PhaseInvertPlaceholder final : public juce::Button
+{
+public:
+    PhaseInvertPlaceholder();
+    void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+};
+
 class LayerEnvelopeComponent final : public juce::Component, private juce::Timer
 {
 public:
@@ -17,6 +67,7 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    juce::Rectangle<int> getSampleHeaderBounds() const noexcept;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
@@ -109,11 +160,13 @@ private:
     std::atomic<float>* pFadeOut = nullptr;
 
     juce::TextButton reverseBtn, envEnableBtn;
+    PhaseInvertPlaceholder phaseInvertBtn;
     juce::TextButton focusStartBtn, focusEndBtn, zoomFitBtn, zoomOutBtn, zoomResetBtn, zoomInBtn;
     juce::ComboBox attackCurveBox, decayCurveBox, releaseCurveBox;
     juce::Slider gainSlider, delaySlider, pitchSlider, panSlider, pogoSlider, widthSlider;
-    juce::Slider fadeInSlider, fadeOutSlider, trimStartSlider, trimEndSlider;
+    juce::Slider fadeInSlider, fadeOutSlider;
     juce::Slider hpSlider, lpSlider;
+    std::unique_ptr<DualTrimRangeComponent> trimRange;
 
     using ButtonAtt = juce::AudioProcessorValueTreeState::ButtonAttachment;
     using ComboAtt  = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
@@ -121,7 +174,7 @@ private:
     std::unique_ptr<ButtonAtt> reverseAttachment, envEnableAttachment;
     std::unique_ptr<ComboAtt> attackCurveAttachment, decayCurveAttachment, releaseCurveAttachment;
     std::unique_ptr<SliderAtt> gainAttachment, delayAttachment, pitchAttachment, panAttachment, pogoAttachment, widthAttachment;
-    std::unique_ptr<SliderAtt> fadeInAttachment, fadeOutAttachment, trimStartAttachment, trimEndAttachment;
+    std::unique_ptr<SliderAtt> fadeInAttachment, fadeOutAttachment;
     std::unique_ptr<SliderAtt> hpAttachment, lpAttachment;
 
     juce::Rectangle<int> controlStripBounds;

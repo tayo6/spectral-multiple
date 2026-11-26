@@ -100,15 +100,16 @@ void LayerPadStripComponent::paint (juce::Graphics& g)
 
 void LayerPadStripComponent::resized()
 {
-    auto r = getLocalBounds().reduced (8, 5);
-    constexpr int gap = 7;
-    const int cellW = (r.getWidth() - gap * 5) / 6;
+    // Six footer pads follow the SVG coordinates, including the wider 32 px
+    // separation between the three SNAPBACK pads and three TRANSIENT pads.
+    const float sx = (float) getWidth() / 800.0f;
+    const float sy = (float) getHeight() / 42.0f;
+    static constexpr int padX[] = { 16, 142, 268, 416, 542, 668 };
     for (int i = 0; i < 6; ++i)
-    {
-        pads[(size_t) i]->setBounds (r.removeFromLeft (cellW));
-        if (i != 5)
-            r.removeFromLeft (gap);
-    }
+        pads[(size_t) i]->setBounds (juce::roundToInt ((float) padX[i] * sx),
+                                     juce::roundToInt (10.0f * sy),
+                                     juce::roundToInt (116.0f * sx),
+                                     juce::roundToInt (26.0f * sy));
 }
 
 //==============================================================================
@@ -197,6 +198,13 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     {
         masterWaveform.resetZoom();
         controlBar.setDetailActive (false);
+    };
+    header.onOpenTriggerSettings = [this]
+    {
+        triggerPanelOpen = ! triggerPanelOpen;
+        triggerPanel.setVisible (triggerPanelOpen);
+        resized();
+        repaint();
     };
     header.onBpmChanged = [this] (double newBpm)
     {
@@ -331,77 +339,91 @@ void WaveLensEditor::timerCallback()
 void WaveLensEditor::paint (juce::Graphics& g)
 {
     g.fillAll (ui::kMainBg);
+
+    // SVG panel divider between the SNAPBACK and TRANSIENT banks.
+    if (! editorsCollapsed)
+    {
+        const float sx = (float) getWidth() / 800.0f;
+        const float sy = (float) getHeight() / 600.0f;
+        g.setColour (ui::kBorder);
+        g.drawVerticalLine (juce::roundToInt (400.0f * sx),
+                            372.0f * sy, 558.0f * sy);
+    }
 }
 
 void WaveLensEditor::resized()
 {
-    auto area = getLocalBounds();
-    header.setBounds (area.removeFromTop (48));
+    // The outer editor follows the supplied 800 x 600 SVG coordinate system.
+    // All primary regions use independent X/Y scaling so the editor remains
+    // responsive to the supported DAW window sizes.
+    const float sx = (float) getWidth() / 800.0f;
+    const float sy = (float) getHeight() / 600.0f;
+    auto sxRound = [sx] (float value) { return juce::roundToInt (value * sx); };
+    auto syRound = [sy] (float value) { return juce::roundToInt (value * sy); };
 
-    auto body = area.reduced (12, 8);
-    padStrip.setBounds (body.removeFromBottom (42));
-    body.removeFromBottom (7);
+    const int headerH = syRound (44.0f);
+    const int footerTop = syRound (558.0f);
+    const int footerH = getHeight() - footerTop;
+    const int visualizerY = headerH;
+    const int toolbarH = syRound (42.0f);       // 30 px strip + 12 px trapezoid rise
+    const int toolbarOverlap = syRound (12.0f);
+    const int defaultWaveformH = syRound (298.0f);
 
-    const int controlBarHeight = 36;
-    const int triggerPanelSpace = triggerPanelOpen ? 44 : 0; // 6 px gap + 38 px panel
+    header.setBounds (0, 0, getWidth(), headerH);
+    padStrip.setBounds (0, footerTop, getWidth(), footerH);
 
     triggerPanel.setVisible (triggerPanelOpen);
     snapbackGroup.setVisible (! editorsCollapsed);
     transientGroup.setVisible (! editorsCollapsed);
     resizeHandle.setVisible (! editorsCollapsed);
 
-    if (editorsCollapsed)
+    if (! editorsCollapsed)
     {
-        // In COLLAPSE mode the scope takes all vertical space not needed by
-        // the control bar and optional Trigger Settings drawer. The six pads
-        // remain visible so every layer can still be selected.
-        const int scopeHeight = juce::jmax (120, body.getHeight() - 6
-                                             - controlBarHeight - triggerPanelSpace);
-        masterWaveform.setBounds (body.removeFromTop (scopeHeight));
-        body.removeFromTop (6);
-        controlBar.setBounds (body.removeFromTop (controlBarHeight));
+        constexpr float minimumBankHeightSvg = 150.0f;
+        constexpr float minimumScopeHeightSvg = 150.0f;
+        const int minimumScopeH = syRound (minimumScopeHeightSvg);
+        const int minimumBankH = syRound (minimumBankHeightSvg);
+        const int maximumWaveformH = juce::jmax (minimumScopeH,
+            footerTop - visualizerY - toolbarH + toolbarOverlap - minimumBankH);
 
-        if (triggerPanelOpen)
-        {
-            body.removeFromTop (6);
-            triggerPanel.setBounds (body.removeFromTop (38));
-        }
-
-        return;
+        if (waveformHeight < 0)
+            waveformHeight = defaultWaveformH;
+        waveformHeight = juce::jlimit (minimumScopeH, maximumWaveformH, waveformHeight);
     }
 
-    // The splitter adjusts the scope height while preserving a useful
-    // minimum space for both sample-bank editors at the smallest window size.
-    constexpr int minimumBankHeight = 168;
-    constexpr int minimumScopeHeight = 150;
-    constexpr int splitterHeight = 8;
-    const int fixedSpace = 6 + controlBarHeight + triggerPanelSpace
-                         + splitterHeight + 10 + minimumBankHeight;
-    const int maximumScopeHeight = juce::jmax (minimumScopeHeight,
-                                                body.getHeight() - fixedSpace);
-    const int defaultScopeHeight = juce::roundToInt ((float) body.getHeight() * 0.37f);
 
-    if (waveformHeight < 0)
-        waveformHeight = defaultScopeHeight;
+    const int activeWaveformHeight = editorsCollapsed
+        ? footerTop - visualizerY - toolbarH + toolbarOverlap
+        : waveformHeight;
+    const int waveformBottom = visualizerY + activeWaveformHeight;
+    const int toolbarY = waveformBottom - toolbarOverlap;
+    const int bankTop = toolbarY + toolbarH;
 
-    waveformHeight = juce::jlimit (minimumScopeHeight, maximumScopeHeight, waveformHeight);
+    masterWaveform.setBounds (0, visualizerY, getWidth(), activeWaveformHeight);
+    controlBar.setBounds (0, toolbarY, getWidth(), toolbarH);
 
-    masterWaveform.setBounds (body.removeFromTop (waveformHeight));
-    body.removeFromTop (6);
-    controlBar.setBounds (body.removeFromTop (controlBarHeight));
-
+    // Trigger settings are a temporary overlay, not a reflow of the SVG canvas.
     if (triggerPanelOpen)
     {
-        body.removeFromTop (6);
-        triggerPanel.setBounds (body.removeFromTop (38));
+        const int panelH = syRound (38.0f);
+        const int panelW = sxRound (720.0f);
+        triggerPanel.setBounds ((getWidth() - panelW) / 2,
+                                juce::jmax (visualizerY + syRound (8.0f), toolbarY - panelH - syRound (6.0f)),
+                                panelW, panelH);
+        triggerPanel.toFront (false);
     }
 
-    resizeHandle.setBounds (body.removeFromTop (splitterHeight));
-    body.removeFromTop (10);
+    if (! editorsCollapsed)
+    {
+        // The draggable splitter overlays the top edge of the bank panels; it
+        // does not steal vertical space from the SVG's 186 px bank region.
+        resizeHandle.setBounds (0, bankTop - syRound (4.0f), getWidth(), syRound (8.0f));
+        resizeHandle.toFront (false);
 
-    const int gap = 12;
-    const int groupW = (body.getWidth() - gap) / 2;
-    snapbackGroup.setBounds (body.removeFromLeft (groupW));
-    body.removeFromLeft (gap);
-    transientGroup.setBounds (body);
+        const int snapW = sxRound (399.0f);
+        const int transientX = sxRound (401.0f);
+        snapbackGroup.setBounds (0, bankTop, snapW, footerTop - bankTop);
+        transientGroup.setBounds (transientX, bankTop,
+                                  getWidth() - transientX, footerTop - bankTop);
+    }
 }

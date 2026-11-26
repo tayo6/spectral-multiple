@@ -40,6 +40,19 @@ public:
     void filesDropped (const juce::StringArray& files, int x, int y) override;
 
 private:
+    class BankSoloButton final : public juce::Button
+    {
+    public:
+        BankSoloButton() : juce::Button ("BankSolo")
+        {
+            setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        }
+        void setAccentColour (juce::Colour colour) noexcept { accent = colour; repaint(); }
+        void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+    private:
+        juce::Colour accent { wavelens::ui::kPurpleAccent };
+    };
+
     class BankPowerButton final : public juce::Button
     {
     public:
@@ -66,7 +79,7 @@ private:
     bool dragOver = false;
 
     BankPowerButton bankPowerBtn;
-    juce::TextButton soloBtn { "S" };
+    BankSoloButton soloBtn;
     juce::TextButton auditionBtn { ">" };
     SampleBrowserComponent sampleBrowser;
     juce::TextButton clearBtn { "x" };

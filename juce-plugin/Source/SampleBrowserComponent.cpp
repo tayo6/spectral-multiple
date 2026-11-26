@@ -70,6 +70,7 @@ void SampleBrowserComponent::openBrowserMenu()
     menu.addSectionHeader (layerName.toUpperCase() + " SAMPLE");
     menu.addItem (1, hasSample ? "Replace Audio File..." : "Load Audio File...");
     menu.addItem (2, "Clear Sample", hasSample || proc.isLayerSampleMissing (currentLayer));
+    menu.addItem (4, "Preview Sample", hasSample);
 
     const bool reversed = proc.apvts.getRawParameterValue (ids::layerReverse (currentLayer))->load() > 0.5f;
     menu.addItem (3, "Reverse Sample", true, reversed);
@@ -103,6 +104,10 @@ void SampleBrowserComponent::openBrowserMenu()
             safeThis->onBrowseRequested();
         else if (result == 2 && safeThis->onClearRequested)
             safeThis->onClearRequested();
+        else if (result == 4)
+        {
+            safeThis->proc.requestPreview (safeThis->currentLayer);
+        }
         else if (result == 3)
         {
             if (auto* p = dynamic_cast<juce::RangedAudioParameter*> (
@@ -131,10 +136,12 @@ void SampleBrowserComponent::paint (juce::Graphics& g)
 
 void SampleBrowserComponent::resized()
 {
-    auto r = getLocalBounds();
-    prevBtn.setBounds (r.removeFromLeft (22));
-    r.removeFromLeft (3);
-    nextBtn.setBounds (r.removeFromRight (22));
+    // The sample title leads the row; both slot arrows sit at the right edge.
+    auto r = getLocalBounds().reduced (3, 0);
+    const int arrowW = juce::jlimit (16, 22, juce::roundToInt ((float) getHeight() * 0.88f));
+    nextBtn.setBounds (r.removeFromRight (arrowW));
+    r.removeFromRight (2);
+    prevBtn.setBounds (r.removeFromRight (arrowW));
     r.removeFromRight (3);
     selectorBtn.setBounds (r);
 }

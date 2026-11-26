@@ -2,6 +2,35 @@
 
 namespace ui = wavelens::ui;
 
+void SampleGroupComponent::BankSoloButton::paintButton (juce::Graphics& g,
+                                                         bool highlighted,
+                                                         bool down)
+{
+    const auto b = getLocalBounds().toFloat().reduced (0.5f);
+    const bool active = getToggleState();
+    auto fill = active ? accent.withAlpha (0.18f) : ui::kControlBg;
+    if (down) fill = fill.brighter (0.15f);
+    else if (highlighted) fill = fill.brighter (0.08f);
+
+    g.setColour (fill);
+    g.fillRoundedRectangle (b, 3.5f);
+    g.setColour (active ? accent.withAlpha (0.9f) : ui::kBorder);
+    g.drawRoundedRectangle (b, 3.5f, 1.0f);
+
+    const float cx = b.getCentreX();
+    const float cy = b.getCentreY() + 1.0f;
+    const float radius = juce::jmin (6.0f, b.getHeight() * 0.30f);
+    juce::Path band;
+    band.addCentredArc (cx, cy, radius, radius, 0.0f,
+                        juce::MathConstants<float>::pi,
+                        juce::MathConstants<float>::twoPi, true);
+    g.setColour (active ? accent.brighter (0.2f) : ui::kSecondaryText);
+    g.strokePath (band, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved,
+                                              juce::PathStrokeType::rounded));
+    g.fillRoundedRectangle (cx - radius - 1.0f, cy - 1.0f, 2.2f, 5.0f, 1.0f);
+    g.fillRoundedRectangle (cx + radius - 1.2f, cy - 1.0f, 2.2f, 5.0f, 1.0f);
+}
+
 void SampleGroupComponent::BankPowerButton::paintButton (juce::Graphics& g,
                                                           bool highlighted,
                                                           bool down)
@@ -68,7 +97,7 @@ SampleGroupComponent::SampleGroupComponent (WaveLensProcessor& processor, int gr
     addAndMakeVisible (bankPowerBtn);
 
     soloBtn.setClickingTogglesState (true);
-    soloBtn.setTooltip ("Solo all three layers in this bank");
+    soloBtn.setAccentColour (ui::layerColour (baseLayer));
     soloBtn.getProperties().set ("accentColour", (juce::int64) ui::layerColour (baseLayer).getARGB());
     soloBtn.onClick = [this]
     {
@@ -89,7 +118,7 @@ SampleGroupComponent::SampleGroupComponent (WaveLensProcessor& processor, int gr
 
     auditionBtn.setTooltip ("Audition active layer sample");
     auditionBtn.onClick = [this] { proc.requestPreview (getSelectedLayer()); };
-    addAndMakeVisible (auditionBtn);
+    addChildComponent (auditionBtn);
 
     sampleBrowser.onBrowseRequested = [this] { promptLoadActiveLayer(); };
     sampleBrowser.onClearRequested = [this]
@@ -113,7 +142,7 @@ SampleGroupComponent::SampleGroupComponent (WaveLensProcessor& processor, int gr
         if (onSampleStateChanged)
             onSampleStateChanged();
     };
-    addAndMakeVisible (clearBtn);
+    addChildComponent (clearBtn);
 
     selectSlot (0);
 }
@@ -242,44 +271,38 @@ void SampleGroupComponent::paint (juce::Graphics& g)
     g.setColour (ui::kBorder);
     g.drawHorizontalLine (headerBounds.getBottom(), (float) headerBounds.getX(), (float) headerBounds.getRight());
 
-    // Left accent marker
-    g.setColour (activeAccent);
-    g.fillRoundedRectangle (hdr.getX() + 6.0f, hdr.getCentreY() - 7.0f, 3.0f, 14.0f, 1.5f);
-
-    // Section heading (bank accent) immediately preceding the three selector circles
+    // Section heading matches the SVG's text anchor at x=38.
     const juce::String title = (group == 0) ? "SNAPBACK" : "TRANSIENT";
+    const float titleFontScale = (float) getHeight() / 186.0f;
+    const float titleXScale = (float) getWidth() / 399.0f;
     g.setColour (snap::bankAccentHi (group * 3));
-    g.setFont (juce::Font (13.5f, juce::Font::bold));
+    g.setFont (juce::Font (11.0f * titleFontScale, juce::Font::bold));
     g.drawText (title,
-                headerBounds.getX() + 14, headerBounds.getY(),
-                92, headerBounds.getHeight(),
+                juce::roundToInt (38.0f * titleXScale), headerBounds.getY(),
+                juce::roundToInt (110.0f * titleXScale), headerBounds.getHeight(),
                 juce::Justification::centredLeft);
 }
 
 void SampleGroupComponent::resized()
 {
-    auto area = getLocalBounds();
-    headerBounds = area.removeFromTop (38);
+    const float sx = (float) getWidth() / 399.0f;
+    const float sy = (float) getHeight() / 186.0f;
+    auto scaleX = [sx] (float value) { return juce::roundToInt (value * sx); };
+    auto scaleY = [sy] (float value) { return juce::roundToInt (value * sy); };
 
-    auto hdr = headerBounds.reduced (10, 7);
-    hdr.removeFromLeft (98); // Section heading space ("SNAPBACK" / "TRANSIENT")
+    // SVG bank header: power at left, title, and headphone-style solo at right.
+    headerBounds = { 0, 0, getWidth(), scaleY (28) };
+    bankPowerBtn.setBounds (scaleX (16), scaleY (5), scaleX (18), scaleY (18));
+    soloBtn.setBounds (getWidth() - scaleX (34), scaleY (4), scaleX (18), scaleY (18));
 
-    // Layer selection is handled by the six footer pads.
-    // Right side of section header: bank Solo, audition, sample browser and clear.
-    clearBtn.setBounds (hdr.removeFromRight (22));
-    hdr.removeFromRight (4);
-
-    const int browserW = juce::jlimit (100, 250, hdr.getWidth() - 88);
-    sampleBrowser.setBounds (hdr.removeFromRight (browserW));
-    hdr.removeFromRight (6);
-
-    auditionBtn.setBounds (hdr.removeFromRight (22));
-    hdr.removeFromRight (4);
-    soloBtn.setBounds (hdr.removeFromRight (22));
-    hdr.removeFromRight (4);
-    bankPowerBtn.setBounds (hdr.removeFromRight (22));
-
-    editorBounds = area.reduced (8, 6);
+    // SVG sample area is x=16, y=28, w=368, h=152 within each bank.
+    editorBounds = { scaleX (16), scaleY (28), scaleX (368), scaleY (152) };
     for (auto& ed : editors)
         ed->setBounds (editorBounds);
+
+    // Sample name and slot navigation live in the waveform header, not the bank header.
+    const auto sampleHeader = editors[(size_t) selectedSlot]->getSampleHeaderBounds();
+    sampleBrowser.setBounds (editorBounds.getX() + sampleHeader.getX(),
+                             editorBounds.getY() + sampleHeader.getY(),
+                             sampleHeader.getWidth(), sampleHeader.getHeight());
 }

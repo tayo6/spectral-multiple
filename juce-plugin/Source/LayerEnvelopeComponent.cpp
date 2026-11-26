@@ -9,11 +9,13 @@ namespace
     constexpr float kHandleRadius = 4.6f;
     constexpr float kTensionRadius = 4.6f;
     constexpr int kCurveSteps = 96;
-    constexpr int kHeaderHeight = 22;
-    constexpr int kBottomReadoutHeight = 26;
-    constexpr float kWaveformWidthRatio = 0.58f;
-    constexpr float kRulerHeight = 16.0f;
-    constexpr float kOverviewHeight = 14.0f;
+    constexpr int kHeaderHeight = 20;
+    constexpr int kBottomReadoutHeight = 20;
+    // SVG editor region: 226 px waveform + 8 px gutter + 134 px controls.
+    constexpr float kWaveformWidthRatio = 226.0f / 368.0f;
+    constexpr float kWaveformGapRatio = 8.0f / 368.0f;
+    constexpr float kRulerHeight = 0.0f;
+    constexpr float kOverviewHeight = 0.0f;
     constexpr float kMaxWaveformZoom = 32.0f;
 
     juce::String formatEnvelopeTime (float value)
@@ -31,6 +33,287 @@ namespace
         return juce::String (db > 0.05 ? "+" : "") + juce::String (db, 1) + " dB";
     }
 }
+
+//==============================================================================
+// Combined front/back trim control
+
+DualTrimRangeComponent::DualTrimRangeComponent (WaveLensProcessor& p,
+                                                int layerIndex,
+                                                juce::Colour accentColour)
+    : processor (p),
+      layer (juce::jlimit (0, WaveLensProcessor::kMaxSignals - 1, layerIndex)),
+      accent (accentColour)
+{
+    startValue = processor.apvts.getRawParameterValue (ids::layerTrimStart (layer));
+    endValue = processor.apvts.getRawParameterValue (ids::layerTrimEnd (layer));
+    startParameter = dynamic_cast<juce::RangedAudioParameter*> (
+        processor.apvts.getParameter (ids::layerTrimStart (layer)));
+    endParameter = dynamic_cast<juce::RangedAudioParameter*> (
+        processor.apvts.getParameter (ids::layerTrimEnd (layer)));
+
+    auto prepareEditor = [this] (juce::TextEditor& editor, const juce::String& tip, bool isStart)
+    {
+        editor.setMultiLine (false);
+        editor.setReturnKeyStartsNewLine (false);
+        editor.setInputRestrictions (8, "0123456789.%");
+        editor.setJustification (juce::Justification::centred);
+        editor.setFont (juce::Font (9.0f));
+        editor.setTooltip (tip);
+        editor.setColour (juce::TextEditor::backgroundColourId, ui::kControlBg);
+        editor.setColour (juce::TextEditor::textColourId, ui::kMainText);
+        editor.setColour (juce::TextEditor::outlineColourId, ui::kBorder);
+        editor.setColour (juce::TextEditor::focusedOutlineColourId, accent);
+        editor.setColour (juce::TextEditor::highlightColourId, accent.withAlpha (0.25f));
+        auto* editorPtr = &editor;
+        editor.onReturnKey = [editorPtr] { editorPtr->giveAwayKeyboardFocus(); };
+        editor.onFocusLost = [this, isStart] { commitEditor (isStart); };
+        addAndMakeVisible (editor);
+    };
+
+    prepareEditor (startEditor, "Front trim start position (0% to 99%)", true);
+    prepareEditor (endEditor, "Back trim end position (1% to 100%)", false);
+
+    setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
+    refreshEditors();
+    startTimerHz (15);
+}
+
+DualTrimRangeComponent::~DualTrimRangeComponent()
+{
+    stopTimer();
+    endThumbGesture();
+}
+
+void DualTrimRangeComponent::timerCallback()
+{
+    refreshEditors();
+    repaint();
+}
+
+void DualTrimRangeComponent::refreshEditors()
+{
+    if (startValue == nullptr || endValue == nullptr)
+        return;
+
+    const float start = startValue->load (std::memory_order_relaxed);
+    const float end = endValue->load (std::memory_order_relaxed);
+
+    if (std::abs (start - lastStart) > 0.0001f)
+    {
+        lastStart = start;
+        if (! startEditor.hasKeyboardFocus (true))
+            startEditor.setText (juce::String (start * 100.0f, 1) + "%", juce::dontSendNotification);
+    }
+    if (std::abs (end - lastEnd) > 0.0001f)
+    {
+        lastEnd = end;
+        if (! endEditor.hasKeyboardFocus (true))
+            endEditor.setText (juce::String (end * 100.0f, 1) + "%", juce::dontSendNotification);
+    }
+}
+
+void DualTrimRangeComponent::commitEditor (bool isStart)
+{
+    auto& editor = isStart ? startEditor : endEditor;
+    const auto numeric = editor.getText().retainCharacters ("0123456789.-");
+    if (numeric.isEmpty())
+    {
+        refreshEditors();
+        return;
+    }
+
+    const float percentage = (float) numeric.getDoubleValue();
+    setTrimValue (isStart, percentage * 0.01f, true);
+    refreshEditors();
+    repaint();
+}
+
+void DualTrimRangeComponent::setTrimValue (bool isStart, float value, bool sendGesture)
+{
+    if (startValue == nullptr || endValue == nullptr)
+        return;
+
+    constexpr float minimumGap = 0.005f;
+    const float currentStart = startValue->load (std::memory_order_relaxed);
+    const float currentEnd = endValue->load (std::memory_order_relaxed);
+    value = isStart
+        ? juce::jlimit (0.0f, juce::jmax (0.0f, currentEnd - minimumGap), value)
+        : juce::jlimit (juce::jmin (1.0f, currentStart + minimumGap), 1.0f, value);
+
+    auto* parameter = isStart ? startParameter : endParameter;
+    if (parameter == nullptr)
+        return;
+
+    if (sendGesture)
+        parameter->beginChangeGesture();
+    parameter->setValueNotifyingHost (parameter->convertTo0to1 (value));
+    if (sendGesture)
+        parameter->endChangeGesture();
+
+    refreshEditors();
+    repaint();
+}
+
+void DualTrimRangeComponent::beginThumbGesture()
+{
+    if (gestureActive || activeThumb == ActiveThumb::None)
+        return;
+
+    auto* parameter = activeThumb == ActiveThumb::Start ? startParameter : endParameter;
+    if (parameter != nullptr)
+    {
+        parameter->beginChangeGesture();
+        gestureActive = true;
+    }
+}
+
+void DualTrimRangeComponent::endThumbGesture()
+{
+    if (! gestureActive)
+    {
+        activeThumb = ActiveThumb::None;
+        return;
+    }
+
+    auto* parameter = activeThumb == ActiveThumb::Start ? startParameter : endParameter;
+    if (parameter != nullptr)
+        parameter->endChangeGesture();
+
+    gestureActive = false;
+    activeThumb = ActiveThumb::None;
+    refreshEditors();
+}
+
+juce::Rectangle<float> DualTrimRangeComponent::getTrackBounds() const noexcept
+{
+    return trackBounds;
+}
+
+void DualTrimRangeComponent::paint (juce::Graphics& g)
+{
+    auto bounds = getLocalBounds().toFloat().reduced (0.5f);
+    g.setColour (ui::kControlBg);
+    g.fillRoundedRectangle (bounds, 3.0f);
+    g.setColour (ui::kBorder);
+    g.drawRoundedRectangle (bounds, 3.0f, 1.0f);
+
+    g.setFont (juce::Font (8.5f, juce::Font::bold));
+    g.setColour (ui::kSecondaryText);
+    const float halfW = bounds.getWidth() * 0.5f;
+    g.drawText ("Str Trim", bounds.getX() + 4.0f, bounds.getY() + 1.0f,
+                halfW - 5.0f, 9.0f, juce::Justification::centredLeft);
+    g.drawText ("Bk Trim", bounds.getCentreX() + 1.0f, bounds.getY() + 1.0f,
+                halfW - 5.0f, 9.0f, juce::Justification::centredRight);
+
+    if (startValue == nullptr || endValue == nullptr || trackBounds.isEmpty())
+        return;
+
+    const float start = juce::jlimit (0.0f, 1.0f, startValue->load (std::memory_order_relaxed));
+    const float end = juce::jlimit (start + 0.005f, 1.0f, endValue->load (std::memory_order_relaxed));
+    const float startX = trackBounds.getX() + start * trackBounds.getWidth();
+    const float endX = trackBounds.getX() + end * trackBounds.getWidth();
+    const float cy = trackBounds.getCentreY();
+
+    g.setColour (ui::kMainBg);
+    g.fillRoundedRectangle (trackBounds, 2.5f);
+    g.setColour (accent.withAlpha (0.24f));
+    g.fillRoundedRectangle (juce::Rectangle<float> (startX, trackBounds.getY(),
+                                                     juce::jmax (0.0f, endX - startX),
+                                                     trackBounds.getHeight()), 2.5f);
+    g.setColour (accent);
+    g.drawLine (startX, cy, endX, cy, 2.0f);
+
+    const float radius = juce::jlimit (3.0f, 4.5f, trackBounds.getHeight() * 0.60f);
+    for (const float x : { startX, endX })
+    {
+        g.setColour (ui::kPanelBg);
+        g.fillEllipse (x - radius - 1.0f, cy - radius - 1.0f,
+                       (radius + 1.0f) * 2.0f, (radius + 1.0f) * 2.0f);
+        g.setColour (accent);
+        g.fillEllipse (x - radius, cy - radius, radius * 2.0f, radius * 2.0f);
+    }
+}
+
+void DualTrimRangeComponent::resized()
+{
+    auto bounds = getLocalBounds().reduced (4, 2);
+    const int labelHeight = juce::jlimit (8, 11, juce::roundToInt (getHeight() * 0.25f));
+    const int inputHeight = juce::jlimit (11, 16, juce::roundToInt (getHeight() * 0.36f));
+    const int inputGap = juce::jmax (3, juce::roundToInt (getWidth() * 0.025f));
+    const int halfWidth = (bounds.getWidth() - inputGap) / 2;
+
+    startEditor.setBounds (bounds.getX(), bounds.getY() + labelHeight,
+                           halfWidth, inputHeight);
+    endEditor.setBounds (bounds.getX() + halfWidth + inputGap,
+                         bounds.getY() + labelHeight,
+                         halfWidth, inputHeight);
+
+    const int trackY = juce::jmin (getHeight() - 5,
+                                   bounds.getY() + labelHeight + inputHeight + 2);
+    trackBounds = juce::Rectangle<float> ((float) bounds.getX(), (float) trackY,
+                                          (float) bounds.getWidth(),
+                                          (float) juce::jmax (4, getHeight() - trackY - 2));
+}
+
+void DualTrimRangeComponent::mouseDown (const juce::MouseEvent& event)
+{
+    if (! trackBounds.contains (event.position) || startValue == nullptr || endValue == nullptr)
+        return;
+
+    const float startX = trackBounds.getX() + startValue->load (std::memory_order_relaxed) * trackBounds.getWidth();
+    const float endX = trackBounds.getX() + endValue->load (std::memory_order_relaxed) * trackBounds.getWidth();
+    const float startDistance = std::abs (event.position.x - startX);
+    const float endDistance = std::abs (event.position.x - endX);
+
+    activeThumb = startDistance <= endDistance ? ActiveThumb::Start : ActiveThumb::End;
+    beginThumbGesture();
+
+    const float norm = juce::jlimit (0.0f, 1.0f,
+        (event.position.x - trackBounds.getX()) / juce::jmax (1.0f, trackBounds.getWidth()));
+    setTrimValue (activeThumb == ActiveThumb::Start, norm, false);
+}
+
+void DualTrimRangeComponent::mouseDrag (const juce::MouseEvent& event)
+{
+    if (activeThumb == ActiveThumb::None)
+        return;
+
+    const float norm = juce::jlimit (0.0f, 1.0f,
+        (event.position.x - trackBounds.getX()) / juce::jmax (1.0f, trackBounds.getWidth()));
+    setTrimValue (activeThumb == ActiveThumb::Start, norm, false);
+}
+
+void DualTrimRangeComponent::mouseUp (const juce::MouseEvent&)
+{
+    endThumbGesture();
+}
+
+//==============================================================================
+
+//==============================================================================
+// SVG phase-invert marker. Disabled until polarity inversion is implemented.
+
+PhaseInvertPlaceholder::PhaseInvertPlaceholder()
+    : juce::Button ("PhaseInvertUnavailable")
+{
+    setTooltip ("Phase inversion is not supported by the current audio engine");
+    setEnabled (false);
+    setMouseCursor (juce::MouseCursor::NormalCursor);
+}
+
+void PhaseInvertPlaceholder::paintButton (juce::Graphics& g, bool highlighted, bool down)
+{
+    juce::ignoreUnused (highlighted, down);
+    const auto b = getLocalBounds().toFloat();
+    const float cx = b.getCentreX();
+    const float cy = b.getCentreY();
+    const float r = juce::jmin (3.5f, b.getHeight() * 0.28f);
+    g.setColour (ui::kDisabledText);
+    g.drawEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f, 1.0f);
+    g.drawLine (cx - r, cy + r, cx + r, cy - r, 1.0f);
+}
+
+//==============================================================================
 
 LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
                                                 int layerIndex,
@@ -64,12 +347,14 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     envEnableBtn.setTooltip ("Enable or bypass FL amplitude envelope");
     envEnableBtn.getProperties().set ("accentColour", (juce::int64) colour.getARGB());
     addAndMakeVisible (envEnableBtn);
+    envEnableBtn.setVisible (false);
     envEnableAttachment = std::make_unique<ButtonAtt> (state, ids::layerEnvEnabled (layer), envEnableBtn);
 
     reverseBtn.setButtonText ("REV");
     reverseBtn.setClickingTogglesState (true);
     reverseBtn.setTooltip ("Reverse sample playback");
     reverseBtn.getProperties().set ("accentColour", (juce::int64) colour.getARGB());
+    addAndMakeVisible (phaseInvertBtn);
     addAndMakeVisible (reverseBtn);
     reverseAttachment = std::make_unique<ButtonAtt> (state, ids::layerReverse (layer), reverseBtn);
 
@@ -128,8 +413,8 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     prepareTile (pogoSlider,      "POGO",     "FL Sampler style pitch-bend envelope (-100% to +100%)", secondaryFill, true,  0.0);
     prepareTile (fadeInSlider,    "FADE IN",  "Sample fade-in duration (0 ms to 2000 ms)",            colour,        false, 0.0);
     prepareTile (fadeOutSlider,   "FADE OUT", "Sample fade-out duration (0 ms to 5000 ms)",           colour,        false, 0.0);
-    prepareTile (trimStartSlider, "TRIM F",   "Sample front trim (0% to 99%)",                        secondaryFill, false, 0.0);
-    prepareTile (trimEndSlider,   "TRIM B",   "Sample back trim (0.5% to 100%)",                      secondaryFill, false, 1.0);
+    trimRange = std::make_unique<DualTrimRangeComponent> (processor, layer, colour);
+    addAndMakeVisible (*trimRange);
     prepareTile (hpSlider,        "HP",       "Layer high-pass filter (20 Hz to 1 kHz)",              colour,        false, 20.0);
     prepareTile (lpSlider,        "LP",       "Layer low-pass filter (1 kHz to 20 kHz)",              colour,        false, 20000.0);
 
@@ -140,23 +425,8 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     pogoAttachment      = std::make_unique<SliderAtt> (state, ids::layerPogo (layer),      pogoSlider);
     fadeInAttachment    = std::make_unique<SliderAtt> (state, ids::layerFadeIn (layer),    fadeInSlider);
     fadeOutAttachment   = std::make_unique<SliderAtt> (state, ids::layerFadeOut (layer),   fadeOutSlider);
-    trimStartAttachment = std::make_unique<SliderAtt> (state, ids::layerTrimStart (layer), trimStartSlider);
-    trimEndAttachment   = std::make_unique<SliderAtt> (state, ids::layerTrimEnd (layer),   trimEndSlider);
     hpAttachment        = std::make_unique<SliderAtt> (state, ids::layerHighPass (layer),  hpSlider);
     lpAttachment        = std::make_unique<SliderAtt> (state, ids::layerLowPass (layer),   lpSlider);
-
-    trimStartSlider.onValueChange = [this]
-    {
-        const float maxStart = juce::jmax (0.0f, (float) trimEndSlider.getValue() - 0.02f);
-        if (trimStartSlider.getValue() > maxStart)
-            trimStartSlider.setValue (maxStart, juce::sendNotificationSync);
-    };
-    trimEndSlider.onValueChange = [this]
-    {
-        const float minEnd = juce::jmin (1.0f, (float) trimStartSlider.getValue() + 0.02f);
-        if (trimEndSlider.getValue() < minEnd)
-            trimEndSlider.setValue (minEnd, juce::sendNotificationSync);
-    };
 
     delaySlider.textFromValueFunction = [] (double v) { return juce::String (v > 0.0 ? "+" : "") + juce::String (v, 0) + "ms"; };
     pitchSlider.textFromValueFunction = [] (double v) { return juce::String (v > 0.0 ? "+" : "") + juce::String (v, 1) + "st"; };
@@ -170,8 +440,6 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     pogoSlider.textFromValueFunction    = [] (double v) { return juce::String (v > 0.0 ? "+" : "") + juce::String (v * 100.0, 0) + "%"; };
     fadeInSlider.textFromValueFunction  = [] (double v) { return formatEnvelopeTime ((float) v); };
     fadeOutSlider.textFromValueFunction = [] (double v) { return formatEnvelopeTime ((float) v); };
-    trimStartSlider.textFromValueFunction = [] (double v) { return juce::String (v * 100.0, 0) + "%"; };
-    trimEndSlider.textFromValueFunction   = [] (double v) { return juce::String (v * 100.0, 0) + "%"; };
     hpSlider.textFromValueFunction = [] (double hz)
     {
         if (hz >= 999.5)
@@ -181,8 +449,7 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
     lpSlider.textFromValueFunction = hpSlider.textFromValueFunction;
 
     for (auto* s : { &gainSlider, &delaySlider, &pitchSlider, &panSlider, &widthSlider, &pogoSlider,
-                     &fadeInSlider, &fadeOutSlider, &trimStartSlider, &trimEndSlider,
-                     &hpSlider, &lpSlider })
+                     &fadeInSlider, &fadeOutSlider, &hpSlider, &lpSlider })
         s->updateText();
 
     auto prepareZoomBtn = [this] (juce::TextButton& b, const juce::String& text, const juce::String& tip,
@@ -378,9 +645,11 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry (float tota
     const bool isZoomed = zoomFactor > 1.01f;
     auto bounds = getLocalBounds().toFloat();
     bounds.setRight (bounds.getX() + bounds.getWidth() * kWaveformWidthRatio);
-    bounds.removeFromTop ((float) kHeaderHeight);
-    bounds.removeFromBottom ((float) (kBottomReadoutHeight + kRulerHeight
-                                      + (isZoomed ? kOverviewHeight : 0.0f)));
+    const float scaleY = (float) getHeight() / 152.0f;
+    bounds.removeFromTop ((float) juce::roundToInt ((float) kHeaderHeight * scaleY));
+    bounds.removeFromBottom ((float) (juce::roundToInt ((float) kBottomReadoutHeight * scaleY)
+                                      + juce::roundToInt (kRulerHeight * scaleY)
+                                      + (isZoomed ? juce::roundToInt (kOverviewHeight * scaleY) : 0)));
     result.plot = bounds;
 
     const auto layerParams = readLayerParameters();
@@ -466,25 +735,14 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
     g.drawRoundedRectangle (waveBox.reduced (0.5f), 4.0f, 1.0f);
 
     const bool reversed = pReverse->load() > 0.5f;
-    const float trimStart = juce::jlimit (0.0f, 0.99f, pTrimStart->load());
-    const float trimEnd = juce::jlimit (trimStart + 0.005f, 1.0f, pTrimEnd->load());
 
-    // Top readout strip inside waveform box
-    auto readoutBar = waveBox.removeFromTop ((float) kHeaderHeight);
+    // Top strip is reserved for the sample name and slot navigation overlay.
+    const float scaleY = (float) getHeight() / 152.0f;
+    auto readoutBar = waveBox.removeFromTop ((float) juce::roundToInt ((float) kHeaderHeight * scaleY));
     g.setColour (ui::kInsetBg.withAlpha (0.92f));
     g.fillRect (readoutBar);
     g.setColour (ui::kBorder);
     g.drawHorizontalLine (juce::roundToInt (readoutBar.getBottom()), readoutBar.getX(), readoutBar.getRight());
-
-    g.setColour (ui::kSecondaryText);
-    g.setFont (juce::Font (10.0f));
-    auto textRect = readoutBar.reduced (8.0f, 0.0f);
-    textRect.setRight (juce::jmax (textRect.getX() + 40.0f, (float) envEnableBtn.getX() - 6.0f));
-    g.drawText ("TRIM " + juce::String (trimStart * 100.0f, 0) + "% - "
-                + juce::String (trimEnd * 100.0f, 0) + "%"
-                + (reversed ? "  |  REV" : "")
-                + (! envEnabled ? "  |  ENV OFF" : ""),
-                textRect, juce::Justification::centredLeft, true);
 
     const auto preview = processor.getWaveformPreview (layer);
     const float totalDuration = preview.loaded ? (float) preview.durationMs : 1000.0f;
@@ -722,7 +980,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
     }
 
     // Bottom Attack / Decay readout and the interactive sample Pitch control.
-    auto bottomReadout = waveBox.removeFromBottom (kBottomReadoutHeight);
+    auto bottomReadout = waveBox.removeFromBottom (juce::roundToInt ((float) kBottomReadoutHeight * scaleY));
     g.setColour (ui::kInsetBg.withAlpha (0.92f));
     g.fillRect (bottomReadout);
     g.setColour (ui::kBorder);
@@ -736,7 +994,7 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
                 envReadout, juce::Justification::centredLeft, true);
 
     // Bottom time ruler.
-    auto ruler = waveBox.removeFromBottom (kRulerHeight);
+    auto ruler = waveBox.removeFromBottom (juce::roundToInt (kRulerHeight * scaleY));
     g.setColour (ui::kInsetBg.withAlpha (0.85f));
     g.fillRect (ruler);
     g.setColour (ui::kSecondaryText);
@@ -757,7 +1015,9 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
     // Overview bar when zoomed.
     if (zoomFactor > 1.01f)
     {
-        auto ov = waveBox.removeFromBottom (kOverviewHeight);
+        const float trimStart = juce::jlimit (0.0f, 0.99f, pTrimStart->load());
+        const float trimEnd = juce::jlimit (trimStart + 0.005f, 1.0f, pTrimEnd->load());
+        auto ov = waveBox.removeFromBottom (juce::roundToInt (kOverviewHeight * scaleY));
         g.setColour (ui::kMainBg.withAlpha (0.92f));
         g.fillRect (ov);
         g.setColour (ui::kBorder);
@@ -797,51 +1057,64 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
 
 }
 
+juce::Rectangle<int> LayerEnvelopeComponent::getSampleHeaderBounds() const noexcept
+{
+    const int waveWidth = juce::roundToInt ((float) getWidth() * kWaveformWidthRatio);
+    const float scaleY = (float) getHeight() / 152.0f;
+    return { 0, 0, waveWidth, juce::jmax (1, juce::roundToInt ((float) kHeaderHeight * scaleY)) };
+}
+
 void LayerEnvelopeComponent::resized()
 {
     auto full = getLocalBounds();
     const int waveW = juce::roundToInt ((float) full.getWidth() * kWaveformWidthRatio);
     auto waveArea = full.removeFromLeft (waveW);
-    auto controls = full.reduced (7, 6);
+    const int gutterW = juce::roundToInt ((float) getWidth() * kWaveformGapRatio);
+    full.removeFromLeft (juce::jlimit (0, full.getWidth(), gutterW));
+    auto controls = full;
     controlStripBounds = controls;
 
-    auto headerBar = waveArea.removeFromTop (kHeaderHeight).reduced (4, 2);
+    const float scaleY = (float) getHeight() / 152.0f;
+    auto headerBar = waveArea.removeFromTop (juce::roundToInt ((float) kHeaderHeight * scaleY));
     envEnableBtn.setBounds (headerBar.removeFromRight (40));
 
-    auto readout = waveArea.removeFromBottom (kBottomReadoutHeight).reduced (5, 2);
-    pitchSlider.setBounds (readout.removeFromRight (88));
-    waveArea.removeFromBottom (kRulerHeight);
+    auto readout = waveArea.removeFromBottom (juce::roundToInt ((float) kBottomReadoutHeight * scaleY));
+    const int pitchWidth = juce::roundToInt ((float) waveArea.getWidth() * (63.0f / 226.0f));
+    pitchSlider.setBounds (readout.removeFromRight (juce::jlimit (52, readout.getWidth(), pitchWidth)));
+    waveArea.removeFromBottom (juce::roundToInt (kRulerHeight * scaleY));
     overviewBarBounds = (zoomFactor > 1.01f)
-        ? waveArea.removeFromBottom (kOverviewHeight).toFloat()
+        ? waveArea.removeFromBottom (juce::roundToInt (kOverviewHeight * scaleY)).toFloat()
         : juce::Rectangle<float>();
 
-    // Trim range occupies a shared bottom row, with front and back handles side by side.
-    auto trimRow = controls.removeFromBottom (42).reduced (2, 2);
-    const int trimGap = 4;
-    const int trimHalf = (trimRow.getWidth() - trimGap) / 2;
-    trimStartSlider.setBounds (trimRow.removeFromLeft (trimHalf));
-    trimRow.removeFromLeft (trimGap);
-    trimEndSlider.setBounds (trimRow);
+    const int trimHeight = juce::roundToInt (32.0f * scaleY);
+    trimRange->setBounds (controls.removeFromBottom (juce::jlimit (24, controls.getHeight(), trimHeight)));
 
-    // Left column: Shift, Width and Pan. Right column: Pogo and Volume.
-    const int colGap = 6;
-    const int leftW = (controls.getWidth() - colGap) / 2;
-    auto leftCol = controls.removeFromLeft (leftW);
-    controls.removeFromLeft (colGap);
+    const int colGap = juce::roundToInt (6.0f * (float) controls.getWidth() / 134.0f);
+    const int leftW = juce::roundToInt ((float) controls.getWidth() * 69.0f / 134.0f);
+    auto leftCol = controls.removeFromLeft (juce::jlimit (1, controls.getWidth(), leftW));
+    controls.removeFromLeft (juce::jlimit (0, controls.getWidth(), colGap));
     auto rightCol = controls;
 
-    constexpr int cardH = 40;
-    delaySlider.setBounds (leftCol.removeFromTop (cardH).reduced (1, 1));
-    leftCol.removeFromTop (4);
-    widthSlider.setBounds (leftCol.removeFromTop (cardH).reduced (1, 1));
-    leftCol.removeFromTop (4);
-    panSlider.setBounds (leftCol.removeFromTop (cardH).reduced (1, 1));
+    const int cardH = juce::roundToInt (36.0f * scaleY);
+    const int cardGap = juce::roundToInt (4.0f * scaleY);
 
-    const int pogoH = 42;
-    pogoSlider.setBounds (rightCol.removeFromBottom (pogoH).reduced (1, 1));
-    rightCol.removeFromBottom (4);
-    gainCardBounds = rightCol.toFloat();
-    gainSlider.setBounds (rightCol.reduced (juce::jmax (8, rightCol.getWidth() / 4), 18));
+    delaySlider.setBounds (leftCol.removeFromTop (juce::jlimit (1, leftCol.getHeight(), cardH)));
+    const int phaseSize = juce::jlimit (12, 16, juce::roundToInt (14.0f * scaleY));
+    phaseInvertBtn.setBounds (delaySlider.getRight() - phaseSize - 4,
+                              delaySlider.getY() + 2, phaseSize, phaseSize);
+    phaseInvertBtn.toFront (false);
+    leftCol.removeFromTop (juce::jlimit (0, leftCol.getHeight(), cardGap));
+    widthSlider.setBounds (leftCol.removeFromTop (juce::jlimit (1, leftCol.getHeight(), cardH)));
+    leftCol.removeFromTop (juce::jlimit (0, leftCol.getHeight(), cardGap));
+    panSlider.setBounds (leftCol.removeFromTop (juce::jlimit (1, leftCol.getHeight(), cardH)));
+
+    gainCardBounds = rightCol.removeFromTop (juce::jmin (rightCol.getHeight(),
+                                      juce::roundToInt (76.0f * scaleY))).toFloat();
+    rightCol.removeFromTop (juce::jlimit (0, rightCol.getHeight(), cardGap));
+    pogoSlider.setBounds (rightCol.removeFromTop (juce::jmin (rightCol.getHeight(), cardH)));
+    gainSlider.setBounds (gainCardBounds.toNearestInt()
+                              .reduced (juce::jmax (4, juce::roundToInt (gainCardBounds.getWidth() / 4.0f)),
+                                        juce::roundToInt (18.0f * scaleY)));
 }
 
 
