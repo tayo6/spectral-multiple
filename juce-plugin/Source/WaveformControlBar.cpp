@@ -166,7 +166,6 @@ void TriggerPanelComponent::resized()
     auto py = [sy] (float v) { return juce::roundToInt (v * sy); };
 
     auto r = getLocalBounds().reduced (px (12.0f), py (4.0f));
-    const int h = juce::jmax (1, r.getHeight());
     const int gap = px (3.0f);
 
     // LED, threshold, trigger mode, algorithm, view/span, PRE lead, filter, listen.
