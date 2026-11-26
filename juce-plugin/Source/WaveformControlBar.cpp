@@ -134,7 +134,8 @@ void TriggerPanelComponent::paint (juce::Graphics& g)
     g.setColour (ui::kBorder);
     g.drawRoundedRectangle (b.reduced (0.5f), 4.0f, 1.0f);
 
-    g.setFont (juce::Font (9.5f, juce::Font::bold));
+    const float uiScale = (float) getWidth() / 720.0f;
+    g.setFont (juce::Font (9.5f * uiScale, juce::Font::bold));
     g.setColour (ui::kSecondaryText);
     g.drawText ("THRESH", thresholdSlider.getX() - 48, 0, 44, getHeight(), juce::Justification::centredRight);
     g.drawText ("MODE", modeBox.getX() - 36, 0, 32, getHeight(), juce::Justification::centredRight);
@@ -143,17 +144,20 @@ void TriggerPanelComponent::paint (juce::Graphics& g)
     g.drawText ("PRE", preLeadSlider.getX() - 30, 0, 26, getHeight(), juce::Justification::centredRight);
 
     // Trigger LED indicator on far left
-    const float ledX = 16.0f;
+    const float ledX = 16.0f * uiScale;
     const float ledY = b.getCentreY();
     if (ledFlashAlpha > 0.02f)
     {
         g.setColour (ui::kCyanAccent.withAlpha (0.35f * ledFlashAlpha));
-        g.fillEllipse (ledX - 7.0f, ledY - 7.0f, 14.0f, 14.0f);
+        g.fillEllipse (ledX - 7.0f * uiScale, ledY - 7.0f * uiScale,
+                       14.0f * uiScale, 14.0f * uiScale);
     }
     g.setColour (ui::kControlBg.interpolatedWith (ui::kCyanAccent, 0.20f + 0.80f * ledFlashAlpha));
-    g.fillEllipse (ledX - 4.0f, ledY - 4.0f, 8.0f, 8.0f);
+    g.fillEllipse (ledX - 4.0f * uiScale, ledY - 4.0f * uiScale,
+                   8.0f * uiScale, 8.0f * uiScale);
     g.setColour (ui::kBorder);
-    g.drawEllipse (ledX - 4.0f, ledY - 4.0f, 8.0f, 8.0f, 1.0f);
+    g.drawEllipse (ledX - 4.0f * uiScale, ledY - 4.0f * uiScale,
+                   8.0f * uiScale, 8.0f * uiScale, 1.0f * uiScale);
 }
 
 void TriggerPanelComponent::resized()
@@ -198,11 +202,14 @@ void WaveformControlBar::CollapseButton::paintButton (juce::Graphics& g,
 {
     juce::TextButton::paintButton (g, highlighted, down);
 
+    const float uiScale = (float) getHeight() / 42.0f;
     const float cx = (float) getWidth() * 0.5f;
-    const float cy = (float) getHeight() - 8.0f;
+    const float cy = (float) getHeight() - 8.0f * uiScale;
     g.setColour (juce::Colours::white.withAlpha (0.95f));
-    g.drawLine (cx - 4.0f, cy - 2.5f, cx, cy + 1.5f, 1.3f);
-    g.drawLine (cx, cy + 1.5f, cx + 4.0f, cy - 2.5f, 1.3f);
+    g.drawLine (cx - 4.0f * uiScale, cy - 2.5f * uiScale,
+                cx, cy + 1.5f * uiScale, 1.3f * uiScale);
+    g.drawLine (cx, cy + 1.5f * uiScale,
+                cx + 4.0f * uiScale, cy - 2.5f * uiScale, 1.3f * uiScale);
 }
 
 //==============================================================================
@@ -211,6 +218,7 @@ void WaveformControlBar::LimiterButton::paintButton (juce::Graphics& g,
                                                      bool down)
 {
     const auto b = getLocalBounds().toFloat();
+    const float uiScale = b.getHeight() / 22.0f;
     const bool active = getToggleState();
     auto stroke = active ? ui::kMainText : ui::kSecondaryText;
     if (down) stroke = stroke.brighter (0.25f);
@@ -218,19 +226,20 @@ void WaveformControlBar::LimiterButton::paintButton (juce::Graphics& g,
 
     const float cx = b.getCentreX();
     const float cy = b.getCentreY();
-    const float radius = juce::jmin (6.0f, b.getWidth() * 0.38f);
+    const float radius = juce::jmin (6.0f * uiScale, b.getWidth() * 0.38f);
     juce::Path arc;
-    arc.addCentredArc (cx, cy + 1.0f, radius, radius, 0.0f,
+    arc.addCentredArc (cx, cy + 1.0f * uiScale, radius, radius, 0.0f,
                        0.48f, juce::MathConstants<float>::twoPi - 0.48f, true);
     g.setColour (stroke);
-    g.strokePath (arc, juce::PathStrokeType (1.4f));
-    g.drawLine (cx, cy - 7.0f, cx, cy - 0.5f, 1.4f);
+    g.strokePath (arc, juce::PathStrokeType (1.4f * uiScale));
+    g.drawLine (cx, cy - 7.0f * uiScale, cx, cy - 0.5f * uiScale, 1.4f * uiScale);
 }
 
 //==============================================================================
 void WaveformControlBar::MagnifierButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
 {
     auto b = getLocalBounds().toFloat().reduced (0.5f);
+    const float uiScale = (float) getHeight() / 25.0f;
     const bool active = getToggleState();
 
     juce::Colour bg = active ? ui::kSelectedAccent.withAlpha (0.24f) : ui::kControlBg;
@@ -240,19 +249,22 @@ void WaveformControlBar::MagnifierButton::paintButton (juce::Graphics& g, bool h
         bg = active ? bg.brighter (0.08f) : ui::kHoverBg;
 
     g.setColour (bg);
-    g.fillRoundedRectangle (b, 3.5f);
+    g.fillRoundedRectangle (b, 3.5f * uiScale);
     g.setColour (active ? ui::kPurpleAccent : ui::kBorder);
-    g.drawRoundedRectangle (b, 3.5f, 1.0f);
+    g.drawRoundedRectangle (b, 3.5f * uiScale, 1.0f * uiScale);
 
     // SVG order is label first, magnifier second.
-    const float iconCx = b.getRight() - 10.0f;
-    const float iconCy = b.getCentreY() - 0.5f;
+    const float iconCx = b.getRight() - 10.0f * uiScale;
+    const float iconCy = b.getCentreY() - 0.5f * uiScale;
     g.setColour (active ? ui::kMainText : ui::kSecondaryText);
-    g.drawEllipse (iconCx - 4.0f, iconCy - 4.0f, 7.5f, 7.5f, 1.3f);
-    g.drawLine (iconCx + 2.2f, iconCy + 2.2f, iconCx + 5.6f, iconCy + 5.6f, 1.4f);
+    g.drawEllipse (iconCx - 4.0f * uiScale, iconCy - 4.0f * uiScale,
+                   7.5f * uiScale, 7.5f * uiScale, 1.3f * uiScale);
+    g.drawLine (iconCx + 2.2f * uiScale, iconCy + 2.2f * uiScale,
+                iconCx + 5.6f * uiScale, iconCy + 5.6f * uiScale, 1.4f * uiScale);
 
-    g.setFont (juce::Font (10.0f, juce::Font::bold));
-    g.drawText ("Detail", b.withTrimmedRight (20.0f), juce::Justification::centred);
+    g.setFont (juce::Font (10.0f * uiScale, juce::Font::bold));
+    g.drawFittedText ("Detail", b.withTrimmedRight (20.0f * uiScale).toNearestInt(),
+                      juce::Justification::centred, 1);
 }
 
 //==============================================================================
