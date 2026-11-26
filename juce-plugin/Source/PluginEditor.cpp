@@ -313,6 +313,17 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     snapbackGroup.onSelectionChanged  = syncSelectedPair;
     transientGroup.onSelectionChanged = syncSelectedPair;
 
+    // Both sample banks share one horizontal viewport so the waveform start
+    // and trim context remain aligned while zooming either bank.
+    snapbackGroup.onViewportChanged = [this] (float start, float zoom)
+    {
+        transientGroup.setViewport (start, zoom);
+    };
+    transientGroup.onViewportChanged = [this] (float start, float zoom)
+    {
+        snapbackGroup.setViewport (start, zoom);
+    };
+
     auto onSamplesUpdated = [this] { masterWaveform.repaint(); };
     snapbackGroup.onSampleStateChanged  = onSamplesUpdated;
     transientGroup.onSampleStateChanged = onSamplesUpdated;
