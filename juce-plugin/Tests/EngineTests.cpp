@@ -990,6 +990,29 @@ void testTailLengthSeconds (const fs::path& dir)
 
 void testEnvelopeScheduleAndCurveParity (const fs::path& dir)
 {
+    // The UI and DSP must share the full playback timeline: long samples keep
+    // their sustain plateau and place release at the end; short samples scale
+    // every stage proportionally to fit the available playback time.
+    LayeredSampleEngine::LayerParameters timelineParameters;
+    timelineParameters.envEnabled = true;
+    const auto longSchedule = LayeredSampleEngine::computeEnvelopeSchedule (timelineParameters, 4000.0f);
+    check (std::abs (longSchedule.attackEndMs - 210.0f) < 0.001f
+           && std::abs (longSchedule.holdEndMs - 210.0f) < 0.001f
+           && std::abs (longSchedule.decayEndMs - 520.0f) < 0.001f
+           && std::abs (longSchedule.releaseStartMs - 3520.0f) < 0.001f
+           && std::abs (longSchedule.releaseMs - 480.0f) < 0.001f,
+           "EnvTimeline: 4-second playback keeps a real sustain plateau and end-aligned release");
+    check (std::abs (LayeredSampleEngine::evaluateCompleteEnvelopeAtMs (
+                         timelineParameters, longSchedule, 2000.0f) - timelineParameters.sustain) < 0.001f,
+           "EnvTimeline: long-sample envelope remains at sustain through the middle of playback");
+
+    const auto shortSchedule = LayeredSampleEngine::computeEnvelopeSchedule (timelineParameters, 500.0f);
+    check (std::abs (shortSchedule.attackEndMs - 105.0f) < 0.001f
+           && std::abs (shortSchedule.decayEndMs - 260.0f) < 0.001f
+           && std::abs (shortSchedule.releaseStartMs - 260.0f) < 0.001f
+           && std::abs (shortSchedule.releaseMs - 240.0f) < 0.001f,
+           "EnvTimeline: short playback proportionally compresses ADSR without schedule overflow");
+
     // Both a short 25 ms sample (forcing proportional scaling) and a longer 400 ms sample
     const int lengths[] = { 1103, 17640 };
     const float pitches[] = { 0.0f, 7.0f };

@@ -66,6 +66,9 @@ private:
         float attackEndX = 0.0f;
         float holdEndX = 0.0f;
         float releaseStartX = 0.0f;
+        // True schedule positions are kept separate from the fanned-out
+        // display positions used to make coincident handles independently clickable.
+        juce::Point<float> attackAnchor, holdAnchor, decayAnchor, sustainAnchor, releaseAnchor;
         juce::Point<float> attack, hold, decay, sustain, release;
         juce::Point<float> tensionAttack, tensionDecay, tensionRelease;
         bool tensionAttackVisible = false;
@@ -162,6 +165,7 @@ private:
     float dragStartTension = 0.0f;
     float dragStartPitch = 0.0f;
     float dragStartViewStart = 0.0f;
+    juce::Point<float> dragPointOffset;
     bool draggingTrimCard = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LayerEnvelopeComponent)

@@ -1,5 +1,6 @@
 #include "LayerEnvelopeComponent.h"
 
+#include <array>
 #include <cmath>
 #include <vector>
 
@@ -9,7 +10,6 @@ namespace
 {
     constexpr float kHandleRadius = 4.6f;
     constexpr float kTensionRadius = 3.6f;
-    constexpr int kCurveSteps = 96;
     constexpr int kHeaderHeight = 22;
     constexpr float kRulerHeight = 16.0f;
     constexpr float kOverviewHeight = 14.0f;
@@ -58,7 +58,13 @@ namespace
         return best;
     }
 
-    /** Add a Catmull-Rom smoothed curve through the supplied points. */
+    /**
+        Draw a monotone cubic through the waveform contour.
+
+        The harmonic-mean tangents keep each interval inside the neighbouring
+        peak range, avoiding the overshoot that Catmull-Rom can create around
+        sharp transients while still producing a smooth, rounded contour.
+    */
     void appendSmoothPath (juce::Path& path,
                            const std::vector<juce::Point<float>>& points,
                            bool startPath)
@@ -69,18 +75,113 @@ namespace
         if (startPath)
             path.startNewSubPath (points.front().x, points.front().y);
 
+        if (points.size() < 2)
+            return;
+
+        std::vector<float> slopes (points.size(), 0.0f);
         for (size_t i = 0; i + 1 < points.size(); ++i)
         {
-            const auto& p0 = points[i == 0 ? 0 : i - 1];
+            const float dx = points[i + 1].x - points[i].x;
+            slopes[i] = std::abs (dx) > 1.0e-5f
+                ? (points[i + 1].y - points[i].y) / dx
+                : 0.0f;
+        }
+        slopes.back() = slopes[points.size() - 2];
+
+        for (size_t i = 1; i + 1 < points.size(); ++i)
+        {
+            const float before = slopes[i - 1];
+            const float after = slopes[i];
+            if (before * after <= 0.0f)
+                slopes[i] = 0.0f;
+            else
+                slopes[i] = (2.0f * before * after) / (before + after);
+        }
+
+        for (size_t i = 0; i + 1 < points.size(); ++i)
+        {
             const auto& p1 = points[i];
             const auto& p2 = points[i + 1];
-            const auto& p3 = points[juce::jmin (i + 2, points.size() - 1)];
-
-            const float c1x = p1.x + (p2.x - p0.x) / 6.0f;
-            const float c1y = p1.y + (p2.y - p0.y) / 6.0f;
-            const float c2x = p2.x - (p3.x - p1.x) / 6.0f;
-            const float c2y = p2.y - (p3.y - p1.y) / 6.0f;
+            const float dx = p2.x - p1.x;
+            const float oneThird = dx / 3.0f;
+            const float c1x = p1.x + oneThird;
+            const float c1y = p1.y + slopes[i] * oneThird;
+            const float c2x = p2.x - oneThird;
+            const float c2y = p2.y - slopes[i + 1] * oneThird;
             path.cubicTo (c1x, c1y, c2x, c2y, p2.x, p2.y);
+        }
+    }
+
+    /**
+        Spread coincident ADSR handles just enough to make each one selectable.
+        The anchor array remains untouched; drag calculations use those anchors
+        so the visual fan-out never changes the underlying parameter value.
+    */
+    void fanOutNearbyHandles (std::array<juce::Point<float>, 5>& points,
+                              float visibleLeft, float visibleRight)
+    {
+        constexpr float minimumSeparation = 13.5f;
+        constexpr float fanStep = 10.0f;
+        const auto anchors = points;
+        std::array<bool, 5> assigned {};
+
+        for (int seed = 0; seed < (int) points.size(); ++seed)
+        {
+            if (assigned[(size_t) seed])
+                continue;
+
+            std::array<int, 5> members {};
+            int memberCount = 1;
+            members[0] = seed;
+            assigned[(size_t) seed] = true;
+
+            bool added = true;
+            while (added)
+            {
+                added = false;
+                for (int candidate = seed + 1; candidate < (int) points.size(); ++candidate)
+                {
+                    if (assigned[(size_t) candidate])
+                        continue;
+
+                    for (int member = 0; member < memberCount; ++member)
+                    {
+                        if (anchors[(size_t) candidate].getDistanceFrom (
+                                anchors[(size_t) members[(size_t) member]]) < minimumSeparation)
+                        {
+                            members[(size_t) memberCount++] = candidate;
+                            assigned[(size_t) candidate] = true;
+                            added = true;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (memberCount < 2)
+                continue;
+
+            float centreX = 0.0f;
+            for (int rank = 0; rank < memberCount; ++rank)
+                centreX += anchors[(size_t) members[(size_t) rank]].x;
+            centreX /= (float) memberCount;
+
+            const float availableWidth = juce::jmax (1.0f, visibleRight - visibleLeft);
+            const float step = juce::jmin (fanStep, availableWidth / (float) (memberCount - 1));
+            const float groupWidth = step * (float) (memberCount - 1);
+            float firstX = centreX - groupWidth * 0.5f;
+            // Keep an on-screen cluster on-screen, while leaving handles that
+            // are genuinely outside a zoomed viewport outside the plot too.
+            if (centreX >= visibleLeft && centreX <= visibleRight)
+                firstX = juce::jlimit (visibleLeft, visibleRight - groupWidth, firstX);
+
+            for (int rank = 0; rank < memberCount; ++rank)
+            {
+                const int index = members[(size_t) rank];
+                const float displayX = firstX + (float) rank * step;
+                points[(size_t) index] = anchors[(size_t) index].translated (
+                    displayX - anchors[(size_t) index].x, 0.0f);
+            }
         }
     }
 }
@@ -572,14 +673,13 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry (float tota
     const float safeTotal = juce::jmax (1.0f, totalDurationMs);
     const float pitchSpeed = std::pow (2.0f, layerParams.pitchSemitones / 12.0f);
     result.trimmedDurationMs = juce::jmax (1.0f, safeTotal * (trimEnd - trimStart) / juce::jmax (0.01f, pitchSpeed));
-    // Keep the ADSR preview readable on long loops: the display uses the
-    // envelope's own time span while the audio engine retains true sample time.
-    const float nominalEnvelopeMs = layerParams.attackMs + layerParams.holdMs
-                                  + layerParams.decayMs + layerParams.releaseMs;
-    result.envelopeDisplayDurationMs = juce::jmin (result.trimmedDurationMs,
-                                                    juce::jmax (1.0f, nominalEnvelopeMs));
+    // The envelope graph must share the engine's complete trimmed playback
+    // timeline. computeEnvelopeSchedule() scales the ADSR only when the sample
+    // is too short; on longer loops the sustain plateau occupies the real gap
+    // between decay and the release at the end of playback.
+    result.envelopeDisplayDurationMs = result.trimmedDurationMs;
 
-    const auto sched = LayeredSampleEngine::computeEnvelopeSchedule (layerParams, result.envelopeDisplayDurationMs);
+    const auto sched = LayeredSampleEngine::computeEnvelopeSchedule (layerParams, result.trimmedDurationMs);
     const float attackEnd = sched.attackEndMs;
     const float holdEnd = sched.holdEndMs;
     const float decayEnd = sched.decayEndMs;
@@ -603,37 +703,52 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry (float tota
         return LayeredSampleEngine::envelopeLevelAtMs (layerParams, sched, ms);
     };
 
-    result.attack = { xAt (attackEnd), yAt (levelAt (attackEnd)) };
-    result.hold = { xAt (holdEnd), yAt (levelAt (holdEnd)) };
-    result.decay = { xAt (decayEnd), yAt (levelAt (decayEnd)) };
+    result.attackAnchor = { xAt (attackEnd), yAt (levelAt (attackEnd)) };
+    result.holdAnchor = { xAt (holdEnd), yAt (levelAt (holdEnd)) };
+    result.decayAnchor = { xAt (decayEnd), yAt (levelAt (decayEnd)) };
     const float sustainMid = decayEnd + (releaseStart - decayEnd) * 0.5f;
-    result.sustain = { xAt (sustainMid), yAt (sustain) };
+    result.sustainAnchor = { xAt (sustainMid), yAt (sustain) };
     const float relStartLevel = levelAt (releaseStart);
-    result.release = { xAt (releaseStart), yAt (relStartLevel) };
-    result.attackEndX = result.attack.x;
-    result.holdEndX = result.hold.x;
-    result.releaseStartX = result.release.x;
+    result.releaseAnchor = { xAt (releaseStart), yAt (relStartLevel) };
+
+    std::array<juce::Point<float>, 5> displayHandles {
+        result.attackAnchor, result.holdAnchor, result.decayAnchor,
+        result.sustainAnchor, result.releaseAnchor
+    };
+    fanOutNearbyHandles (displayHandles,
+                         result.plot.getX() + kHandleRadius + 1.0f,
+                         result.plot.getRight() - kHandleRadius - 1.0f);
+    result.attack = displayHandles[0];
+    result.hold = displayHandles[1];
+    result.decay = displayHandles[2];
+    result.sustain = displayHandles[3];
+    result.release = displayHandles[4];
+
+    // These are segment boundaries, not the fanned-out display positions.
+    result.attackEndX = result.attackAnchor.x;
+    result.holdEndX = result.holdAnchor.x;
+    result.releaseStartX = result.releaseAnchor.x;
 
     const float attMidMs = attackEnd * 0.5f;
     result.tensionAttack = {
         xAt (attMidMs),
         yAt (LayeredSampleEngine::flSegmentLevel (0.5f, 0.0f, 1.0f, layerParams.attackCurve, layerParams.attackTension))
     };
-    result.tensionAttackVisible = (result.attack.x - result.trimX0) >= 10.0f;
+    result.tensionAttackVisible = (result.attackAnchor.x - result.trimX0) >= 10.0f;
 
     const float decMidMs = holdEnd + (decayEnd - holdEnd) * 0.5f;
     result.tensionDecay = {
         xAt (decMidMs),
         yAt (LayeredSampleEngine::flSegmentLevel (0.5f, 1.0f, sustain, layerParams.decayCurve, layerParams.decayTension))
     };
-    result.tensionDecayVisible = (result.decay.x - result.hold.x) >= 10.0f;
+    result.tensionDecayVisible = (result.decayAnchor.x - result.holdAnchor.x) >= 10.0f;
 
     const float relMidMs = releaseStart + sched.releaseMs * 0.5f;
     result.tensionRelease = {
         xAt (relMidMs),
         yAt (LayeredSampleEngine::flSegmentLevel (0.5f, relStartLevel, 0.0f, layerParams.releaseCurve, layerParams.releaseTension))
     };
-    result.tensionReleaseVisible = (result.trimX1 - result.release.x) >= 10.0f;
+    result.tensionReleaseVisible = (result.trimX1 - result.releaseAnchor.x) >= 10.0f;
 
     return result;
 }
@@ -763,7 +878,8 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         // all render exactly as they sound.
         juce::Path envelope;
         envelope.startNewSubPath (xAt (0.0f), yAt (LayeredSampleEngine::evaluateCompleteEnvelopeAtMs (layerParams, sched, 0.0f)));
-        const int totalSteps = kCurveSteps * 3;
+        const int totalSteps = juce::jlimit (512, 4096,
+                                             juce::roundToInt (plot.getWidth() * 4.0f));
         for (int i = 1; i <= totalSteps; ++i)
         {
             const float t = (float) i / (float) totalSteps;
@@ -787,34 +903,62 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
         // FL-style handles (always visible, envelope on or off):
         //  - ADSR points: gold filled circles with dark ring
         //  - Tension handles: small hollow circles in the bank accent
-        auto drawFlPoint = [&] (juce::Point<float> point)
+        auto drawHandleLeader = [&] (juce::Point<float> anchor, juce::Point<float> display)
+        {
+            if (anchor.getDistanceFrom (display) > 0.5f)
+            {
+                g.setColour (snap::bankAccent (layer).withAlpha (0.72f));
+                g.drawLine (anchor.x, anchor.y, display.x, display.y, 0.9f);
+            }
+        };
+        drawHandleLeader (geometry.attackAnchor, geometry.attack);
+        drawHandleLeader (geometry.holdAnchor, geometry.hold);
+        drawHandleLeader (geometry.decayAnchor, geometry.decay);
+        drawHandleLeader (geometry.sustainAnchor, geometry.sustain);
+        drawHandleLeader (geometry.releaseAnchor, geometry.release);
+
+        auto drawFlPoint = [&] (juce::Point<float> point, Handle handle)
         {
             if (point.x < plot.getX() - 12.0f || point.x > plot.getRight() + 12.0f)
                 return;
+
+            const bool selected = activeHandle == handle;
+            const float radius = kHandleRadius + (selected ? 1.3f : 0.0f);
+            if (selected)
+            {
+                g.setColour (snap::bankAccent (layer).withAlpha (0.42f));
+                g.fillEllipse (point.x - radius - 2.5f, point.y - radius - 2.5f,
+                               2.0f * (radius + 2.5f), 2.0f * (radius + 2.5f));
+            }
             g.setColour (snap::flOutline);
-            g.fillEllipse (point.x - kHandleRadius - 1.0f, point.y - kHandleRadius - 1.0f,
-                           2.0f * (kHandleRadius + 1.0f), 2.0f * (kHandleRadius + 1.0f));
+            g.fillEllipse (point.x - radius - 1.0f, point.y - radius - 1.0f,
+                           2.0f * (radius + 1.0f), 2.0f * (radius + 1.0f));
             g.setColour (snap::flPoint);
-            g.fillEllipse (point.x - kHandleRadius, point.y - kHandleRadius,
-                           2.0f * kHandleRadius, 2.0f * kHandleRadius);
+            g.fillEllipse (point.x - radius, point.y - radius,
+                           2.0f * radius, 2.0f * radius);
         };
-        auto drawTensionPoint = [&] (juce::Point<float> point, bool visible)
+        auto drawTensionPoint = [&] (juce::Point<float> point, bool visible, Handle handle)
         {
             if (! visible || point.x < plot.getX() - 8.0f || point.x > plot.getRight() + 8.0f)
                 return;
-            g.setColour (snap::bankAccent (layer).brighter (0.35f));
-            g.drawEllipse (point.x - kTensionRadius, point.y - kTensionRadius,
-                           2.0f * kTensionRadius, 2.0f * kTensionRadius, 1.3f);
+            const bool selected = activeHandle == handle;
+            const float radius = kTensionRadius + (selected ? 1.4f : 0.0f);
+            g.setColour (snap::bankAccent (layer).brighter (selected ? 0.65f : 0.35f));
+            if (selected)
+                g.fillEllipse (point.x - radius - 2.0f, point.y - radius - 2.0f,
+                               2.0f * (radius + 2.0f), 2.0f * (radius + 2.0f));
+            g.drawEllipse (point.x - radius, point.y - radius,
+                           2.0f * radius, 2.0f * radius, 1.3f);
         };
 
-        drawFlPoint (geometry.attack);
-        drawFlPoint (geometry.hold);
-        drawFlPoint (geometry.decay);
-        drawFlPoint (geometry.sustain);
-        drawFlPoint (geometry.release);
-        drawTensionPoint (geometry.tensionAttack, geometry.tensionAttackVisible);
-        drawTensionPoint (geometry.tensionDecay, geometry.tensionDecayVisible);
-        drawTensionPoint (geometry.tensionRelease, geometry.tensionReleaseVisible);
+        drawFlPoint (geometry.attack, Handle::Attack);
+        drawFlPoint (geometry.hold, Handle::Hold);
+        drawFlPoint (geometry.decay, Handle::Decay);
+        drawFlPoint (geometry.sustain, Handle::Sustain);
+        drawFlPoint (geometry.release, Handle::Release);
+        drawTensionPoint (geometry.tensionAttack, geometry.tensionAttackVisible, Handle::TensionAttack);
+        drawTensionPoint (geometry.tensionDecay, geometry.tensionDecayVisible, Handle::TensionDecay);
+        drawTensionPoint (geometry.tensionRelease, geometry.tensionReleaseVisible, Handle::TensionRelease);
 
         // Trim lines in the bank accent
         g.setColour (snap::bankAccent (layer).withAlpha (0.9f));
@@ -989,14 +1133,15 @@ LayerEnvelopeComponent::Handle LayerEnvelopeComponent::hitTestHandle (juce::Poin
 {
     struct Candidate { Handle h; juce::Point<float> pt; bool active; };
     const Candidate list[] = {
-        { Handle::TensionAttack,  g.tensionAttack,  g.tensionAttackVisible },
-        { Handle::TensionDecay,   g.tensionDecay,   g.tensionDecayVisible },
-        { Handle::TensionRelease, g.tensionRelease, g.tensionReleaseVisible },
+        // ADSR nodes win exact-distance ties with their nearby tension handles.
         { Handle::Attack,         g.attack,         true },
         { Handle::Hold,           g.hold,           true },
         { Handle::Decay,          g.decay,          true },
         { Handle::Sustain,        g.sustain,        true },
         { Handle::Release,        g.release,        true },
+        { Handle::TensionAttack,  g.tensionAttack,  g.tensionAttackVisible },
+        { Handle::TensionDecay,   g.tensionDecay,   g.tensionDecayVisible },
+        { Handle::TensionRelease, g.tensionRelease, g.tensionReleaseVisible },
     };
 
     float bestDist = maxRadius;
@@ -1248,6 +1393,7 @@ void LayerEnvelopeComponent::endGesture()
             parameter->endChangeGesture();
 
     activeHandle = Handle::None;
+    dragPointOffset = {};
     draggingTrimCard = false;
 }
 
@@ -1346,36 +1492,70 @@ void LayerEnvelopeComponent::applyDrag (juce::Point<float> position)
         return;
     }
 
-    const float duration = juce::jmax (1.0f, geometry.envelopeDisplayDurationMs);
+    const float duration = juce::jmax (1.0f, geometry.trimmedDurationMs);
+    const auto envelopePosition = position - dragPointOffset;
     const float x = juce::jlimit (0.0f, 1.0f,
-                                  (position.x - geometry.trimX0)
+                                  (envelopePosition.x - geometry.trimX0)
                                       / juce::jmax (1.0f, geometry.trimW));
     const float timeMs = x * duration;
+    const auto currentParameters = readLayerParameters();
+
+    // The engine proportionally scales A/H/D/R when their requested sum is
+    // longer than the sample. Solve the schedule backwards so a drag follows
+    // the visible point instead of writing an unscaled time into the parameter.
+    auto solveScheduledPoint = [&] (const juce::String& parameterId,
+                                    float minimum, float maximum, bool increasing,
+                                    auto setCandidateValue, auto getScheduleTime)
+    {
+        float low = minimum;
+        float high = maximum;
+        for (int iteration = 0; iteration < 28; ++iteration)
+        {
+            const float candidateValue = 0.5f * (low + high);
+            auto candidate = currentParameters;
+            setCandidateValue (candidate, candidateValue);
+            const auto candidateSchedule = LayeredSampleEngine::computeEnvelopeSchedule (candidate, duration);
+            const float candidateTime = getScheduleTime (candidateSchedule);
+
+            if ((candidateTime < timeMs) == increasing)
+                low = candidateValue;
+            else
+                high = candidateValue;
+        }
+        setParameter (parameterId, 0.5f * (low + high));
+    };
 
     switch (activeHandle)
     {
         case Handle::Attack:
-            setParameter (ids::layerAttack (layer), juce::jlimit (0.1f, 2000.0f, timeMs));
+            solveScheduledPoint (ids::layerAttack (layer), 0.1f, 2000.0f, true,
+                [] (auto& p, float v) { p.attackMs = v; },
+                [] (const auto& s) { return s.attackEndMs; });
             break;
         case Handle::Hold:
-            setParameter (ids::layerHold (layer),
-                          juce::jlimit (0.0f, 2000.0f, timeMs - pAttack->load()));
+            solveScheduledPoint (ids::layerHold (layer), 0.0f, 2000.0f, true,
+                [] (auto& p, float v) { p.holdMs = v; },
+                [] (const auto& s) { return s.holdEndMs; });
             break;
         case Handle::Decay:
-            setParameter (ids::layerDecay (layer),
-                          juce::jlimit (0.1f, 5000.0f, timeMs - pAttack->load() - pHold->load()));
+            solveScheduledPoint (ids::layerDecay (layer), 0.1f, 5000.0f, true,
+                [] (auto& p, float v) { p.decayMs = v; },
+                [] (const auto& s) { return s.decayEndMs; });
             break;
         case Handle::Sustain:
         {
             const float envTop = geometry.plot.getY() + 7.0f;
             const float envBot = geometry.plot.getBottom() - 15.0f;
             const float envH = juce::jmax (12.0f, envBot - envTop);
-            const float level = juce::jlimit (0.0f, 1.0f, (envBot - position.y) / envH);
+            const float level = juce::jlimit (0.0f, 1.0f, (envBot - envelopePosition.y) / envH);
             setParameter (ids::layerSustain (layer), level);
             break;
         }
         case Handle::Release:
-            setParameter (ids::layerRelease (layer), juce::jlimit (0.1f, 10000.0f, duration - timeMs));
+            // Increasing Release moves the release-start handle to the left.
+            solveScheduledPoint (ids::layerRelease (layer), 0.1f, 10000.0f, false,
+                [] (auto& p, float v) { p.releaseMs = v; },
+                [] (const auto& s) { return s.releaseStartMs; });
             break;
         default:
             break;
@@ -1454,6 +1634,18 @@ void LayerEnvelopeComponent::mouseDown (const juce::MouseEvent& event)
         dragStartX = event.position.x;
         dragStartY = event.position.y;
         dragStartViewStart = viewStartNorm;
+        dragPointOffset = {};
+
+        switch (bestHandle)
+        {
+            case Handle::Attack:  dragPointOffset = event.position - geometry.attackAnchor; break;
+            case Handle::Hold:    dragPointOffset = event.position - geometry.holdAnchor; break;
+            case Handle::Decay:   dragPointOffset = event.position - geometry.decayAnchor; break;
+            case Handle::Sustain: dragPointOffset = event.position - geometry.sustainAnchor; break;
+            case Handle::Release: dragPointOffset = event.position - geometry.releaseAnchor; break;
+            default: break;
+        }
+
         if (bestHandle == Handle::TensionAttack) dragStartTension = pAttackTension->load();
         else if (bestHandle == Handle::TensionDecay) dragStartTension = pDecayTension->load();
         else if (bestHandle == Handle::TensionRelease) dragStartTension = pReleaseTension->load();
