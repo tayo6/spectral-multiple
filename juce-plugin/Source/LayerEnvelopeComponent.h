@@ -4,12 +4,6 @@
 #include "SpectralMultipleLookAndFeel.h"
 
 /**
-    Waveform-backed sample editor, FL-style tension envelope, and SNAPBACK
-    parameter tile deck for one individual SNAPBACK (0..2) or TRANSIENT (3..5)
-    layer. The 11 parameter controls are compact tiles rendered by
-    SpectralMultipleLookAndFeel (see the "isTile" slider property).
-*/
-/**
     Combined front/back sample trim control. One shared range track has two
     independently editable endpoints, each with a numeric percentage field.
     The existing layerTrimStart/layerTrimEnd APVTS parameters remain unchanged.
@@ -21,7 +15,6 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
-    juce::Rectangle<int> getSampleHeaderBounds() const noexcept;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
@@ -63,6 +56,7 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    juce::Rectangle<int> getSampleHeaderBounds() const noexcept;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
