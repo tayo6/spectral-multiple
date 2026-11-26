@@ -174,12 +174,12 @@ void TriggerPanelComponent::resized()
     r.removeFromLeft (gap);
     thresholdSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false,
                                      px (38.0f), py (20.0f));
-    thresholdSlider.setBounds (r.removeFromLeft (px (100.0f)));
+    thresholdSlider.setBounds (r.removeFromLeft (px (88.0f)));
     r.removeFromLeft (gap);
     modeBox.setBounds (r.removeFromLeft (px (62.0f)));
     r.removeFromLeft (gap);
 
-    const int segmentW = px (42.0f);
+    const int segmentW = px (38.0f);
     drumsBtn.setBounds (r.removeFromLeft (segmentW));
     r.removeFromLeft (px (2.0f));
     generalBtn.setBounds (r.removeFromLeft (segmentW));
@@ -194,10 +194,10 @@ void TriggerPanelComponent::resized()
 
     preLeadSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false,
                                    px (34.0f), py (20.0f));
-    preLeadSlider.setBounds (r.removeFromLeft (px (88.0f)));
+    preLeadSlider.setBounds (r.removeFromLeft (px (76.0f)));
     r.removeFromLeft (gap);
 
-    inputFilter.setBounds (r.removeFromLeft (juce::jmin (r.getWidth(), px (94.0f))));
+    inputFilter.setBounds (r.removeFromLeft (juce::jmin (r.getWidth(), px (140.0f))));
     r.removeFromLeft (gap);
     listenBtn.setBounds (r.removeFromRight (juce::jmin (r.getWidth(), px (46.0f))));
 
