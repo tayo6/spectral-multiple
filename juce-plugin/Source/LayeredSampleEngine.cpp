@@ -379,6 +379,7 @@ void LayeredSampleEngine::setLayerParameters (int layer, const LayerParameters& 
 
     target.gain = juce::jlimit (0.0f, 2.0f, p.gain);
     target.pan = juce::jlimit (-1.0f, 1.0f, p.pan);
+    target.width = juce::jlimit (0.0f, 2.0f, p.width);
     target.pitchSemitones = juce::jlimit (-24.0f, 24.0f, p.pitchSemitones);
     target.delayShiftMs = juce::jlimit (-100.0f, 100.0f, p.delayShiftMs);
     target.highPassHz = juce::jlimit (20.0f, 1000.0f, p.highPassHz);
@@ -765,6 +766,13 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
         const float rawR = audio.getSample (1, index0)
                            + (audio.getSample (1, index1) - audio.getSample (1, index0)) * fraction;
 
+        // Mid/side width: 0% collapses to mono, 100% preserves the source,
+        // and 200% doubles the side information. The default is transparent.
+        const float mid = 0.5f * (rawL + rawR);
+        const float side = 0.5f * (rawL - rawR) * p.width;
+        const float wideL = mid + side;
+        const float wideR = mid - side;
+
         // Derive envelope timing from base speed so dynamic Pogo bends never warp ADSR schedules.
         const float safeBaseSpeed = (float) juce::jmax (0.0001, baseSpeed);
         const float totalOutputSamples = (float) trimmedLength / safeBaseSpeed;
@@ -810,8 +818,8 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
             : 1.0f;
 
         const float gain = p.gain * envelope * fadeInGain * fadeOutGain;
-        left += rawL * gain * leftPan;
-        right += rawR * gain * rightPan;
+        left += wideL * gain * leftPan;
+        right += wideR * gain * rightPan;
 
         voice.position += speed;
         ++voice.ageSamples;

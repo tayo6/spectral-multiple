@@ -2,7 +2,6 @@
 
 #include "PluginProcessor.h"
 #include "SpectralMultipleLookAndFeel.h"
-#include "SampleSelectorDot.h"
 #include "SampleBrowserComponent.h"
 #include "LayerEnvelopeComponent.h"
 #include <array>
@@ -41,40 +40,24 @@ public:
     void filesDropped (const juce::StringArray& files, int x, int y) override;
 
 private:
-    class LayerPowerButton final : public juce::Button
+    class BankPowerButton final : public juce::Button
     {
     public:
-        LayerPowerButton() : juce::Button ("LayerPower")
+        BankPowerButton() : juce::Button ("BankPower")
         {
-            setTooltip ("Enable or mute the selected layer");
+            setTooltip ("Enable or mute all three samples in this bank");
             setMouseCursor (juce::MouseCursor::PointingHandCursor);
         }
-
-        void setAccentColour (juce::Colour col) noexcept
-        {
-            accent = col;
-            repaint();
-        }
-
-        void setLayerEnabled (bool isEnabled) noexcept
-        {
-            if (layerOn != isEnabled)
-            {
-                layerOn = isEnabled;
-                repaint();
-            }
-        }
-
-        void paintButton (juce::Graphics& g, bool highlighted, bool down) override;
-
+        void setAccentColour (juce::Colour colour) noexcept { accent = colour; repaint(); }
+        void setBankEnabled (bool enabled) noexcept { if (bankEnabled != enabled) { bankEnabled = enabled; repaint(); } }
+        void paintButton (juce::Graphics&, bool highlighted, bool down) override;
     private:
         juce::Colour accent { wavelens::ui::kPurpleAccent };
-        bool layerOn = true;
+        bool bankEnabled = true;
     };
 
     void promptLoadActiveLayer();
     void loadFileIntoActiveLayer (const juce::File& file);
-    void rebindActiveLayerToggles();
 
     WaveLensProcessor& proc;
     const int group;
@@ -82,14 +65,12 @@ private:
     int selectedSlot = 0;
     bool dragOver = false;
 
-    std::array<std::unique_ptr<SampleSelectorDot>, 3> dots;
-    LayerPowerButton enableBtn;
+    BankPowerButton bankPowerBtn;
     juce::TextButton soloBtn { "S" };
     juce::TextButton auditionBtn { ">" };
     SampleBrowserComponent sampleBrowser;
     juce::TextButton clearBtn { "x" };
 
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> soloAtt;
     std::array<std::unique_ptr<LayerEnvelopeComponent>, 3> editors;
 
     juce::Rectangle<int> headerBounds;

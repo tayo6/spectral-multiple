@@ -42,6 +42,20 @@ TriggerPanelComponent::TriggerPanelComponent (WaveLensProcessor& processor)
     addAndMakeVisible (viewBox);
     viewAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (proc.apvts, ids::view, viewBox);
 
+    // Timeline bar span (moved here from the control bar so the bar can host
+    // the compact zoom out / level / zoom in controls instead)
+    if (auto* spanChoice = dynamic_cast<juce::AudioParameterChoice*> (proc.apvts.getParameter (ids::bars)))
+        spanBox.addItemList (spanChoice->choices, 1);
+    spanBox.setTooltip ("Timeline bar span");
+    spanBox.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (spanBox);
+    spanAtt = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment> (proc.apvts, ids::bars, spanBox);
+    spanBox.onChange = [this]
+    {
+        if (onZoomBarsSelected)
+            onZoomBarsSelected (barsFromIndex (spanBox.getSelectedItemIndex()));
+    };
+
     for (auto* b : { &drumsBtn, &generalBtn, &complexBtn })
     {
         b->setClickingTogglesState (false);
@@ -114,6 +128,7 @@ void TriggerPanelComponent::paint (juce::Graphics& g)
     g.setColour (ui::kSecondaryText);
     g.drawText ("THRESH", thresholdSlider.getX() - 48, 0, 44, getHeight(), juce::Justification::centredRight);
     g.drawText ("MODE", modeBox.getX() - 36, 0, 32, getHeight(), juce::Justification::centredRight);
+    g.drawText ("SPAN", spanBox.getX() - 36, 0, 32, getHeight(), juce::Justification::centredRight);
     g.drawText ("IN FILTER", inputFilter.getX() - 56, 0, 52, getHeight(), juce::Justification::centredRight);
 
     // Trigger LED indicator on far left
@@ -150,6 +165,8 @@ void TriggerPanelComponent::resized()
 
     listenBtn.setBounds (r.removeFromRight (84));
     r.removeFromRight (6);
+    spanBox.setBounds (r.removeFromRight (76));
+    r.removeFromRight (40); // SPAN label
     viewBox.setBounds (r.removeFromRight (92));
     r.removeFromRight (12);
 
@@ -205,29 +222,58 @@ WaveformControlBar::WaveformControlBar (WaveLensProcessor& processor)
     preLeadAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, ids::preRollMs, preLeadSlider);
     preLeadSlider.updateText();
 
-    triggerTabBtn.setClickingTogglesState (true);
-    triggerTabBtn.setTooltip ("Open or close Trigger Settings panel");
-    triggerTabBtn.getProperties().set ("isFlatSegment", true);
-    triggerTabBtn.onClick = [this]
+    collapseTabBtn.setClickingTogglesState (true);
+    collapseTabBtn.setTooltip ("Collapse or restore the lower sample editors");
+    collapseTabBtn.getProperties().set ("isTrapezoid", true);
+    collapseTabBtn.getProperties().set ("accentColour", (juce::int64) ui::kPurpleAccent.getARGB());
+    collapseTabBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    collapseTabBtn.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
+    collapseTabBtn.onClick = [this]
+    {
+        if (onCollapseToggled)
+            onCollapseToggled (collapseTabBtn.getToggleState());
+    };
+    addAndMakeVisible (collapseTabBtn);
+
+    triggerSettingsBtn.setClickingTogglesState (true);
+    triggerSettingsBtn.setTooltip ("Open or close Trigger Settings");
+    triggerSettingsBtn.getProperties().set ("accentColour", (juce::int64) ui::kCyanAccent.getARGB());
+    triggerSettingsBtn.onClick = [this]
     {
         if (onTriggerPanelToggled)
-            onTriggerPanelToggled (triggerTabBtn.getToggleState());
+            onTriggerPanelToggled (triggerSettingsBtn.getToggleState());
     };
-    addAndMakeVisible (triggerTabBtn);
+    addAndMakeVisible (triggerSettingsBtn);
 
     fireTriggerBtn.setTooltip ("Fire manual trigger audition");
     fireTriggerBtn.getProperties().set ("accentColour", (juce::int64) ui::kCyanAccent.getARGB());
     fireTriggerBtn.onClick = [this] { proc.requestTrigger(); };
     addAndMakeVisible (fireTriggerBtn);
 
-    gridSecBtn.setTooltip ("Toggle Beat Grid / Milliseconds ruler");
-    gridSecBtn.onClick = [this]
+    auto setupViewBtn = [this] (juce::TextButton& b, const juce::String& text,
+                                juce::Colour accent, const juce::String& tip)
     {
-        setGridMode (! isGridMode);
+        b.setButtonText (text);
+        b.setClickingTogglesState (true);
+        b.setTooltip (tip);
+        b.getProperties().set ("accentColour", (juce::int64) accent.getARGB());
+        addAndMakeVisible (b);
+    };
+    setupViewBtn (gridBtn, "GRID", ui::kPurpleAccent, "Show beat grid ruler");
+    setupViewBtn (secondsBtn, "SECONDS", snap::tr, "Show milliseconds ruler");
+    gridBtn.onClick = [this]
+    {
+        setGridMode (true);
         if (onGridModeChanged)
             onGridModeChanged (isGridMode);
     };
-    addAndMakeVisible (gridSecBtn);
+    secondsBtn.onClick = [this]
+    {
+        setGridMode (false);
+        if (onGridModeChanged)
+            onGridModeChanged (isGridMode);
+    };
+    setGridMode (true);
 
     detailBtn.onClick = [this]
     {
@@ -236,17 +282,29 @@ WaveformControlBar::WaveformControlBar (WaveLensProcessor& processor)
     };
     addAndMakeVisible (detailBtn);
 
-    zoomBox.addItemList ({ "1/4", "1/2", "1 Bar", "2 Bars", "4 Bars", "8 Bars" }, 1);
-    zoomBox.setSelectedId (3, juce::dontSendNotification);
-    zoomBox.setTooltip ("Timeline bar span");
-    zoomBox.onChange = [this]
+    zoomOutBtn.setTooltip ("Zoom out timeline");
+    zoomOutBtn.onClick = [this]
     {
-        static constexpr double kBars[] = { 0.25, 0.5, 1.0, 2.0, 4.0, 8.0 };
-        const int idx = juce::jlimit (0, 5, zoomBox.getSelectedItemIndex());
-        if (onZoomBarsSelected)
-            onZoomBarsSelected (kBars[idx]);
+        if (onZoomStep)
+            onZoomStep (1.0f / 1.35f);
     };
-    addAndMakeVisible (zoomBox);
+    addAndMakeVisible (zoomOutBtn);
+
+    zoomLevelBtn.setTooltip ("Current timeline zoom (click to reset)");
+    zoomLevelBtn.onClick = [this]
+    {
+        if (onZoomReset)
+            onZoomReset();
+    };
+    addAndMakeVisible (zoomLevelBtn);
+
+    zoomInBtn.setTooltip ("Zoom in timeline");
+    zoomInBtn.onClick = [this]
+    {
+        if (onZoomStep)
+            onZoomStep (1.35f);
+    };
+    addAndMakeVisible (zoomInBtn);
 
     outputBtn.setClickingTogglesState (true);
     outputBtn.setTooltip ("Toggle live summed Master Output monitor");
@@ -279,7 +337,20 @@ void WaveformControlBar::setOutputActive (bool active) noexcept
 void WaveformControlBar::setGridMode (bool isGrid) noexcept
 {
     isGridMode = isGrid;
-    gridSecBtn.setButtonText (isGridMode ? "GRID" : "SEC");
+    gridBtn.setToggleState (isGrid, juce::dontSendNotification);
+    secondsBtn.setToggleState (! isGrid, juce::dontSendNotification);
+    repaint();
+}
+
+void WaveformControlBar::setZoomLevel (float zoomFactor) noexcept
+{
+    const juce::String txt = zoomFactor <= 1.05f
+        ? juce::String ("1.0x")
+        : (zoomFactor >= 9.95f ? juce::String (juce::roundToInt (zoomFactor)) + "x"
+                               : juce::String (zoomFactor, 1) + "x");
+    zoomLevelBtn.setButtonText (txt);
+    zoomOutBtn.setEnabled (zoomFactor > 1.05f);
+    zoomInBtn.setEnabled (zoomFactor < 31.5f);
     repaint();
 }
 
@@ -317,21 +388,30 @@ void WaveformControlBar::resized()
     const int preW = juce::jlimit (96, 154, getWidth() / 8);
     preLeadSlider.setBounds (r.removeFromLeft (preW));
 
-    outputBtn.setBounds (r.removeFromRight (64));
+    // Right stack: OUTPUT | zoom in / level / out | DETAIL | SECONDS | GRID
+    outputBtn.setBounds (r.removeFromRight (58));
     r.removeFromRight (6);
-    zoomBox.setBounds (r.removeFromRight (78));
+    zoomInBtn.setBounds (r.removeFromRight (24));
+    r.removeFromRight (2);
+    zoomLevelBtn.setBounds (r.removeFromRight (42));
+    r.removeFromRight (2);
+    zoomOutBtn.setBounds (r.removeFromRight (24));
     r.removeFromRight (6);
     detailBtn.setBounds (r.removeFromRight (72));
     r.removeFromRight (6);
-    gridSecBtn.setBounds (r.removeFromRight (46));
+    secondsBtn.setBounds (r.removeFromRight (62));
+    r.removeFromRight (2);
+    gridBtn.setBounds (r.removeFromRight (46));
 
-    // Centre TRIGGER tab + compact fire button
-    const int trigW = 86;
+    // Centre trapezoid COLLAPSE tab + independent Trigger Settings + manual fire.
+    const int collapseW = 94;
+    const int settingsW = 48;
     const int fireW = 26;
-    const int totalCentreW = trigW + 4 + fireW;
+    const int totalCentreW = collapseW + 4 + settingsW + 4 + fireW;
     const int startX = juce::jmax (preLeadSlider.getRight() + 8,
-                                   juce::jmin (gridSecBtn.getX() - totalCentreW - 8,
+                                   juce::jmin (gridBtn.getX() - totalCentreW - 8,
                                                getWidth() / 2 - totalCentreW / 2));
-    triggerTabBtn.setBounds (startX, r.getY(), trigW, r.getHeight());
-    fireTriggerBtn.setBounds (triggerTabBtn.getRight() + 4, r.getY(), fireW, r.getHeight());
+    collapseTabBtn.setBounds (startX, r.getY() - 2, collapseW, r.getHeight() + 4);
+    triggerSettingsBtn.setBounds (collapseTabBtn.getRight() + 4, r.getY(), settingsW, r.getHeight());
+    fireTriggerBtn.setBounds (triggerSettingsBtn.getRight() + 4, r.getY(), fireW, r.getHeight());
 }

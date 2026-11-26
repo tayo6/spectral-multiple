@@ -3,7 +3,8 @@
 #include "SpectralMultipleLookAndFeel.h"
 #include <functional>
 
-class SampleSelectorDot final : public juce::Component
+class SampleSelectorDot final : public juce::Component,
+                                public juce::SettableTooltipClient
 {
 public:
     SampleSelectorDot (int indexInGroup, juce::Colour dotColour, juce::String tip)

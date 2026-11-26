@@ -257,6 +257,7 @@ void testRealJuceAiffLoading (const fs::path& dir)
         }
     }
 
+    {
     WaveLensProcessor proc;
     proc.prepareToPlay (44100.0, 256);
 
@@ -264,7 +265,9 @@ void testRealJuceAiffLoading (const fs::path& dir)
     check (proc.loadSampleFile (0, aiff44, err), "RealJUCE-AIFF: WaveLensProcessor loads stereo AIFF",
            err.toStdString());
     check (proc.connectedMask.load() == (1 << 0), "RealJUCE-AIFF: connectedMask updated");
-    check (proc.getSampleName (0) == "real_44", "RealJUCE-AIFF: sample name preserved");
+    const auto sampleName = proc.getSampleName (0);
+    check (sampleName == "real_44", "RealJUCE-AIFF: sample name preserved");
+    }
 }
 
 void testProcessorMonitorOversizedBlockAndDisabledBuses (const fs::path& dir)
@@ -414,6 +417,9 @@ void testProcessorMonitorOversizedBlockAndDisabledBuses (const fs::path& dir)
     }
 }
 
+// WaveLensProcessor owns substantial fixed-size oscilloscope/FFT buffers. These state
+// migration tests create several processor instances; keep them heap-allocated so the
+// Windows test runner's limited stack is not exhausted by the function's local frame.
 void testRealProcessorStateSerializationAndMigration (const fs::path& dir)
 {
     const auto preWav = writeWavFileFloat32 (dir / "state_pre0.wav", 44100.0, { { 0.4f, 0.2f }, { 0.4f, 0.2f } });
@@ -423,20 +429,20 @@ void testRealProcessorStateSerializationAndMigration (const fs::path& dir)
     // 1. Current-version (v2) state serialization & restoration
     juce::MemoryBlock v2Blob;
     {
-        WaveLensProcessor procSrc;
-        procSrc.prepareToPlay (44100.0, 256);
+        auto procSrc = std::make_unique<WaveLensProcessor>();
+        procSrc->prepareToPlay (44100.0, 256);
         juce::String err;
-        check (procSrc.loadSampleFile (0, preWav, err), "State-v2: load PRE 1", err.toStdString());
-        check (procSrc.loadSampleFile (3, mainWav, err), "State-v2: load MAIN 1", err.toStdString());
+        check (procSrc->loadSampleFile (0, preWav, err), "State-v2: load PRE 1", err.toStdString());
+        check (procSrc->loadSampleFile (3, mainWav, err), "State-v2: load MAIN 1", err.toStdString());
 
-        setParam (procSrc, ids::preRollMs, 65.0f);
-        setParam (procSrc, ids::layerDelay (0), -12.5f);
-        setParam (procSrc, ids::layerDelay (3), 18.0f);
-        setParam (procSrc, ids::layerGain (0), 0.75f);
-        setParam (procSrc, ids::layerMute (1), 1.0f);
-        setParam (procSrc, ids::triggerMode, 1.0f);
+        setParam (*procSrc, ids::preRollMs, 65.0f);
+        setParam (*procSrc, ids::layerDelay (0), -12.5f);
+        setParam (*procSrc, ids::layerDelay (3), 18.0f);
+        setParam (*procSrc, ids::layerGain (0), 0.75f);
+        setParam (*procSrc, ids::layerMute (1), 1.0f);
+        setParam (*procSrc, ids::triggerMode, 1.0f);
 
-        procSrc.getStateInformation (v2Blob);
+        procSrc->getStateInformation (v2Blob);
         auto xml = TestXmlProcessorHelper::decodeXml (v2Blob);
         check (xml != nullptr
             && xml->getIntAttribute ("wavelensStateVersion", 0) == wavelens::state::kCurrentStateVersion
@@ -446,25 +452,25 @@ void testRealProcessorStateSerializationAndMigration (const fs::path& dir)
     }
 
     {
-        WaveLensProcessor procDst;
-        procDst.prepareToPlay (44100.0, 256);
-        procDst.setStateInformation (v2Blob.getData(), (int) v2Blob.getSize());
+        auto procDst = std::make_unique<WaveLensProcessor>();
+        procDst->prepareToPlay (44100.0, 256);
+        procDst->setStateInformation (v2Blob.getData(), (int) v2Blob.getSize());
 
-        check (std::abs (getParamPlain (procDst, ids::preRollMs) - 65.0f) < 0.05f,
+        check (std::abs (getParamPlain (*procDst, ids::preRollMs) - 65.0f) < 0.05f,
                "State-v2: preRollMs restored");
-        check (std::abs (getParamPlain (procDst, ids::layerDelay (0)) - (-12.5f)) < 0.05f,
+        check (std::abs (getParamPlain (*procDst, ids::layerDelay (0)) - (-12.5f)) < 0.05f,
                "State-v2: PRE delay NOT double-migrated");
-        check (std::abs (getParamPlain (procDst, ids::layerDelay (3)) - 18.0f) < 0.05f,
+        check (std::abs (getParamPlain (*procDst, ids::layerDelay (3)) - 18.0f) < 0.05f,
                "State-v2: MAIN delay restored");
-        check (std::abs (getParamPlain (procDst, ids::layerGain (0)) - 0.75f) < 0.01f,
+        check (std::abs (getParamPlain (*procDst, ids::layerGain (0)) - 0.75f) < 0.01f,
                "State-v2: layer gain restored");
-        check (getParamPlain (procDst, ids::layerMute (1)) > 0.5f,
+        check (getParamPlain (*procDst, ids::layerMute (1)) > 0.5f,
                "State-v2: layer mute restored");
-        check (procDst.connectedMask.load() == ((1 << 0) | (1 << 3)),
+        check (procDst->connectedMask.load() == ((1 << 0) | (1 << 3)),
                "State-v2: connectedMask restored");
-        check (procDst.missingSampleMask.load() == 0 && ! procDst.isLayerSampleMissing (0) && ! procDst.isLayerSampleMissing (3),
+        check (procDst->missingSampleMask.load() == 0 && ! procDst->isLayerSampleMissing (0) && ! procDst->isLayerSampleMissing (3),
                "State-v2: no false missing-sample flags");
-        check (procDst.getSampleName (0) == "state_pre0" && procDst.getSampleName (3) == "state_main3",
+        check (procDst->getSampleName (0) == "state_pre0" && procDst->getSampleName (3) == "state_main3",
                "State-v2: sample display names restored");
     }
 
@@ -473,18 +479,18 @@ void testRealProcessorStateSerializationAndMigration (const fs::path& dir)
     {
         juce::MemoryBlock legacyBlob;
         {
-            WaveLensProcessor procLegacy;
-            procLegacy.prepareToPlay (44100.0, 256);
+            auto procLegacy = std::make_unique<WaveLensProcessor>();
+            procLegacy->prepareToPlay (44100.0, 256);
             juce::String err;
-            procLegacy.loadSampleFile (0, preWav, err);
+            procLegacy->loadSampleFile (0, preWav, err);
 
-            setParam (procLegacy, ids::preRollMs, 50.0f);
-            setParam (procLegacy, ids::layerDelay (0), -50.0f);
-            setParam (procLegacy, ids::layerDelay (1), -35.0f);
-            setParam (procLegacy, ids::layerDelay (2), -75.0f);
-            setParam (procLegacy, ids::layerDelay (3), 12.5f);
-            setParam (procLegacy, ids::layerDelay (4), -20.0f);
-            procLegacy.getStateInformation (legacyBlob);
+            setParam (*procLegacy, ids::preRollMs, 50.0f);
+            setParam (*procLegacy, ids::layerDelay (0), -50.0f);
+            setParam (*procLegacy, ids::layerDelay (1), -35.0f);
+            setParam (*procLegacy, ids::layerDelay (2), -75.0f);
+            setParam (*procLegacy, ids::layerDelay (3), 12.5f);
+            setParam (*procLegacy, ids::layerDelay (4), -20.0f);
+            procLegacy->getStateInformation (legacyBlob);
         }
 
         auto xml = TestXmlProcessorHelper::decodeXml (legacyBlob);
@@ -500,44 +506,44 @@ void testRealProcessorStateSerializationAndMigration (const fs::path& dir)
             TestXmlProcessorHelper::encodeXml (*xml, legacyBlob);
         }
 
-        WaveLensProcessor procMigrated;
-        procMigrated.prepareToPlay (44100.0, 256);
-        procMigrated.setStateInformation (legacyBlob.getData(), (int) legacyBlob.getSize());
+        auto procMigrated = std::make_unique<WaveLensProcessor>();
+        procMigrated->prepareToPlay (44100.0, 256);
+        procMigrated->setStateInformation (legacyBlob.getData(), (int) legacyBlob.getSize());
 
-        check (std::abs (getParamPlain (procMigrated, ids::layerDelay (0)) - 0.0f) < 0.05f,
+        check (std::abs (getParamPlain (*procMigrated, ids::layerDelay (0)) - 0.0f) < 0.05f,
                "State-v1: PRE 1 (-50 ms) migrated by +50 ms to 0.0 ms");
-        check (std::abs (getParamPlain (procMigrated, ids::layerDelay (1)) - 15.0f) < 0.05f,
+        check (std::abs (getParamPlain (*procMigrated, ids::layerDelay (1)) - 15.0f) < 0.05f,
                "State-v1: PRE 2 (-35 ms) migrated by +50 ms to +15.0 ms");
-        check (std::abs (getParamPlain (procMigrated, ids::layerDelay (2)) - (-25.0f)) < 0.05f,
+        check (std::abs (getParamPlain (*procMigrated, ids::layerDelay (2)) - (-25.0f)) < 0.05f,
                "State-v1: PRE 3 (-75 ms) migrated by +50 ms to -25.0 ms");
-        check (std::abs (getParamPlain (procMigrated, ids::layerDelay (3)) - 12.5f) < 0.05f,
+        check (std::abs (getParamPlain (*procMigrated, ids::layerDelay (3)) - 12.5f) < 0.05f,
                "State-v1: MAIN 1 delay left untouched");
-        check (std::abs (getParamPlain (procMigrated, ids::layerDelay (4)) - (-20.0f)) < 0.05f,
+        check (std::abs (getParamPlain (*procMigrated, ids::layerDelay (4)) - (-20.0f)) < 0.05f,
                "State-v1: MAIN 2 delay left untouched");
-        check (procMigrated.connectedMask.load() == (1 << 0),
+        check (procMigrated->connectedMask.load() == (1 << 0),
                "State-v1: sample reloaded during migration");
 
         // Re-saving migrated processor state writes v2 and must not re-migrate on reload
         juce::MemoryBlock resavedBlob;
-        procMigrated.getStateInformation (resavedBlob);
-        WaveLensProcessor procReloaded;
-        procReloaded.prepareToPlay (44100.0, 256);
-        procReloaded.setStateInformation (resavedBlob.getData(), (int) resavedBlob.getSize());
-        check (std::abs (getParamPlain (procReloaded, ids::layerDelay (0)) - 0.0f) < 0.05f
-            && std::abs (getParamPlain (procReloaded, ids::layerDelay (1)) - 15.0f) < 0.05f
-            && std::abs (getParamPlain (procReloaded, ids::layerDelay (2)) - (-25.0f)) < 0.05f,
+        procMigrated->getStateInformation (resavedBlob);
+        auto procReloaded = std::make_unique<WaveLensProcessor>();
+        procReloaded->prepareToPlay (44100.0, 256);
+        procReloaded->setStateInformation (resavedBlob.getData(), (int) resavedBlob.getSize());
+        check (std::abs (getParamPlain (*procReloaded, ids::layerDelay (0)) - 0.0f) < 0.05f
+            && std::abs (getParamPlain (*procReloaded, ids::layerDelay (1)) - 15.0f) < 0.05f
+            && std::abs (getParamPlain (*procReloaded, ids::layerDelay (2)) - (-25.0f)) < 0.05f,
                "State-v1->v2: re-save locks version 2 and prevents double-migration");
     }
 
     // 3. Missing sample paths are preserved (never silently discarded) and indicator stays accurate
     juce::MemoryBlock missingBlob;
     {
-        WaveLensProcessor procMissingSrc;
-        procMissingSrc.prepareToPlay (44100.0, 256);
+        auto procMissingSrc = std::make_unique<WaveLensProcessor>();
+        procMissingSrc->prepareToPlay (44100.0, 256);
         juce::String err;
-        check (procMissingSrc.loadSampleFile (0, preWav, err), "State-Missing: load present sample");
-        check (procMissingSrc.loadSampleFile (1, disappearingWav, err), "State-Missing: load temp sample");
-        procMissingSrc.getStateInformation (missingBlob);
+        check (procMissingSrc->loadSampleFile (0, preWav, err), "State-Missing: load present sample");
+        check (procMissingSrc->loadSampleFile (1, disappearingWav, err), "State-Missing: load temp sample");
+        procMissingSrc->getStateInformation (missingBlob);
     }
 
     // Remove the file from disk before restoring state
@@ -546,22 +552,22 @@ void testRealProcessorStateSerializationAndMigration (const fs::path& dir)
 
     juce::MemoryBlock resavedMissingBlob;
     {
-        WaveLensProcessor procMissingDst;
-        procMissingDst.prepareToPlay (44100.0, 256);
-        procMissingDst.setStateInformation (missingBlob.getData(), (int) missingBlob.getSize());
+        auto procMissingDst = std::make_unique<WaveLensProcessor>();
+        procMissingDst->prepareToPlay (44100.0, 256);
+        procMissingDst->setStateInformation (missingBlob.getData(), (int) missingBlob.getSize());
 
-        check (! procMissingDst.isLayerSampleMissing (0), "State-Missing: existing layer 0 not flagged missing");
-        check (procMissingDst.isLayerSampleMissing (1), "State-Missing: deleted layer 1 flagged missing");
-        check (procMissingDst.missingSampleMask.load() == (1 << 1),
+        check (! procMissingDst->isLayerSampleMissing (0), "State-Missing: existing layer 0 not flagged missing");
+        check (procMissingDst->isLayerSampleMissing (1), "State-Missing: deleted layer 1 flagged missing");
+        check (procMissingDst->missingSampleMask.load() == (1 << 1),
                "State-Missing: missingSampleMask marks exact missing layer bit",
-               "mask=" + std::to_string (procMissingDst.missingSampleMask.load()));
-        check (procMissingDst.getMissingSampleFileName (1) == "vanishing_sample",
+               "mask=" + std::to_string (procMissingDst->missingSampleMask.load()));
+        check (procMissingDst->getMissingSampleFileName (1) == "vanishing_sample",
                "State-Missing: getMissingSampleFileName returns deleted stem");
-        check (procMissingDst.connectedMask.load() == (1 << 0),
+        check (procMissingDst->connectedMask.load() == (1 << 0),
                "State-Missing: only existing sample remains connected");
 
         // Re-save without modifying layers -> samplePath2 MUST still be preserved in XML
-        procMissingDst.getStateInformation (resavedMissingBlob);
+        procMissingDst->getStateInformation (resavedMissingBlob);
         auto resavedXml = TestXmlProcessorHelper::decodeXml (resavedMissingBlob);
         check (resavedXml != nullptr
             && resavedXml->getStringAttribute ("samplePath1") == preWav.getFullPathName()
@@ -572,12 +578,12 @@ void testRealProcessorStateSerializationAndMigration (const fs::path& dir)
     // Recreate the file at the preserved path and confirm reloading restores both layers cleanly
     writeWavFileFloat32 (dir / "vanishing_sample.wav", 44100.0, { { 0.5f }, { 0.5f } });
     {
-        WaveLensProcessor procRecovered;
-        procRecovered.prepareToPlay (44100.0, 256);
-        procRecovered.setStateInformation (resavedMissingBlob.getData(), (int) resavedMissingBlob.getSize());
-        check (! procRecovered.isLayerSampleMissing (1) && procRecovered.missingSampleMask.load() == 0,
+        auto procRecovered = std::make_unique<WaveLensProcessor>();
+        procRecovered->prepareToPlay (44100.0, 256);
+        procRecovered->setStateInformation (resavedMissingBlob.getData(), (int) resavedMissingBlob.getSize());
+        check (! procRecovered->isLayerSampleMissing (1) && procRecovered->missingSampleMask.load() == 0,
                "State-Missing: missing indicator clears once preserved sample path returns on disk");
-        check (procRecovered.connectedMask.load() == ((1 << 0) | (1 << 1)),
+        check (procRecovered->connectedMask.load() == ((1 << 0) | (1 << 1)),
                "State-Missing: preserved path auto-reloads when file is restored");
     }
 }

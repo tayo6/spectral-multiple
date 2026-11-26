@@ -44,6 +44,17 @@ void SpectralMultipleLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, in
     const bool hovered = slider.isMouseOverOrDragging();
     const bool isBipolar = static_cast<bool> (slider.getProperties().getWithDefault ("bipolar", false));
 
+    // Compact SNAPBACK parameter tile: dark rounded tile, grey label, white
+    // value, thin accent track near the bottom (bipolar fills from centre).
+    if (static_cast<bool> (slider.getProperties().getWithDefault ("isTile", false)))
+    {
+        const float proportion = (float) slider.valueToProportionOfLength (slider.getValue());
+        drawTileSlider (g, juce::Rectangle<float> ((float) x, (float) y,
+                                                   (float) width, (float) height),
+                        slider, juce::jlimit (0.0f, 1.0f, proportion));
+        return;
+    }
+
     if (style == juce::Slider::LinearVertical)
     {
         auto b = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height);
@@ -53,7 +64,7 @@ void SpectralMultipleLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, in
         const float barH = juce::jmax (12.0f, bot - top);
         juce::Rectangle<float> bar (b.getCentreX() - barW * 0.5f, top, barW, barH);
 
-        g.setColour (juce::Colour (0xff100f17));
+        g.setColour (snap::inset);
         g.fillRoundedRectangle (bar, 3.0f);
 
         // Subtle unity (0 dB) reference tick at 50%
@@ -83,7 +94,7 @@ void SpectralMultipleLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, in
     if (static_cast<bool> (slider.getProperties().getWithDefault ("inlineBar", false)))
     {
         auto bar = juce::Rectangle<float> ((float) x, (float) y, (float) width, (float) height).reduced (0.5f);
-        g.setColour (hovered ? ui::kHoverBg.darker (0.25f) : juce::Colour (0xff12111a));
+        g.setColour (hovered ? ui::kHoverBg.darker (0.25f) : snap::inset);
         g.fillRoundedRectangle (bar, 3.0f);
 
         const float innerL = bar.getX() + 1.0f;
@@ -142,7 +153,7 @@ void SpectralMultipleLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, in
     const float barH = juce::jmin (14.0f, b.getHeight() - 4.0f);
     juce::Rectangle<float> track (b.getX() + 2.0f, b.getCentreY() - barH * 0.5f,
                                   juce::jmax (10.0f, b.getWidth() - 4.0f), barH);
-    g.setColour (juce::Colour (0xff100f17));
+    g.setColour (snap::inset);
     g.fillRoundedRectangle (track, 3.0f);
 
     const float clampedX = juce::jlimit (track.getX() + 1.0f, track.getRight() - 1.0f, sliderPos);
@@ -161,6 +172,76 @@ void SpectralMultipleLookAndFeel::drawLinearSlider (juce::Graphics& g, int x, in
     g.drawRoundedRectangle (track, 3.0f, 1.0f);
 }
 
+void SpectralMultipleLookAndFeel::drawTileSlider (juce::Graphics& g, juce::Rectangle<float> tile,
+                                                  juce::Slider& slider, float proportion)
+{
+    const bool enabled = slider.isEnabled();
+    const bool hovered = slider.isMouseOverOrDragging();
+    const auto accent = slider.findColour (juce::Slider::trackColourId).isTransparent()
+        ? ui::kPurpleAccent
+        : slider.findColour (juce::Slider::trackColourId);
+    const bool isBipolar = static_cast<bool> (slider.getProperties().getWithDefault ("bipolar", false));
+
+    g.setColour (hovered ? ui::kHoverBg : ui::kControlBg);
+    g.fillRoundedRectangle (tile, 5.5f);
+    g.setColour (enabled ? ui::kBorder : ui::kBorder.withAlpha (0.45f));
+    g.drawRoundedRectangle (tile.reduced (0.5f), 5.5f, 1.0f);
+
+    auto inner = tile.reduced (7.0f, 4.0f);
+    const auto label = slider.getProperties().getWithDefault ("tileLabel", slider.getName()).toString();
+    const auto valueText = slider.getTextFromValue (slider.getValue());
+    const float textW = juce::jmax (10.0f, inner.getWidth());
+
+    // Shrink long labels/values ("FADE OUT", "20.0 kHz") until they fit the tile.
+    auto shrinkToFit = [] (const juce::String& t, float baseHeight, float maxWidth) -> juce::Font
+    {
+        auto f = juce::Font (baseHeight, juce::Font::bold);
+        while (f.getStringWidthFloat (t) > maxWidth - 1.0f && f.getHeight() > 6.0f)
+            f = f.withHeight (f.getHeight() - 0.5f);
+        return f;
+    };
+
+    auto labelArea = inner.removeFromTop (11).toNearestInt();
+    g.setColour (enabled ? ui::kTileLabel : ui::kDisabledText);
+    g.setFont (shrinkToFit (label, 9.0f, textW));
+    if (label.isNotEmpty())
+        g.drawText (label, labelArea, juce::Justification::centredLeft, false);
+
+    auto valueArea = inner.removeFromTop (15).toNearestInt();
+    g.setColour (enabled ? ui::kMainText : ui::kDisabledText);
+    g.setFont (shrinkToFit (valueText, 12.5f, textW));
+    g.drawText (valueText, valueArea, juce::Justification::centredLeft, false);
+
+    const float trackY = tile.getBottom() - 9.5f;
+    auto track = juce::Rectangle<float> (tile.getX() + 7.0f, trackY,
+                                         juce::jmax (4.0f, tile.getWidth() - 14.0f), 2.0f);
+    g.setColour (snap::tileTrack);
+    g.fillRoundedRectangle (track, 1.0f);
+
+    if (isBipolar)
+    {
+        // Bipolar centre marker
+        g.setColour (ui::kBorder.brighter (0.30f));
+        g.fillRect (track.getCentreX() - 0.5f, trackY - 3.0f, 1.0f, 8.0f);
+    }
+
+    const float px = track.getX() + proportion * track.getWidth();
+    juce::Rectangle<float> fill;
+    if (isBipolar)
+        fill = juce::Rectangle<float> (juce::jmin (px, track.getCentreX()), trackY,
+                                       std::abs (px - track.getCentreX()), track.getHeight());
+    else
+        fill = track.withWidth (juce::jmax (0.0f, px - track.getX()));
+    if (fill.getWidth() > 0.5f)
+    {
+        g.setColour (accent.withAlpha (enabled ? 0.92f : 0.35f));
+        g.fillRoundedRectangle (fill, 1.0f);
+    }
+
+    g.setColour (enabled ? ui::kMainText : ui::kDisabledText);
+    g.fillRoundedRectangle (px - 1.5f, trackY - 3.5f, 3.0f, 9.0f, 1.5f);
+}
+
 void SpectralMultipleLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,
                                                         const juce::Colour& /*backgroundColour*/,
                                                         bool shouldDrawButtonAsHighlighted,
@@ -168,6 +249,33 @@ void SpectralMultipleLookAndFeel::drawButtonBackground (juce::Graphics& g, juce:
 {
     auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
     const bool isToggleOn = button.getToggleState();
+
+    const juce::var accentVar = button.getProperties().getWithDefault ("accentColour", juce::var());
+    const juce::Colour customAccent = accentVar.isInt() || accentVar.isInt64()
+        ? juce::Colour ((juce::uint32) (juce::int64) accentVar)
+        : ui::kPurpleAccent;
+
+    // Trapezoid tab (TRIGGER): wide top, narrow bottom, accent filled.
+    if (static_cast<bool> (button.getProperties().getWithDefault ("isTrapezoid", false)))
+    {
+        const auto trap = snap::trapezoidPath (bounds, bounds.getWidth() * 0.16f);
+        juce::Colour fill = isToggleOn ? customAccent.brighter (0.12f) : customAccent;
+        if (! button.isEnabled())
+            fill = ui::kControlBg;
+        else if (shouldDrawButtonAsDown)
+            fill = fill.darker (0.18f);
+        else if (shouldDrawButtonAsHighlighted)
+            fill = fill.brighter (0.10f);
+
+        g.setColour (fill);
+        g.fillPath (trap);
+        if (! button.isEnabled())
+        {
+            g.setColour (ui::kBorder.withAlpha (0.45f));
+            g.strokePath (trap, juce::PathStrokeType (1.0f));
+        }
+        return;
+    }
 
     if (static_cast<bool> (button.getProperties().getWithDefault ("isFlatSegment", false)))
     {
@@ -181,11 +289,6 @@ void SpectralMultipleLookAndFeel::drawButtonBackground (juce::Graphics& g, juce:
         g.drawRoundedRectangle (bounds, 3.0f, 1.0f);
         return;
     }
-
-    const juce::var accentVar = button.getProperties().getWithDefault ("accentColour", juce::var());
-    const juce::Colour customAccent = accentVar.isInt() || accentVar.isInt64()
-        ? juce::Colour ((juce::uint32) (juce::int64) accentVar)
-        : ui::kPurpleAccent;
 
     juce::Colour fill = isToggleOn ? customAccent.withAlpha (0.20f) : ui::kControlBg;
     if (! button.isEnabled())

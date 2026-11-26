@@ -28,6 +28,7 @@ namespace ids
     inline constexpr const char* preRollMs   = "preRollMs";
     inline juce::String layerGain (int n)    { return "layerGain" + juce::String (n + 1); }
     inline juce::String layerPan (int n)     { return "layerPan" + juce::String (n + 1); }
+    inline juce::String layerWidth (int n)   { return "layerWidth" + juce::String (n + 1); }
     inline juce::String layerPitch (int n)   { return "layerPitch" + juce::String (n + 1); }
     inline juce::String layerDelay (int n)   { return "layerDelay" + juce::String (n + 1); }
     inline juce::String layerHighPass (int n) { return "layerHighPass" + juce::String (n + 1); }
@@ -202,6 +203,7 @@ private:
     std::atomic<float>* pPreRollMs = nullptr;
     std::array<std::atomic<float>*, kMaxSignals> pLayerGain {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerPan {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerWidth {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerPitch {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerDelay {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerHighPass {};

@@ -99,6 +99,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
                                                            NormalisableRange<float> (0.0f, 2.0f, 0.001f), 1.0f));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerPan (i), 1 }, "Layer " + suffix + " pan",
                                                            NormalisableRange<float> (-1.0f, 1.0f, 0.001f), 0.0f));
+        layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerWidth (i), 1 }, "Layer " + suffix + " stereo width",
+                                                           NormalisableRange<float> (0.0f, 2.0f, 0.001f), 1.0f,
+                                                           AudioParameterFloatAttributes().withLabel ("%")));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerPitch (i), 1 }, "Layer " + suffix + " pitch",
                                                            NormalisableRange<float> (-24.0f, 24.0f, 0.01f), 0.0f,
                                                            AudioParameterFloatAttributes().withLabel ("st")));
@@ -206,6 +209,7 @@ WaveLensProcessor::WaveLensProcessor()
     {
         pLayerGain[(size_t) i] = apvts.getRawParameterValue (ids::layerGain (i));
         pLayerPan[(size_t) i] = apvts.getRawParameterValue (ids::layerPan (i));
+        pLayerWidth[(size_t) i] = apvts.getRawParameterValue (ids::layerWidth (i));
         pLayerPitch[(size_t) i] = apvts.getRawParameterValue (ids::layerPitch (i));
         pLayerDelay[(size_t) i] = apvts.getRawParameterValue (ids::layerDelay (i));
         pLayerHighPass[(size_t) i] = apvts.getRawParameterValue (ids::layerHighPass (i));
@@ -517,6 +521,7 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         LayeredSampleEngine::LayerParameters params;
         params.gain = pLayerGain[(size_t) layer]->load (relaxed);
         params.pan = pLayerPan[(size_t) layer]->load (relaxed);
+        params.width = pLayerWidth[(size_t) layer]->load (relaxed);
         params.pitchSemitones = pLayerPitch[(size_t) layer]->load (relaxed);
         params.delayShiftMs = pLayerDelay[(size_t) layer]->load (relaxed);
         params.highPassHz = pLayerHighPass[(size_t) layer]->load (relaxed);

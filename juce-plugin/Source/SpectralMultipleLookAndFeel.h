@@ -1,37 +1,51 @@
 #pragma once
 
 #include <juce_audio_utils/juce_audio_utils.h>
+#include "SnapbackTheme.h"
 #include <array>
 
+/**
+    UI colour aliases for the SNAPBACK flat near-black theme.
+    All values come from snap:: (SnapbackTheme.h) - do not define new raw
+    colours here; extend SnapbackTheme.h instead so the palette stays in one place.
+*/
 namespace wavelens::ui
 {
-    inline const juce::Colour kMainBg         { 0xff0b0a10 };
-    inline const juce::Colour kHeaderBg       { 0xff09090d };
-    inline const juce::Colour kPanelBg        { 0xff15141c };
-    inline const juce::Colour kControlBg      { 0xff1c1a24 };
-    inline const juce::Colour kHoverBg        { 0xff24212e };
-    inline const juce::Colour kBorder         { 0xff302c3a };
-    inline const juce::Colour kMainText       { 0xfff0edf5 };
-    inline const juce::Colour kSecondaryText  { 0xff9692a3 };
-    inline const juce::Colour kDisabledText   { 0xff55515f };
-    inline const juce::Colour kPurpleAccent   { 0xffb477ff };
-    inline const juce::Colour kSelectedAccent { 0xffa66bfa };
-    inline const juce::Colour kCyanAccent     { 0xff43d5d0 };
-    inline const juce::Colour kInputWave      { 0xffa2a0aa };
-    inline const juce::Colour kMasterWave     { 0xff48d6d0 };
-    inline const juce::Colour kWarningAmber   { 0xffffb86c };
+    inline const juce::Colour kMainBg         { snap::bg };
+    inline const juce::Colour kHeaderBg       { snap::panelHi };
+    inline const juce::Colour kPanelBg        { snap::panel };
+    inline const juce::Colour kControlBg      { snap::tile };
+    inline const juce::Colour kHoverBg        { juce::Colour (0xff23232b) };
+    inline const juce::Colour kBorder         { snap::border };
+    inline const juce::Colour kElevatedBg     { snap::panelHi };
+    inline const juce::Colour kInsetBg        { snap::inset };
+    inline const juce::Colour kMainText       { snap::text };
+    inline const juce::Colour kSecondaryText  { snap::muted };
+    inline const juce::Colour kDisabledText   { snap::disabled };
+    inline const juce::Colour kTileLabel      { snap::tileLabel };
+    inline const juce::Colour kOnAccentText   { snap::onAccent };
+    inline const juce::Colour kNeutralWave    { snap::wave };
+    inline const juce::Colour kGridLine       { snap::grid };
+    inline const juce::Colour kPurpleAccent   { snap::snap };     // generic accent: SNAPBACK blue
+    inline const juce::Colour kSelectedAccent { snap::snapHi };   // bright bank highlight
+    inline const juce::Colour kCyanAccent     { snap::snap };     // trigger indicator accent
+    inline const juce::Colour kInputWave      { snap::wave };
+    inline const juce::Colour kMasterWave     { snap::snapHi };
+    inline const juce::Colour kWarningAmber   { snap::warn };
 
     inline juce::Colour layerColour (int layer) noexcept
     {
-        static constexpr std::array<juce::uint32, 6> kPalette {
-            0xffa78bfa, // SNAPBACK 1
-            0xff8b5cf6, // SNAPBACK 2
-            0xff6366f1, // SNAPBACK 3
-            0xfff472b6, // TRANSIENT 1
-            0xffe879f9, // TRANSIENT 2
-            0xff22d3ee  // TRANSIENT 3
-        };
-        return juce::Colour (kPalette[(size_t) juce::jlimit (0, 5, layer)]);
+        return snap::signalColour (layer);
+    }
+
+    inline juce::Colour bankAccent (int layer) noexcept
+    {
+        return snap::bankAccent (layer);
+    }
+
+    inline juce::Colour bankAccentHi (int layer) noexcept
+    {
+        return snap::bankAccentHi (layer);
     }
 
     inline juce::String layerShortName (int layer)
@@ -82,4 +96,8 @@ public:
     juce::Font getComboBoxFont (juce::ComboBox&) override;
     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
     juce::Font getPopupMenuFont() override;
+
+private:
+    void drawTileSlider (juce::Graphics&, juce::Rectangle<float> tile, juce::Slider&,
+                         float proportion);
 };

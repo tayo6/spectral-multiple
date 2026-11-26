@@ -2,71 +2,89 @@
 
 namespace ui = wavelens::ui;
 
-void SampleGroupComponent::LayerPowerButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
+void SampleGroupComponent::BankPowerButton::paintButton (juce::Graphics& g,
+                                                          bool highlighted,
+                                                          bool down)
 {
-    auto b = getLocalBounds().toFloat().reduced (0.5f);
+    const auto b = getLocalBounds().toFloat().reduced (0.5f);
+    auto fill = bankEnabled ? accent.withAlpha (0.18f) : ui::kControlBg;
+    if (down) fill = fill.brighter (0.15f);
+    else if (highlighted) fill = fill.brighter (0.08f);
 
-    juce::Colour bg = layerOn ? accent.withAlpha (0.20f) : ui::kControlBg;
-    if (down)
-        bg = bg.brighter (0.16f);
-    else if (highlighted)
-        bg = layerOn ? accent.withAlpha (0.28f) : ui::kHoverBg;
-
-    g.setColour (bg);
+    g.setColour (fill);
     g.fillRoundedRectangle (b, 3.5f);
-    g.setColour (layerOn ? accent.withAlpha (0.85f) : ui::kBorder);
+    g.setColour (bankEnabled ? accent.withAlpha (0.9f) : ui::kBorder);
     g.drawRoundedRectangle (b, 3.5f, 1.0f);
 
     const float cx = b.getCentreX();
     const float cy = b.getCentreY();
-    const float r = 4.6f;
-
-    g.setColour (layerOn ? accent.brighter (0.22f) : ui::kDisabledText);
+    const float radius = juce::jmin (6.0f, b.getHeight() * 0.27f);
+    g.setColour (bankEnabled ? accent.brighter (0.25f) : ui::kDisabledText);
     juce::Path arc;
-    arc.addCentredArc (cx, cy + 0.5f, r, r, 0.0f, 0.55f, juce::MathConstants<float>::twoPi - 0.55f, true);
-    g.strokePath (arc, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-    g.drawLine (cx, cy - 5.5f, cx, cy - 0.8f, 1.5f);
+    arc.addCentredArc (cx, cy + 1.0f, radius, radius, 0.0f,
+                       0.48f, juce::MathConstants<float>::twoPi - 0.48f, true);
+    g.strokePath (arc, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved,
+                                             juce::PathStrokeType::rounded));
+    g.drawLine (cx, cy - radius - 2.0f, cx, cy - 0.5f, 1.5f);
 }
 
-//==============================================================================
 SampleGroupComponent::SampleGroupComponent (WaveLensProcessor& processor, int groupIndex)
     : proc (processor),
       group (juce::jlimit (0, 1, groupIndex)),
       baseLayer (group * 3),
       sampleBrowser (processor)
 {
-    const juce::String sectionName = (group == 0) ? "SNAPBACK" : "TRANSIENT";
-
     for (int i = 0; i < 3; ++i)
     {
         const int layerIdx = baseLayer + i;
         const auto col = ui::layerColour (layerIdx);
-
-        dots[(size_t) i] = std::make_unique<SampleSelectorDot> (
-            i, col, sectionName + " sample " + juce::String (i + 1));
-        dots[(size_t) i]->onSelect = [this] (int slot) { selectSlot (slot); };
-        addAndMakeVisible (*dots[(size_t) i]);
-
         editors[(size_t) i] = std::make_unique<LayerEnvelopeComponent> (proc, layerIdx, col);
         addChildComponent (*editors[(size_t) i]);
     }
 
-    enableBtn.onClick = [this]
+    bankPowerBtn.setAccentColour (ui::layerColour (baseLayer));
+    bankPowerBtn.onClick = [this]
     {
-        const int activeLayer = getSelectedLayer();
-        if (auto* param = dynamic_cast<juce::RangedAudioParameter*> (proc.apvts.getParameter (ids::layerMute (activeLayer))))
+        bool anyLayerEnabled = false;
+        for (int slot = 0; slot < 3; ++slot)
+            anyLayerEnabled = anyLayerEnabled
+                || proc.apvts.getRawParameterValue (ids::layerMute (baseLayer + slot))->load() < 0.5f;
+
+        // Clicking while any layer is active mutes the whole bank; clicking
+        // while all are muted enables all three layers again.
+        const float nextMute = anyLayerEnabled ? 1.0f : 0.0f;
+        for (int slot = 0; slot < 3; ++slot)
         {
-            const bool currentlyMuted = param->getValue() > 0.5f;
-            param->beginChangeGesture();
-            param->setValueNotifyingHost (currentlyMuted ? 0.0f : 1.0f);
-            param->endChangeGesture();
+            const auto parameterId = ids::layerMute (baseLayer + slot);
+            if (auto* parameter = dynamic_cast<juce::RangedAudioParameter*> (proc.apvts.getParameter (parameterId)))
+            {
+                parameter->beginChangeGesture();
+                parameter->setValueNotifyingHost (parameter->convertTo0to1 (nextMute));
+                parameter->endChangeGesture();
+            }
         }
         refreshState();
     };
-    addAndMakeVisible (enableBtn);
+    addAndMakeVisible (bankPowerBtn);
 
     soloBtn.setClickingTogglesState (true);
-    soloBtn.setTooltip ("Solo active layer");
+    soloBtn.setTooltip ("Solo all three layers in this bank");
+    soloBtn.getProperties().set ("accentColour", (juce::int64) ui::layerColour (baseLayer).getARGB());
+    soloBtn.onClick = [this]
+    {
+        const bool shouldSolo = soloBtn.getToggleState();
+        for (int slot = 0; slot < 3; ++slot)
+        {
+            const auto parameterId = ids::layerSolo (baseLayer + slot);
+            if (auto* parameter = dynamic_cast<juce::RangedAudioParameter*> (proc.apvts.getParameter (parameterId)))
+            {
+                parameter->beginChangeGesture();
+                parameter->setValueNotifyingHost (parameter->convertTo0to1 (shouldSolo ? 1.0f : 0.0f));
+                parameter->endChangeGesture();
+            }
+        }
+        refreshState();
+    };
     addAndMakeVisible (soloBtn);
 
     auditionBtn.setTooltip ("Audition active layer sample");
@@ -107,11 +125,9 @@ void SampleGroupComponent::selectSlot (int slotIndex)
 
     for (int i = 0; i < 3; ++i)
     {
-        dots[(size_t) i]->setSelected (i == selectedSlot);
         editors[(size_t) i]->setVisible (i == selectedSlot);
     }
 
-    rebindActiveLayerToggles();
     sampleBrowser.setLayer (activeLayer);
     refreshState();
 
@@ -121,33 +137,23 @@ void SampleGroupComponent::selectSlot (int slotIndex)
     repaint();
 }
 
-void SampleGroupComponent::rebindActiveLayerToggles()
-{
-    const int activeLayer = getSelectedLayer();
-    const auto accent = ui::layerColour (activeLayer);
-
-    soloAtt.reset();
-    soloBtn.getProperties().set ("accentColour", (juce::int64) accent.getARGB());
-    soloAtt = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
-        proc.apvts, ids::layerSolo (activeLayer), soloBtn);
-
-    enableBtn.setAccentColour (accent);
-}
-
 void SampleGroupComponent::refreshState()
 {
     const int mask = proc.connectedMask.load (std::memory_order_relaxed);
-    for (int i = 0; i < 3; ++i)
-    {
-        const int layerIdx = baseLayer + i;
-        dots[(size_t) i]->setHasSample ((mask & (1 << layerIdx)) != 0);
-    }
-
     const int activeLayer = getSelectedLayer();
     const bool loaded = (mask & (1 << activeLayer)) != 0;
-    const bool muted = proc.apvts.getRawParameterValue (ids::layerMute (activeLayer))->load() > 0.5f;
+    bool allBankSolo = true;
+    bool anyBankLayerEnabled = false;
+    for (int slot = 0; slot < 3; ++slot)
+    {
+        allBankSolo = allBankSolo
+            && proc.apvts.getRawParameterValue (ids::layerSolo (baseLayer + slot))->load() > 0.5f;
+        anyBankLayerEnabled = anyBankLayerEnabled
+            || proc.apvts.getRawParameterValue (ids::layerMute (baseLayer + slot))->load() < 0.5f;
+    }
+    soloBtn.setToggleState (allBankSolo, juce::dontSendNotification);
+    bankPowerBtn.setBankEnabled (anyBankLayerEnabled);
 
-    enableBtn.setLayerEnabled (! muted);
     auditionBtn.setEnabled (loaded);
     clearBtn.setEnabled (loaded);
     sampleBrowser.refreshDisplay();
@@ -240,9 +246,9 @@ void SampleGroupComponent::paint (juce::Graphics& g)
     g.setColour (activeAccent);
     g.fillRoundedRectangle (hdr.getX() + 6.0f, hdr.getCentreY() - 7.0f, 3.0f, 14.0f, 1.5f);
 
-    // Section heading immediately preceding the three selector circles
+    // Section heading (bank accent) immediately preceding the three selector circles
     const juce::String title = (group == 0) ? "SNAPBACK" : "TRANSIENT";
-    g.setColour (ui::kMainText);
+    g.setColour (snap::bankAccentHi (group * 3));
     g.setFont (juce::Font (13.5f, juce::Font::bold));
     g.drawText (title,
                 headerBounds.getX() + 14, headerBounds.getY(),
@@ -258,18 +264,12 @@ void SampleGroupComponent::resized()
     auto hdr = headerBounds.reduced (10, 7);
     hdr.removeFromLeft (98); // Section heading space ("SNAPBACK" / "TRANSIENT")
 
-    // Three small coloured circular selectors right beside the heading
-    for (int i = 0; i < 3; ++i)
-    {
-        dots[(size_t) i]->setBounds (hdr.removeFromLeft (20).withSizeKeepingCentre (18, 18));
-        hdr.removeFromLeft (2);
-    }
-
-    // Right side of section header: Enable, S, >, SampleBrowser, x
+    // Layer selection is handled by the six footer pads.
+    // Right side of section header: bank Solo, audition, sample browser and clear.
     clearBtn.setBounds (hdr.removeFromRight (22));
     hdr.removeFromRight (4);
 
-    const int browserW = juce::jlimit (100, 210, hdr.getWidth() - 114);
+    const int browserW = juce::jlimit (100, 250, hdr.getWidth() - 88);
     sampleBrowser.setBounds (hdr.removeFromRight (browserW));
     hdr.removeFromRight (6);
 
@@ -277,7 +277,7 @@ void SampleGroupComponent::resized()
     hdr.removeFromRight (4);
     soloBtn.setBounds (hdr.removeFromRight (22));
     hdr.removeFromRight (4);
-    enableBtn.setBounds (hdr.removeFromRight (24));
+    bankPowerBtn.setBounds (hdr.removeFromRight (22));
 
     editorBounds = area.reduced (8, 6);
     for (auto& ed : editors)

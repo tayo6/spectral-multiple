@@ -35,7 +35,9 @@ MasterWaveformComponent::MasterWaveformComponent (WaveLensProcessor& processor)
 
     lastObservedTriggerCount = proc.getTriggerCount();
 
-    masterBtn.setToggleState (true, juce::dontSendNotification);
+    // Master overlay (all six signals) starts INACTIVE by default: the plugin
+    // opens showing the selected SNAPBACK + TRANSIENT pair only.
+    masterBtn.setToggleState (false, juce::dontSendNotification);
     masterBtn.onClick = [this]
     {
         if (masterBtn.getToggleState())
@@ -224,7 +226,7 @@ void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
                                                       juce::Rectangle<float> plot,
                                                       juce::Rectangle<float> ruler)
 {
-    g.setColour (ui::kHeaderBg);
+    g.setColour (ui::kInsetBg);
     g.fillRect (ruler);
     g.setColour (ui::kBorder);
     g.drawHorizontalLine (juce::roundToInt (ruler.getBottom() - 0.5f), ruler.getX(), ruler.getRight());
@@ -256,7 +258,7 @@ void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
             const float norm = (float) i / (float) divisions;
             const float tx = normToX (norm, plotX, plotW);
             const bool major = (i % majorStep == 0);
-            g.setColour (major ? ui::kBorder.withAlpha (0.85f) : ui::kBorder.withAlpha (0.35f));
+            g.setColour (major ? ui::kGridLine.withAlpha (0.26f) : ui::kGridLine.withAlpha (0.11f));
             g.drawVerticalLine (juce::roundToInt (tx), plotY, plot.getBottom());
 
             if (major && tx > (float) masterBtn.getRight() + 14.0f)
@@ -290,7 +292,7 @@ void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
             const float norm = juce::jlimit (0.0f, 1.0f, (float) (ms / windowMs));
             const float tx = normToX (norm, plotX, plotW);
             const bool major = (i % 2 == 0);
-            g.setColour (major ? ui::kBorder.withAlpha (0.85f) : ui::kBorder.withAlpha (0.35f));
+            g.setColour (major ? ui::kGridLine.withAlpha (0.26f) : ui::kGridLine.withAlpha (0.11f));
             g.drawVerticalLine (juce::roundToInt (tx), plotY, plot.getBottom());
 
             if (major && tx > (float) masterBtn.getRight() + 14.0f)
@@ -305,10 +307,10 @@ void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
     // Subtle horizontal reference lines & central waveform baseline
     const float centre = plot.getCentreY();
     const float halfHeight = plotH * 0.43f;
-    g.setColour (ui::kBorder.withAlpha (0.35f));
+    g.setColour (ui::kGridLine.withAlpha (0.12f));
     g.drawHorizontalLine (juce::roundToInt (centre - halfHeight * 0.5f), plotX, plot.getRight());
     g.drawHorizontalLine (juce::roundToInt (centre + halfHeight * 0.5f), plotX, plot.getRight());
-    g.setColour (ui::kSecondaryText.withAlpha (0.32f));
+    g.setColour (ui::kGridLine.withAlpha (0.30f));
     g.drawHorizontalLine (juce::roundToInt (centre), plotX, plot.getRight());
 
     // Threshold horizontal guide when Audio / Both trigger mode is active
@@ -517,7 +519,7 @@ void MasterWaveformComponent::paintLiveOutputMonitor (juce::Graphics& g, juce::R
     const bool has = proc.hasData.load();
 
     // Subtle vertical grid + baseline
-    g.setColour (ui::kBorder.withAlpha (0.45f));
+    g.setColour (ui::kGridLine.withAlpha (0.16f));
     for (int i = 1; i < 8; ++i)
         g.drawVerticalLine (juce::roundToInt (area.getX() + area.getWidth() * (float) i / 8.0f),
                             area.getY(), area.getBottom());
