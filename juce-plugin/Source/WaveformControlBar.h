@@ -87,6 +87,13 @@ public:
     void resized() override;
 
 private:
+    class CollapseButton final : public juce::TextButton
+    {
+    public:
+        CollapseButton() : juce::TextButton ("COLLAPSE") {}
+        void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+    };
+
     class LimiterButton final : public juce::Button
     {
     public:
@@ -120,7 +127,7 @@ private:
     juce::Slider preLeadSlider;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> preLeadAtt;
 
-    juce::TextButton collapseTabBtn { "COLLAPSE" };
+    CollapseButton collapseTabBtn;
     juce::TextButton triggerSettingsBtn { "TRIG" };
     juce::TextButton fireTriggerBtn { ">" };
 
