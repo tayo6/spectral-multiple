@@ -1428,7 +1428,8 @@ void LayerEnvelopeComponent::applyDrag (juce::Point<float> position)
         || activeHandle == Handle::TensionDecay
         || activeHandle == Handle::TensionRelease)
     {
-        const float delta = (dragStartY - position.y) / 85.0f;
+        const float uiScale = (float) getHeight() / 152.0f;
+        const float delta = (dragStartY - position.y) / (85.0f * juce::jmax (0.1f, uiScale));
         const float nextTen = juce::jlimit (-1.0f, 1.0f, dragStartTension + delta);
         if (activeHandle == Handle::TensionAttack)
             setParameter (ids::layerAttackTension (layer), nextTen);
