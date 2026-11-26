@@ -415,6 +415,8 @@ void LayerEnvelopeComponent::commitNumericEditor (juce::TextEditor& editor,
         parameter->endChangeGesture();
     }
 
+    const int decimals = parameterId == ids::layerPitch (layer) ? 2 : 1;
+    editor.setText (juce::String (value * displayMultiplier, decimals), juce::dontSendNotification);
     repaint();
 }
 
