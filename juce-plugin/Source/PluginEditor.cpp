@@ -377,8 +377,8 @@ juce::Rectangle<int> WaveLensEditor::getLargeEditorSize() const
     if (display != nullptr)
         available = display->userArea;
 
-    // Leave a small margin for the DAW's own frame and desktop taskbar.
-    available = available.reduced (16, 24);
+    // Display::userArea already excludes operating-system desktop bars;
+    // use the full available work area for the Large preset.
     int width = available.getWidth();
     int height = juce::roundToInt ((float) width * 0.75f);
     if (height > available.getHeight())
