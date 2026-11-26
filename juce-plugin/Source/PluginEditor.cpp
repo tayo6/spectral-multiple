@@ -408,6 +408,7 @@ void WaveLensEditor::resized()
         // The draggable splitter overlays the top edge of the bank panels; it
         // does not steal vertical space from the SVG's 186 px bank region.
         resizeHandle.setBounds (0, bankTop - syRound (4.0f), getWidth(), syRound (8.0f));
+        resizeHandle.toFront (false);
 
         const int snapW = sxRound (399.0f);
         const int transientX = sxRound (401.0f);
