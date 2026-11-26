@@ -94,10 +94,10 @@ juce_add_plugin(WaveLens
     PLUGIN_CODE                 Wlns
     FORMATS                     VST3
     PRODUCT_NAME                "WaveLens"
-    IS_SYNTH                    FALSE
+    IS_SYNTH                    TRUE
     NEEDS_MIDI_INPUT            TRUE
     NEEDS_MIDI_OUTPUT           FALSE
-    VST3_CATEGORIES             Fx Analyzer
+    VST3_CATEGORIES             Instrument Sampler
     COPY_PLUGIN_AFTER_BUILD     FALSE)
 
 target_sources(WaveLens PRIVATE
