@@ -270,7 +270,7 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
     };
     resizeHandle.onDoubleClick = [this]
     {
-        waveformHeight = -1;
+        waveformHeightSvg = 298.0f; // Restore the SVG's 298 px visualizer region.
         resized();
     };
 
