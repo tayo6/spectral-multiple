@@ -129,13 +129,10 @@ void TriggerPanelComponent::timerCallback()
 void TriggerPanelComponent::paint (juce::Graphics& g)
 {
     auto b = getLocalBounds().toFloat();
-    // Only the lower 30 px strip has a toolbar background. The COLLAPSE
-    // trapezoid alone rises into the bottom 12 px of the visualizer.
-    b.removeFromTop ((float) juce::roundToInt ((float) getHeight() * 12.0f / 42.0f));
     g.setColour (ui::kPanelBg);
-    g.fillRect (b);
+    g.fillRoundedRectangle (b, 4.0f);
     g.setColour (ui::kBorder);
-    g.drawRect (b.reduced (0.5f), 1.0f);
+    g.drawRoundedRectangle (b.reduced (0.5f), 4.0f, 1.0f);
 
     g.setFont (juce::Font (9.5f, juce::Font::bold));
     g.setColour (ui::kSecondaryText);
@@ -403,10 +400,13 @@ void WaveformControlBar::timerCallback()
 void WaveformControlBar::paint (juce::Graphics& g)
 {
     auto b = getLocalBounds().toFloat();
+    // Keep the 30 px toolbar bar below the scope. Only the raised COLLAPSE
+    // tab occupies the 12 px overlap into the visualizer.
+    b.removeFromTop ((float) juce::roundToInt ((float) getHeight() * 12.0f / 42.0f));
     g.setColour (ui::kPanelBg);
-    g.fillRoundedRectangle (b, 4.0f);
+    g.fillRect (b);
     g.setColour (ui::kBorder);
-    g.drawRoundedRectangle (b.reduced (0.5f), 4.0f, 1.0f);
+    g.drawRect (b.reduced (0.5f), 1.0f);
 
     const float sy = (float) getHeight() / 42.0f;
     g.setFont (juce::Font (10.0f * sy, juce::Font::bold));
