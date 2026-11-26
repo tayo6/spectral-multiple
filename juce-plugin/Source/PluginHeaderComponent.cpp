@@ -375,8 +375,13 @@ void PluginHeaderComponent::paint (juce::Graphics& g)
     {
         g.setColour (ui::kWarningAmber.withAlpha (0.85f));
         g.setFont (juce::Font (10.0f * uiScale, juce::Font::bold));
-        g.drawText ("BYPASSED", juce::jmax (resetBtn.getRight() + 8, menuBtn.getRight() + 8),
-                    0, 68, getHeight(), juce::Justification::centredLeft);
+        const int labelX = juce::jmax (resetBtn.getRight() + juce::roundToInt (8.0f * uiScale),
+                                       menuBtn.getRight() + juce::roundToInt (8.0f * uiScale));
+        g.drawFittedText ("BYPASSED",
+                          juce::Rectangle<int> (labelX, 0,
+                                                juce::jmax (1, getWidth() - labelX - juce::roundToInt (8.0f * uiScale)),
+                                                getHeight()),
+                          juce::Justification::centredLeft, 1);
     }
 }
 
