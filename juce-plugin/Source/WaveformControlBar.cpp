@@ -448,11 +448,11 @@ void WaveformControlBar::resized()
 
     detailBtn.setBounds (px (568), py (12), px (62), py (25));
     zoomOutBtn.setButtonText ("Zoom");
-    zoomOutBtn.setBounds (px (646), py (12), px (32), py (25));
-    zoomLevelBtn.setBounds (px (680), py (12), px (34), py (25));
-    zoomInBtn.setBounds (px (716), py (12), px (18), py (25));
+    zoomOutBtn.setBounds (px (646), py (12), px (30), py (25));
+    zoomLevelBtn.setBounds (px (678), py (12), px (30), py (25));
+    zoomInBtn.setBounds (px (710), py (12), px (12), py (25));
     outputBtn.setButtonText ("Output");
-    outputBtn.setBounds (px (718), py (12), px (40), py (25));
+    outputBtn.setBounds (px (724), py (12), px (34), py (25));
 
     triggerSettingsBtn.setBounds ({});
     fireTriggerBtn.setBounds ({});
