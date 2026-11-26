@@ -9,6 +9,52 @@
     layer. The 11 parameter controls are compact tiles rendered by
     SpectralMultipleLookAndFeel (see the "isTile" slider property).
 */
+/**
+    Combined front/back sample trim control. One shared range track has two
+    independently editable endpoints, each with a numeric percentage field.
+    The existing layerTrimStart/layerTrimEnd APVTS parameters remain unchanged.
+*/
+class DualTrimRangeComponent final : public juce::Component
+{
+public:
+    DualTrimRangeComponent (WaveLensProcessor&, int layerIndex, juce::Colour accentColour);
+
+    void paint (juce::Graphics&) override;
+    void resized() override;
+    juce::Rectangle<int> getSampleHeaderBounds() const noexcept;
+    void mouseDown (const juce::MouseEvent&) override;
+    void mouseDrag (const juce::MouseEvent&) override;
+    void mouseUp (const juce::MouseEvent&) override;
+
+private:
+    enum class ActiveThumb { None, Start, End };
+
+    void refreshEditors();
+    void commitEditor (bool isStart);
+    void setTrimValue (bool isStart, float value, bool sendGesture);
+    void beginThumbGesture();
+    void endThumbGesture();
+    juce::Rectangle<float> getTrackBounds() const noexcept;
+
+    WaveLensProcessor& processor;
+    const int layer;
+    const juce::Colour accent;
+    std::atomic<float>* startValue = nullptr;
+    std::atomic<float>* endValue = nullptr;
+    juce::RangedAudioParameter* startParameter = nullptr;
+    juce::RangedAudioParameter* endParameter = nullptr;
+
+    juce::TextEditor startEditor;
+    juce::TextEditor endEditor;
+    juce::Rectangle<float> trackBounds;
+    ActiveThumb activeThumb = ActiveThumb::None;
+    float lastStart = -1.0f;
+    float lastEnd = -1.0f;
+    bool gestureActive = false;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DualTrimRangeComponent)
+};
+
 class LayerEnvelopeComponent final : public juce::Component, private juce::Timer
 {
 public:
@@ -112,8 +158,9 @@ private:
     juce::TextButton focusStartBtn, focusEndBtn, zoomFitBtn, zoomOutBtn, zoomResetBtn, zoomInBtn;
     juce::ComboBox attackCurveBox, decayCurveBox, releaseCurveBox;
     juce::Slider gainSlider, delaySlider, pitchSlider, panSlider, pogoSlider, widthSlider;
-    juce::Slider fadeInSlider, fadeOutSlider, trimStartSlider, trimEndSlider;
+    juce::Slider fadeInSlider, fadeOutSlider;
     juce::Slider hpSlider, lpSlider;
+    std::unique_ptr<DualTrimRangeComponent> trimRange;
 
     using ButtonAtt = juce::AudioProcessorValueTreeState::ButtonAttachment;
     using ComboAtt  = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
@@ -121,7 +168,7 @@ private:
     std::unique_ptr<ButtonAtt> reverseAttachment, envEnableAttachment;
     std::unique_ptr<ComboAtt> attackCurveAttachment, decayCurveAttachment, releaseCurveAttachment;
     std::unique_ptr<SliderAtt> gainAttachment, delayAttachment, pitchAttachment, panAttachment, pogoAttachment, widthAttachment;
-    std::unique_ptr<SliderAtt> fadeInAttachment, fadeOutAttachment, trimStartAttachment, trimEndAttachment;
+    std::unique_ptr<SliderAtt> fadeInAttachment, fadeOutAttachment;
     std::unique_ptr<SliderAtt> hpAttachment, lpAttachment;
 
     juce::Rectangle<int> controlStripBounds;
