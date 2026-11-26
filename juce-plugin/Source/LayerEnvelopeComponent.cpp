@@ -313,12 +313,13 @@ void PhaseInvertPlaceholder::paintButton (juce::Graphics& g, bool highlighted, b
 {
     juce::ignoreUnused (highlighted, down);
     const auto b = getLocalBounds().toFloat();
+    const float uiScale = (float) getHeight() / 18.0f;
     const float cx = b.getCentreX();
     const float cy = b.getCentreY();
-    const float r = juce::jmin (3.5f, b.getHeight() * 0.28f);
+    const float r = juce::jmin (3.5f * uiScale, b.getHeight() * 0.28f);
     g.setColour (ui::kDisabledText);
-    g.drawEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f, 1.0f);
-    g.drawLine (cx - r, cy + r, cx + r, cy - r, 1.0f);
+    g.drawEllipse (cx - r, cy - r, r * 2.0f, r * 2.0f, 1.0f * uiScale);
+    g.drawLine (cx - r, cy + r, cx + r, cy - r, 1.0f * uiScale);
 }
 
 //==============================================================================
