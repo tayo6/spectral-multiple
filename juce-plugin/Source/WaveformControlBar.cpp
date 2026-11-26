@@ -218,7 +218,7 @@ WaveformControlBar::WaveformControlBar (WaveLensProcessor& processor)
     preLeadSlider.setColour (juce::Slider::trackColourId, ui::kPurpleAccent);
     preLeadSlider.textFromValueFunction = [] (double v) { return juce::String (v, 1) + " ms"; };
     preLeadSlider.setTooltip ("PRE lead offset before dry transient (0 ms to 100 ms)");
-    addAndMakeVisible (preLeadSlider);
+    addChildComponent (preLeadSlider);
     preLeadAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, ids::preRollMs, preLeadSlider);
     preLeadSlider.updateText();
 
@@ -243,12 +243,12 @@ WaveformControlBar::WaveformControlBar (WaveLensProcessor& processor)
         if (onTriggerPanelToggled)
             onTriggerPanelToggled (triggerSettingsBtn.getToggleState());
     };
-    addAndMakeVisible (triggerSettingsBtn);
+    addChildComponent (triggerSettingsBtn);
 
     fireTriggerBtn.setTooltip ("Fire manual trigger audition");
     fireTriggerBtn.getProperties().set ("accentColour", (juce::int64) ui::kCyanAccent.getARGB());
     fireTriggerBtn.onClick = [this] { proc.requestTrigger(); };
-    addAndMakeVisible (fireTriggerBtn);
+    addChildComponent (fireTriggerBtn);
 
     auto setupViewBtn = [this] (juce::TextButton& b, const juce::String& text,
                                 juce::Colour accent, const juce::String& tip)
@@ -260,7 +260,9 @@ WaveformControlBar::WaveformControlBar (WaveLensProcessor& processor)
         addAndMakeVisible (b);
     };
     setupViewBtn (gridBtn, "GRID", ui::kPurpleAccent, "Show beat grid ruler");
+    gridBtn.setVisible (false);
     setupViewBtn (secondsBtn, "SECONDS", snap::tr, "Show milliseconds ruler");
+    secondsBtn.setVisible (false);
     gridBtn.onClick = [this]
     {
         setGridMode (true);
@@ -373,45 +375,33 @@ void WaveformControlBar::paint (juce::Graphics& g)
                 limiterBtn.getRight() + 6, 0, 64, getHeight(),
                 juce::Justification::centredLeft);
 
-    g.setColour (ui::layerColour (0));
-    g.setFont (juce::Font (10.0f, juce::Font::bold));
-    g.drawText ("PRE", preLeadSlider.getX() - 28, 0, 24, getHeight(), juce::Justification::centredRight);
+    g.setColour (ui::kSecondaryText);
+    g.setFont (juce::Font (9.5f));
+    g.drawText ("Limiter", limiterBtn.getRight() + 4, 0, 48, getHeight(),
+                juce::Justification::centredLeft);
 }
 
 void WaveformControlBar::resized()
 {
-    auto r = getLocalBounds().reduced (8, 4);
+    const float sx = (float) getWidth() / 800.0f;
+    const float sy = (float) getHeight() / 42.0f;
+    auto px = [sx] (float v) { return juce::roundToInt (v * sx); };
+    auto py = [sy] (float v) { return juce::roundToInt (v * sy); };
 
-    limiterBtn.setBounds (r.removeFromLeft (68));
-    r.removeFromLeft (72); // peak ceiling dB text
-    r.removeFromLeft (28); // PRE label
-    const int preW = juce::jlimit (96, 154, getWidth() / 8);
-    preLeadSlider.setBounds (r.removeFromLeft (preW));
+    limiterBtn.setButtonText ("LIMITER");
+    limiterBtn.setBounds (px (18), py (14), px (64), py (22));
+    preLeadSlider.setBounds ({});
 
-    // Right stack: OUTPUT | zoom in / level / out | DETAIL | SECONDS | GRID
-    outputBtn.setBounds (r.removeFromRight (58));
-    r.removeFromRight (6);
-    zoomInBtn.setBounds (r.removeFromRight (24));
-    r.removeFromRight (2);
-    zoomLevelBtn.setBounds (r.removeFromRight (42));
-    r.removeFromRight (2);
-    zoomOutBtn.setBounds (r.removeFromRight (24));
-    r.removeFromRight (6);
-    detailBtn.setBounds (r.removeFromRight (72));
-    r.removeFromRight (6);
-    secondsBtn.setBounds (r.removeFromRight (62));
-    r.removeFromRight (2);
-    gridBtn.setBounds (r.removeFromRight (46));
+    collapseTabBtn.setBounds (px (338), 0, px (124), getHeight());
 
-    // Centre trapezoid COLLAPSE tab + independent Trigger Settings + manual fire.
-    const int collapseW = 94;
-    const int settingsW = 48;
-    const int fireW = 26;
-    const int totalCentreW = collapseW + 4 + settingsW + 4 + fireW;
-    const int startX = juce::jmax (preLeadSlider.getRight() + 8,
-                                   juce::jmin (gridBtn.getX() - totalCentreW - 8,
-                                               getWidth() / 2 - totalCentreW / 2));
-    collapseTabBtn.setBounds (startX, r.getY() - 2, collapseW, r.getHeight() + 4);
-    triggerSettingsBtn.setBounds (collapseTabBtn.getRight() + 4, r.getY(), settingsW, r.getHeight());
-    fireTriggerBtn.setBounds (triggerSettingsBtn.getRight() + 4, r.getY(), fireW, r.getHeight());
+    detailBtn.setBounds (px (568), py (9), px (62), py (25));
+    zoomOutBtn.setBounds (px (646), py (9), px (20), py (25));
+    zoomLevelBtn.setBounds (px (668), py (9), px (42), py (25));
+    zoomInBtn.setBounds (px (712), py (9), px (18), py (25));
+    outputBtn.setBounds (px (738), py (9), px (50), py (25));
+
+    triggerSettingsBtn.setBounds ({});
+    fireTriggerBtn.setBounds ({});
+    gridBtn.setBounds ({});
+    secondsBtn.setBounds ({});
 }
