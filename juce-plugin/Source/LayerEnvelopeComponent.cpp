@@ -669,7 +669,6 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
     const auto bottomReadout = svg (16, 528, 226, 18);
     const auto labelFont = juce::Font (juce::jlimit (8.5f, 10.5f, 10.5f));
 
-    pitchReadoutBounds = svg (208.0f, 528.0f, 32.0f, 18.0f).toNearestInt();
     const auto attackPct = juce::String (juce::roundToInt (juce::jlimit (0.0f, 1.0f,
                     pAttack->load() / juce::jmax (1.0f, pAttack->load() + pHold->load() + pDecay->load())) * 100.0f));
     const auto decayPct = juce::String (juce::roundToInt (juce::jlimit (0.0f, 1.0f,
@@ -774,6 +773,7 @@ void LayerEnvelopeComponent::resized()
 
     // ---- sample box content (box x 16..242, y 400..552) ----
     sampleHeaderBounds = at (16, 400, 226, 20);
+    pitchReadoutBounds = at (208, 528, 32, 18);
     auto headerBar = sampleHeaderBounds.reduced (3, 1);
     // REV sits next to ENV; the phase invert icon lives on the Shift card
     // per the SVG. Both are 30px text pills with a ~12px gap between them.
