@@ -64,7 +64,8 @@ DualTrimRangeComponent::DualTrimRangeComponent (WaveLensProcessor& p,
         editor.setColour (juce::TextEditor::outlineColourId, ui::kBorder);
         editor.setColour (juce::TextEditor::focusedOutlineColourId, accent);
         editor.setColour (juce::TextEditor::highlightColourId, accent.withAlpha (0.25f));
-        editor.onReturnKey = [&editor] { editor.giveAwayKeyboardFocus(); };
+        auto* editorPtr = &editor;
+        editor.onReturnKey = [editorPtr] { editorPtr->giveAwayKeyboardFocus(); };
         editor.onFocusLost = [this, isStart] { commitEditor (isStart); };
         addAndMakeVisible (editor);
     };
@@ -199,9 +200,9 @@ void DualTrimRangeComponent::paint (juce::Graphics& g)
     g.setFont (juce::Font (8.5f, juce::Font::bold));
     g.setColour (ui::kSecondaryText);
     const float halfW = bounds.getWidth() * 0.5f;
-    g.drawText ("STR TRIM", bounds.getX() + 4.0f, bounds.getY() + 1.0f,
+    g.drawText ("Str Trim", bounds.getX() + 4.0f, bounds.getY() + 1.0f,
                 halfW - 5.0f, 9.0f, juce::Justification::centredLeft);
-    g.drawText ("BK TRIM", bounds.getCentreX() + 1.0f, bounds.getY() + 1.0f,
+    g.drawText ("Bk Trim", bounds.getCentreX() + 1.0f, bounds.getY() + 1.0f,
                 halfW - 5.0f, 9.0f, juce::Justification::centredRight);
 
     if (startValue == nullptr || endValue == nullptr || trackBounds.isEmpty())
