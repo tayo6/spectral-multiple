@@ -59,7 +59,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
     layout.add (std::make_unique<AudioParameterFloat> (PID { ids::timeMs, 1 }, "Window (ms)", timeRange, 200.0f,
                                                        AudioParameterFloatAttributes().withLabel ("ms")));
 
-    layout.add (std::make_unique<AudioParameterChoice> (PID { ids::input, 1 },    "Input",
+    layout.add (std::make_unique<AudioParameterChoice> (PID { ids::input, 1 },    "Meter channel",
                                                         StringArray { "Peak", "L", "R", "M", "S" }, 0));
 
     layout.add (std::make_unique<AudioParameterFloat> (PID { ids::gain, 1 }, "Gain",
@@ -85,7 +85,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
                                                           "Show signal " + String (i + 1), true));
 
     layout.add (std::make_unique<AudioParameterChoice> (PID { ids::triggerMode, 1 },
-                                                        "Trigger mode", StringArray { "Audio", "MIDI", "Both" }, 2));
+                                                        "Trigger mode", StringArray { "Audio", "MIDI", "Both" }, 1));
     layout.add (std::make_unique<AudioParameterFloat> (PID { ids::threshold, 1 }, "Trigger threshold",
                                                        NormalisableRange<float> (0.001f, 1.0f, 0.001f), 0.03f));
     layout.add (std::make_unique<AudioParameterFloat> (PID { ids::preRollMs, 1 }, "PRE lead",
@@ -170,7 +170,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
 juce::AudioProcessor::BusesProperties WaveLensProcessor::makeBuses()
 {
     auto props = BusesProperties()
-                     .withInput  ("Trigger Input", juce::AudioChannelSet::stereo(), true)
+                     // MIDI is the primary instrument trigger. Keep an optional
+                     // audio-trigger input for hosts that support it, but do not
+                     // require an audio connection to play the instrument.
+                     .withInput  ("Trigger Input", juce::AudioChannelSet::stereo(), false)
                      .withOutput ("Master",       juce::AudioChannelSet::stereo(), true);
 
     static const char* names[kMaxSignals] = {
@@ -244,7 +247,11 @@ bool WaveLensProcessor::isBusesLayoutSupported (const BusesLayout& layouts) cons
     const auto mainIn  = layouts.getMainInputChannelSet();
     const auto mainOut = layouts.getMainOutputChannelSet();
 
-    if (mainIn != mainOut)
+    // The trigger input is optional and disabled for normal MIDI-instrument use.
+    // Some hosts may enable it to use WaveLens as an audio-triggered instrument.
+    if (! mainIn.isDisabled()
+        && mainIn != juce::AudioChannelSet::mono()
+        && mainIn != juce::AudioChannelSet::stereo())
         return false;
 
     if (mainOut != juce::AudioChannelSet::mono() && mainOut != juce::AudioChannelSet::stereo())
@@ -500,7 +507,9 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     auto mainOutput = getBusBuffer (buffer, false, 0);
     const int inputChannels = mainInput.getNumChannels();
 
-    if (inputChannels == 0 || totalSamples == 0)
+    // A MIDI instrument must render even when its optional audio-trigger bus
+    // is disabled (the normal Channel Rack / instrument configuration).
+    if (totalSamples <= 0 || mainOutput.getNumChannels() <= 0)
         return;
 
     std::array<juce::AudioBuffer<float>, kMaxSignals> layerOutputBuffers;
@@ -707,11 +716,15 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     {
         const int chunkSamples = juce::jmin (maxChunk, totalSamples - chunkStart);
 
-        triggerBuffer.copyFrom (0, 0, mainInput, 0, chunkStart, chunkSamples);
-        if (inputChannels > 1)
-            triggerBuffer.copyFrom (1, 0, mainInput, 1, chunkStart, chunkSamples);
-        else
-            triggerBuffer.copyFrom (1, 0, mainInput, 0, chunkStart, chunkSamples);
+        triggerBuffer.clear (0, chunkSamples);
+        if (inputChannels > 0)
+        {
+            triggerBuffer.copyFrom (0, 0, mainInput, 0, chunkStart, chunkSamples);
+            if (inputChannels > 1)
+                triggerBuffer.copyFrom (1, 0, mainInput, 1, chunkStart, chunkSamples);
+            else
+                triggerBuffer.copyFrom (1, 0, mainInput, 0, chunkStart, chunkSamples);
+        }
 
         float* trigPtrs[2] = { triggerBuffer.getWritePointer (0), triggerBuffer.getWritePointer (1) };
         juce::AudioBuffer<float> triggerSlice (trigPtrs, 2, chunkSamples);
@@ -757,10 +770,12 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         for (int s = 0; s < chunkSamples; ++s)
         {
             const int i = chunkStart + s;
-            const float inputL = mainInput.getSample (0, i);
-            const float inputR = inputChannels > 1 ? mainInput.getSample (1, i) : inputL;
+            // Meter the instrument's rendered output. With no connected
+            // trigger input, metering the input bus would remain permanently silent.
+            const float outputL = mainOutput.getSample (0, i);
+            const float outputR = mainOutChannels > 1 ? mainOutput.getSample (1, i) : outputL;
 
-            const float inputLevel = pickSample (inputL, inputR, inputMode);
+            const float inputLevel = pickSample (outputL, outputR, inputMode);
             peakEnv = juce::jmax (std::abs (inputLevel), peakEnv * peakDecay);
             meanSquare += msAlpha * (inputLevel * inputLevel - meanSquare);
 
