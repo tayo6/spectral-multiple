@@ -396,7 +396,7 @@ void WaveLensEditor::resized()
     if (triggerPanelOpen)
     {
         const int panelH = syRound (38.0f);
-        const int panelW = sxRound (620.0f);
+        const int panelW = sxRound (720.0f);
         triggerPanel.setBounds ((getWidth() - panelW) / 2,
                                 juce::jmax (visualizerY + syRound (8.0f), toolbarY - panelH - syRound (6.0f)),
                                 panelW, panelH);
