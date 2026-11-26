@@ -50,6 +50,7 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DualTrimRangeComponent)
 };
 
+/** Waveform-backed sample editor with draggable envelope and SVG-positioned controls. */
 class LayerEnvelopeComponent final : public juce::Component, private juce::Timer
 {
 public:
