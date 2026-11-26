@@ -135,13 +135,9 @@ void TriggerPanelComponent::paint (juce::Graphics& g)
     g.drawRoundedRectangle (b.reduced (0.5f), 4.0f, 1.0f);
 
     const float uiScale = (float) getWidth() / 720.0f;
-    g.setFont (juce::Font (9.5f * uiScale, juce::Font::bold));
-    g.setColour (ui::kSecondaryText);
-    g.drawText ("THRESH", thresholdSlider.getX() - 48, 0, 44, getHeight(), juce::Justification::centredRight);
-    g.drawText ("MODE", modeBox.getX() - 36, 0, 32, getHeight(), juce::Justification::centredRight);
-    g.drawText ("SPAN", spanBox.getX() - 36, 0, 32, getHeight(), juce::Justification::centredRight);
-    g.drawText ("IN FILTER", inputFilter.getX() - 56, 0, 52, getHeight(), juce::Justification::centredRight);
-    g.drawText ("PRE", preLeadSlider.getX() - 30, 0, 26, getHeight(), juce::Justification::centredRight);
+    // Controls identify themselves through compact values and tooltips; avoid
+    // separate labels that collide when the drawer is hosted at compact widths.
+    juce::ignoreUnused (uiScale);
 
     // Trigger LED indicator on far left
     const float ledX = 16.0f * uiScale;
@@ -162,37 +158,54 @@ void TriggerPanelComponent::paint (juce::Graphics& g)
 
 void TriggerPanelComponent::resized()
 {
-    auto r = getLocalBounds().reduced (10, 6);
-    r.removeFromLeft (18); // LED space
+    // Dense settings drawer uses a compact measured row. All widths are
+    // proportional to the 720 x 38 design row, so labels never overlap controls.
+    const float sx = (float) getWidth() / 720.0f;
+    const float sy = (float) getHeight() / 38.0f;
+    auto px = [sx] (float v) { return juce::roundToInt (v * sx); };
+    auto py = [sy] (float v) { return juce::roundToInt (v * sy); };
 
-    r.removeFromLeft (48); // THRESH label
-    thresholdSlider.setBounds (r.removeFromLeft (152));
-    r.removeFromLeft (44); // MODE label
-    modeBox.setBounds (r.removeFromLeft (84));
-    r.removeFromLeft (12);
+    auto r = getLocalBounds().reduced (px (12.0f), py (4.0f));
+    const int h = juce::jmax (1, r.getHeight());
+    const int gap = px (3.0f);
 
-    const int segW = 64;
-    drumsBtn.setBounds (r.removeFromLeft (segW));
-    r.removeFromLeft (3);
-    generalBtn.setBounds (r.removeFromLeft (segW));
-    r.removeFromLeft (3);
-    complexBtn.setBounds (r.removeFromLeft (segW));
+    // LED, threshold, trigger mode, algorithm, view/span, PRE lead, filter, listen.
+    r.removeFromLeft (px (12.0f));
+    r.removeFromLeft (gap);
+    thresholdSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false,
+                                     px (38.0f), py (20.0f));
+    thresholdSlider.setBounds (r.removeFromLeft (px (100.0f)));
+    r.removeFromLeft (gap);
+    modeBox.setBounds (r.removeFromLeft (px (62.0f)));
+    r.removeFromLeft (gap);
 
-    listenBtn.setBounds (r.removeFromRight (84));
-    r.removeFromRight (6);
-    spanBox.setBounds (r.removeFromRight (76));
-    r.removeFromRight (40); // SPAN label
-    viewBox.setBounds (r.removeFromRight (92));
-    r.removeFromRight (12);
+    const int segmentW = px (42.0f);
+    drumsBtn.setBounds (r.removeFromLeft (segmentW));
+    r.removeFromLeft (px (2.0f));
+    generalBtn.setBounds (r.removeFromLeft (segmentW));
+    r.removeFromLeft (px (2.0f));
+    complexBtn.setBounds (r.removeFromLeft (segmentW));
+    r.removeFromLeft (gap);
 
-    // PRE lead remains editable from the optional Trigger Settings drawer,
-    // while the default toolbar stays faithful to the supplied SVG.
-    preLeadSlider.setBounds (r.removeFromRight (112));
-    r.removeFromRight (8);
+    viewBox.setBounds (r.removeFromLeft (px (64.0f)));
+    r.removeFromLeft (gap);
+    spanBox.setBounds (r.removeFromLeft (px (56.0f)));
+    r.removeFromLeft (gap);
 
-    const int filterW = juce::jlimit (120, 220, r.getWidth() - 60);
-    if (filterW >= 120)
-        inputFilter.setBounds (r.removeFromRight (filterW));
+    preLeadSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false,
+                                   px (34.0f), py (20.0f));
+    preLeadSlider.setBounds (r.removeFromLeft (px (88.0f)));
+    r.removeFromLeft (gap);
+
+    inputFilter.setBounds (r.removeFromLeft (juce::jmin (r.getWidth(), px (94.0f))));
+    r.removeFromLeft (gap);
+    listenBtn.setBounds (r.removeFromRight (juce::jmin (r.getWidth(), px (46.0f))));
+
+    listenBtn.setTooltip ("Listen to the selected input filter range");
+    thresholdSlider.setTooltip ("Trigger threshold in dB");
+    modeBox.setTooltip ("Audio, MIDI or combined trigger mode");
+    viewBox.setTooltip ("Trigger detector view");
+    spanBox.setTooltip ("Timeline bar span");
 }
 
 //==============================================================================
