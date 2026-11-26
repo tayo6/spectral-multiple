@@ -43,7 +43,7 @@ private:
 };
 
 /** Draggable divider between the scope/control area and the sample banks. */
-class WaveformResizeHandle final : public juce::Component
+class WaveformResizeHandle final : public juce::Component, public juce::TooltipClient
 {
 public:
     std::function<void()> onDragStarted;
@@ -52,6 +52,7 @@ public:
 
     WaveformResizeHandle();
 
+    juce::String getTooltip() override { return "Drag to resize the waveform and sample editors; double-click to reset"; }
     void paint (juce::Graphics&) override;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
