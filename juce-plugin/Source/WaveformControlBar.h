@@ -87,6 +87,18 @@ public:
     void resized() override;
 
 private:
+    class LimiterButton final : public juce::Button
+    {
+    public:
+        LimiterButton() : juce::Button ("Limiter")
+        {
+            setClickingTogglesState (true);
+            setTooltip ("Limiter protection display toggle");
+            setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        }
+        void paintButton (juce::Graphics&, bool highlighted, bool down) override;
+    };
+
     class MagnifierButton final : public juce::Button
     {
     public:
@@ -104,7 +116,7 @@ private:
 
     WaveLensProcessor& proc;
 
-    juce::TextButton limiterBtn { "LIMITER" };
+    LimiterButton limiterBtn;
     juce::Slider preLeadSlider;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> preLeadAtt;
 
