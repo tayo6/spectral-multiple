@@ -7,28 +7,31 @@ void SampleGroupComponent::BankSoloButton::paintButton (juce::Graphics& g,
                                                          bool down)
 {
     const auto b = getLocalBounds().toFloat().reduced (0.5f);
+    const float uiScale = (float) getHeight() / 18.0f;
     const bool active = getToggleState();
     auto fill = active ? accent.withAlpha (0.18f) : ui::kControlBg;
     if (down) fill = fill.brighter (0.15f);
     else if (highlighted) fill = fill.brighter (0.08f);
 
     g.setColour (fill);
-    g.fillRoundedRectangle (b, 3.5f);
+    g.fillRoundedRectangle (b, 3.5f * uiScale);
     g.setColour (active ? accent.withAlpha (0.9f) : ui::kBorder);
-    g.drawRoundedRectangle (b, 3.5f, 1.0f);
+    g.drawRoundedRectangle (b, 3.5f * uiScale, 1.0f * uiScale);
 
     const float cx = b.getCentreX();
-    const float cy = b.getCentreY() + 1.0f;
-    const float radius = juce::jmin (6.0f, b.getHeight() * 0.30f);
+    const float cy = b.getCentreY() + 1.0f * uiScale;
+    const float radius = juce::jmin (6.0f * uiScale, b.getHeight() * 0.30f);
     juce::Path band;
     band.addCentredArc (cx, cy, radius, radius, 0.0f,
                         juce::MathConstants<float>::pi,
                         juce::MathConstants<float>::twoPi, true);
     g.setColour (active ? accent.brighter (0.2f) : ui::kSecondaryText);
-    g.strokePath (band, juce::PathStrokeType (1.4f, juce::PathStrokeType::curved,
+    g.strokePath (band, juce::PathStrokeType (1.4f * uiScale, juce::PathStrokeType::curved,
                                               juce::PathStrokeType::rounded));
-    g.fillRoundedRectangle (cx - radius - 1.0f, cy - 1.0f, 2.2f, 5.0f, 1.0f);
-    g.fillRoundedRectangle (cx + radius - 1.2f, cy - 1.0f, 2.2f, 5.0f, 1.0f);
+    g.fillRoundedRectangle (cx - radius - 1.0f * uiScale, cy - 1.0f * uiScale,
+                            2.2f * uiScale, 5.0f * uiScale, 1.0f * uiScale);
+    g.fillRoundedRectangle (cx + radius - 1.2f * uiScale, cy - 1.0f * uiScale,
+                            2.2f * uiScale, 5.0f * uiScale, 1.0f * uiScale);
 }
 
 void SampleGroupComponent::BankPowerButton::paintButton (juce::Graphics& g,
@@ -36,25 +39,27 @@ void SampleGroupComponent::BankPowerButton::paintButton (juce::Graphics& g,
                                                           bool down)
 {
     const auto b = getLocalBounds().toFloat().reduced (0.5f);
+    const float uiScale = (float) getHeight() / 18.0f;
     auto fill = bankEnabled ? accent.withAlpha (0.18f) : ui::kControlBg;
     if (down) fill = fill.brighter (0.15f);
     else if (highlighted) fill = fill.brighter (0.08f);
 
     g.setColour (fill);
-    g.fillRoundedRectangle (b, 3.5f);
+    g.fillRoundedRectangle (b, 3.5f * uiScale);
     g.setColour (bankEnabled ? accent.withAlpha (0.9f) : ui::kBorder);
-    g.drawRoundedRectangle (b, 3.5f, 1.0f);
+    g.drawRoundedRectangle (b, 3.5f * uiScale, 1.0f * uiScale);
 
     const float cx = b.getCentreX();
     const float cy = b.getCentreY();
-    const float radius = juce::jmin (6.0f, b.getHeight() * 0.27f);
+    const float radius = juce::jmin (6.0f * uiScale, b.getHeight() * 0.27f);
     g.setColour (bankEnabled ? accent.brighter (0.25f) : ui::kDisabledText);
     juce::Path arc;
-    arc.addCentredArc (cx, cy + 1.0f, radius, radius, 0.0f,
+    arc.addCentredArc (cx, cy + 1.0f * uiScale, radius, radius, 0.0f,
                        0.48f, juce::MathConstants<float>::twoPi - 0.48f, true);
-    g.strokePath (arc, juce::PathStrokeType (1.5f, juce::PathStrokeType::curved,
+    g.strokePath (arc, juce::PathStrokeType (1.5f * uiScale, juce::PathStrokeType::curved,
                                              juce::PathStrokeType::rounded));
-    g.drawLine (cx, cy - radius - 2.0f, cx, cy - 0.5f, 1.5f);
+    g.drawLine (cx, cy - radius - 2.0f * uiScale,
+                cx, cy - 0.5f * uiScale, 1.5f * uiScale);
 }
 
 SampleGroupComponent::SampleGroupComponent (WaveLensProcessor& processor, int groupIndex)
