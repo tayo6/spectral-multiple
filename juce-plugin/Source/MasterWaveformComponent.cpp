@@ -199,8 +199,9 @@ void MasterWaveformComponent::mouseDrag (const juce::MouseEvent& e)
 void MasterWaveformComponent::paint (juce::Graphics& g)
 {
     auto bounds = getLocalBounds().toFloat();
+    // SVG [02] visualizer: paper background inside a wire-frame rectangle
     g.setColour (ui::kMainBg);
-    g.fillRoundedRectangle (bounds, 4.0f);
+    g.fillRect (bounds);
 
     if (outputMonitorMode)
     {
@@ -212,27 +213,17 @@ void MasterWaveformComponent::paint (juce::Graphics& g)
     }
     else
     {
-        const float uiScale = (float) getWidth() / 800.0f;
-        const float kRulerH = 22.0f * uiScale;
-        auto inner = bounds.reduced (1.0f * uiScale);
-        auto ruler = inner.removeFromTop (kRulerH);
-        paintTimelineWaveforms (g, inner, ruler);
+        paintTimelineWaveforms (g, bounds, bounds);
     }
-
-    g.setColour (ui::kBorder);
-    g.drawRoundedRectangle (bounds.reduced (0.5f), 4.0f, 1.0f);
+    // SVG [02]: the visualizer shares the plugin background - no frame.
 }
 
 void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
                                                       juce::Rectangle<float> plot,
                                                       juce::Rectangle<float> ruler)
 {
-    g.setColour (ui::kInsetBg);
-    g.fillRect (ruler);
-    g.setColour (ui::kBorder);
-    g.drawHorizontalLine (juce::roundToInt (ruler.getBottom() - 0.5f), ruler.getX(), ruler.getRight());
+    juce::ignoreUnused (ruler);
 
-    const float uiScale = (float) getWidth() / 800.0f;
     const float plotX = plot.getX();
     const float plotY = plot.getY();
     const float plotW = plot.getWidth();
@@ -244,7 +235,15 @@ void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
     const float viewEnd = juce::jmin (1.0f, viewStartNorm + span);
     const double windowMs = windowBars * (4.0 * 60000.0) / bpm;
 
-    g.setFont (juce::Font (10.0f * uiScale));
+    // SVG [02]: solid #363240 zero baseline across the full visualizer at
+    // the band's vertical centre (SVG y193 of 44..342 = exactly 50%).
+    const float centre = plotY + plotH * 0.5f;
+    const float halfHeight = plotH * 0.43f;
+    g.setColour (ui::kGridLine);
+    g.drawLine (plotX, centre, plot.getRight(), centre, 0.8f);
+
+    g.setFont (juce::Font (10.0f));
+    const float dash[] = { 3.0f, 4.0f }; // subtle vertical ruler ticks
     if (gridMode)
     {
         int divisions = 8;
@@ -260,22 +259,18 @@ void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
             const float norm = (float) i / (float) divisions;
             const float tx = normToX (norm, plotX, plotW);
             const bool major = (i % majorStep == 0);
-            g.setColour (major ? ui::kGridLine.withAlpha (0.26f) : ui::kGridLine.withAlpha (0.11f));
-            g.drawVerticalLine (juce::roundToInt (tx), plotY, plot.getBottom());
+            g.setColour (major ? ui::kGridLine.withAlpha (0.55f) : ui::kGridLine.withAlpha (0.28f));
+            g.drawDashedLine ({ tx, plotY, tx, plot.getBottom() }, dash, 2, 0.75f);
 
-            if (major && tx > (float) masterBtn.getRight() + 14.0f * uiScale)
+            if (major && tx > (float) masterBtn.getRight() + 14.0f)
             {
                 const double beatPos = norm * windowBars * 4.0;
                 const int barNum = (int) std::floor (beatPos / 4.0) + 1;
                 const int beatInBar = ((int) std::floor (beatPos)) % 4 + 1;
                 const juce::String lbl = juce::String (barNum) + "." + juce::String (beatInBar);
                 g.setColour (ui::kSecondaryText);
-                g.drawFittedText (lbl,
-                                  juce::Rectangle<int> (juce::roundToInt (tx - 24.0f * uiScale),
-                                                        juce::roundToInt (ruler.getY()),
-                                                        juce::roundToInt (48.0f * uiScale),
-                                                        juce::roundToInt (ruler.getHeight())),
-                                  juce::Justification::centred, 1);
+                g.drawText (lbl, juce::roundToInt (tx - 24.0f), juce::roundToInt (plotY + 4.0f),
+                            48, 14, juce::Justification::centred);
             }
         }
     }
@@ -291,37 +286,30 @@ void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
         }
         const double minorStep = stepMs * 0.5;
         const int firstIdx = juce::jmax (0, (int) std::floor ((viewStartNorm * windowMs) / minorStep));
-        const int lastIdx  = juce::jmin ((int) std::ceil (windowMs / minorStep), (int) std::ceil ((viewEnd * windowMs) / minorStep));
+        const int lastIdx  = juce::jmin ((int) std::ceil (windowMs / minorStep), (int) std::ceil (viewEnd * windowMs / minorStep));
         for (int i = firstIdx; i <= lastIdx; ++i)
         {
             const double ms = (double) i * minorStep;
             const float norm = juce::jlimit (0.0f, 1.0f, (float) (ms / windowMs));
             const float tx = normToX (norm, plotX, plotW);
             const bool major = (i % 2 == 0);
-            g.setColour (major ? ui::kGridLine.withAlpha (0.26f) : ui::kGridLine.withAlpha (0.11f));
-            g.drawVerticalLine (juce::roundToInt (tx), plotY, plot.getBottom());
+            g.setColour (major ? ui::kGridLine.withAlpha (0.55f) : ui::kGridLine.withAlpha (0.28f));
+            g.drawDashedLine ({ tx, plotY, tx, plot.getBottom() }, dash, 2, 0.75f);
 
-            if (major && tx > (float) masterBtn.getRight() + 14.0f * uiScale)
+            if (major && tx > (float) masterBtn.getRight() + 14.0f)
             {
                 g.setColour (ui::kSecondaryText);
-                g.drawFittedText (formatTimeTickLabel (ms),
-                                  juce::Rectangle<int> (juce::roundToInt (tx - 28.0f * uiScale),
-                                                        juce::roundToInt (ruler.getY()),
-                                                        juce::roundToInt (56.0f * uiScale),
-                                                        juce::roundToInt (ruler.getHeight())),
-                                  juce::Justification::centred, 1);
+                g.drawText (formatTimeTickLabel (ms), juce::roundToInt (tx - 28.0f), juce::roundToInt (plotY + 4.0f),
+                            56, 14, juce::Justification::centred);
             }
         }
     }
 
-    // Subtle horizontal reference lines & central waveform baseline
-    const float centre = plot.getCentreY();
-    const float halfHeight = plotH * 0.43f;
-    g.setColour (ui::kGridLine.withAlpha (0.12f));
+    // Subtle horizontal reference lines (dashed guides like the SVG)
+    // Subtle horizontal reference lines (faint, solid)
+    g.setColour (ui::kGridLine.withAlpha (0.35f));
     g.drawHorizontalLine (juce::roundToInt (centre - halfHeight * 0.5f), plotX, plot.getRight());
     g.drawHorizontalLine (juce::roundToInt (centre + halfHeight * 0.5f), plotX, plot.getRight());
-    g.setColour (ui::kGridLine.withAlpha (0.30f));
-    g.drawHorizontalLine (juce::roundToInt (centre), plotX, plot.getRight());
 
     // Threshold horizontal guide when Audio / Both trigger mode is active
     const int trigMode = pTriggerMode != nullptr ? juce::roundToInt (pTriggerMode->load()) : 2;
@@ -339,24 +327,49 @@ void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
     g.saveState();
     g.reduceClipRegion (plot.toNearestInt());
 
-    // Live input audio waveform ghost in grey (#A2A0AA) if audio has arrived
+    // Dry input waveform ghost in grey (SVG "visualizer-waveform-dry":
+    // #8b8a96 envelope fill at 34% + #9d9ca8 1.15px trace) if audio arrived
     if (proc.hasData.load())
     {
         const int filledCols = juce::jlimit (0, WaveLensProcessor::kCols, proc.filled.load());
         if (filledCols > 2)
         {
-            juce::Path inPath;
-            const int step = juce::jmax (1, filledCols / 256);
-            for (int c = 0; c < filledCols; c += step)
+            juce::Path upper, lower, area;
+            for (int c = 0; c < filledCols; ++c)
             {
-                const float px = plotX + ((float) c / (float) WaveLensProcessor::kCols) * plotW;
-                const float pk = proc.colMax[(size_t) WaveLensProcessor::idx (0, c)].load (relaxed);
-                const float py = centre - juce::jlimit (-1.0f, 1.0f, pk) * halfHeight * 0.65f;
-                if (c == 0) inPath.startNewSubPath (px, py);
-                else inPath.lineTo (px, py);
+                const float px = plotX + ((float) c / (float) (WaveLensProcessor::kCols - 1)) * plotW;
+                const float mx = proc.colMax[(size_t) WaveLensProcessor::idx (0, c)].load (relaxed);
+                const float mn = proc.colMin[(size_t) WaveLensProcessor::idx (0, c)].load (relaxed);
+                const float top = centre - juce::jlimit (-1.0f, 1.0f, mx) * halfHeight * 0.65f;
+                const float bot = centre - juce::jlimit (-1.0f, 1.0f, mn) * halfHeight * 0.65f;
+                if (c == 0)
+                {
+                    upper.startNewSubPath (px, top);
+                    lower.startNewSubPath (px, bot);
+                    area.startNewSubPath (px, top);
+                }
+                else
+                {
+                    upper.lineTo (px, top);
+                    lower.lineTo (px, bot);
+                    area.lineTo (px, top);
+                }
             }
-            g.setColour (ui::kInputWave.withAlpha (0.28f));
-            g.strokePath (inPath, juce::PathStrokeType (1.0f));
+            for (int c = filledCols - 1; c >= 0; --c)
+            {
+                const float px = plotX + ((float) c / (float) (WaveLensProcessor::kCols - 1)) * plotW;
+                const float mn = proc.colMin[(size_t) WaveLensProcessor::idx (0, c)].load (relaxed);
+                area.lineTo (px, centre - juce::jlimit (-1.0f, 1.0f, mn) * halfHeight * 0.65f);
+            }
+            area.closeSubPath();
+
+            g.setColour (snap::waveFill.withAlpha (0.34f));
+            g.fillPath (area);
+            g.setColour (ui::kInputWave);
+            g.strokePath (upper, juce::PathStrokeType (1.15f, juce::PathStrokeType::curved,
+                                                       juce::PathStrokeType::rounded));
+            g.strokePath (lower, juce::PathStrokeType (1.15f, juce::PathStrokeType::curved,
+                                                       juce::PathStrokeType::rounded));
         }
     }
 
@@ -499,21 +512,18 @@ void MasterWaveformComponent::paintTimelineWaveforms (juce::Graphics& g,
     if (loadedCount == 0)
     {
         g.setColour (ui::kSecondaryText);
-        g.setFont (juce::Font (12.5f * uiScale));
+        g.setFont (juce::Font (12.5f));
         g.drawText ((masterOverlay ? "MASTER OVERLAY  -  " : "")
                         + juce::String ("Load samples into SNAPBACK (left) or TRANSIENT (right) below"),
                     plot.toNearestInt(), juce::Justification::centred);
     }
 
     // Top-right badge showing active mode + zoom
-    g.setFont (juce::Font (10.0f * uiScale, juce::Font::bold));
+    g.setFont (juce::Font (10.0f, juce::Font::bold));
     const juce::String badgeText = (masterOverlay ? "MASTER ALL 6" : "SELECTED VIEW")
         + (zoomFactor > 1.02f ? ("  |  " + juce::String (zoomFactor, 1) + "x") : juce::String());
     g.setColour (ui::kSecondaryText);
-    g.drawFittedText (badgeText,
-                      plot.reduced (10.0f * uiScale, 6.0f * uiScale)
-                          .removeFromTop (16.0f * uiScale).toNearestInt(),
-                      juce::Justification::topRight, 1);
+    g.drawText (badgeText, plot.reduced (10.0f, 6.0f).removeFromTop (16.0f), juce::Justification::topRight);
 
     g.restoreState();
 }
@@ -589,28 +599,22 @@ void MasterWaveformComponent::paintLiveOutputMonitor (juce::Graphics& g, juce::R
     else
     {
         g.setColour (ui::kSecondaryText);
-        const float uiScale = (float) getWidth() / 800.0f;
-        g.setFont (juce::Font (12.0f * uiScale));
+        g.setFont (juce::Font (12.0f));
         g.drawText ("OUTPUT MONITOR  -  Trigger audio or MIDI to inspect summed Master output",
                     area.toNearestInt(), juce::Justification::centred);
     }
 
     g.setColour (ui::kMasterWave);
-    const float uiScale = (float) getWidth() / 800.0f;
-    g.setFont (juce::Font (10.0f * uiScale, juce::Font::bold));
-    g.drawFittedText ("MASTER OUTPUT",
-                      area.reduced (10.0f * uiScale, 4.0f * uiScale)
-                          .removeFromTop (16.0f * uiScale).toNearestInt(),
-                      juce::Justification::topRight, 1);
+    g.setFont (juce::Font (10.0f, juce::Font::bold));
+    g.drawText ("MASTER OUTPUT", area.reduced (10.0f, 4.0f).removeFromTop (16.0f), juce::Justification::topRight);
 
     g.restoreState();
 }
 
 void MasterWaveformComponent::paintLiveSpectrum (juce::Graphics& g, juce::Rectangle<float> area)
 {
-    const float uiScale = (float) getWidth() / 800.0f;
-    auto plot = area.reduced (38.0f * uiScale, 18.0f * uiScale);
-    plot.removeFromBottom (16.0f * uiScale);
+    auto plot = area.reduced (38.0f, 18.0f);
+    plot.removeFromBottom (16.0f);
 
     for (float db : { -96.0f, -72.0f, -48.0f, -24.0f, 0.0f })
     {
@@ -618,13 +622,8 @@ void MasterWaveformComponent::paintLiveSpectrum (juce::Graphics& g, juce::Rectan
         g.setColour (ui::kBorder.withAlpha (0.5f));
         g.drawHorizontalLine (juce::roundToInt (y), plot.getX(), plot.getRight());
         g.setColour (ui::kSecondaryText);
-        g.setFont (10.0f * uiScale);
-        g.drawFittedText (juce::String ((int) db),
-                          juce::Rectangle<int> (juce::roundToInt (area.getX()),
-                                                juce::roundToInt (y - 7.0f * uiScale),
-                                                juce::roundToInt (32.0f * uiScale),
-                                                juce::roundToInt (14.0f * uiScale)),
-                          juce::Justification::centredRight, 1);
+        g.setFont (10.0f);
+        g.drawText (juce::String ((int) db), (int) area.getX(), (int) y - 7, 32, 14, juce::Justification::centredRight);
     }
 
     const int mask = proc.connectedMask.load (relaxed);
@@ -647,18 +646,11 @@ void MasterWaveformComponent::paintLiveSpectrum (juce::Graphics& g, juce::Rectan
     }
 
     g.setColour (ui::kMasterWave);
-    g.setFont (juce::Font (10.0f * uiScale, juce::Font::bold));
-    g.drawFittedText ("OUTPUT SPECTRUM",
-                      area.reduced (10.0f * uiScale, 4.0f * uiScale)
-                          .removeFromTop (16.0f * uiScale).toNearestInt(),
-                      juce::Justification::topRight, 1);
+    g.setFont (juce::Font (10.0f, juce::Font::bold));
+    g.drawText ("OUTPUT SPECTRUM", area.reduced (10.0f, 4.0f).removeFromTop (16.0f), juce::Justification::topRight);
 }
 
 void MasterWaveformComponent::resized()
 {
-    const float uiScale = (float) getWidth() / 800.0f;
-    masterBtn.setBounds (juce::roundToInt (10.0f * uiScale),
-                         juce::roundToInt (28.0f * uiScale),
-                         juce::roundToInt (38.0f * uiScale),
-                         juce::roundToInt (26.0f * uiScale));
+    masterBtn.setBounds (10, 28, 38, 26);
 }

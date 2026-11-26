@@ -83,9 +83,7 @@ public:
 
 private:
     void timerCallback() override;
-    juce::Rectangle<int> getLargeEditorSize() const;
-    void updateResizeConstraints();
-    void applyEditorSizePreset (int preset);
+    void setControlBarBounds (int toolbarTop, int toolbarH);
 
     WaveLensProcessor& proc;
     SpectralMultipleLookAndFeel lnf;
@@ -101,9 +99,9 @@ private:
 
     bool triggerPanelOpen = false;
     bool editorsCollapsed = false;
-    int currentEditorSizePreset = 2;
-    float waveformHeightSvg = 298.0f;
-    float dragStartWaveformHeightSvg = 298.0f;
+    bool waveformUserSet = false; // true once the splitter has been dragged
+    int waveformHeight = -1;
+    int dragStartWaveformHeight = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaveLensEditor)
 };

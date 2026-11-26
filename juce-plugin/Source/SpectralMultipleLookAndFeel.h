@@ -5,18 +5,19 @@
 #include <array>
 
 /**
-    UI colour aliases for the SNAPBACK flat near-black theme.
+    UI colour aliases for the WAVESTACK dark colour theme.
     All values come from snap:: (SnapbackTheme.h) - do not define new raw
     colours here; extend SnapbackTheme.h instead so the palette stays in one place.
 */
 namespace wavelens::ui
 {
     inline const juce::Colour kMainBg         { snap::bg };
-    inline const juce::Colour kHeaderBg       { snap::panelHi };
+    inline const juce::Colour kHeaderBg       { snap::bg };
     inline const juce::Colour kPanelBg        { snap::panel };
     inline const juce::Colour kControlBg      { snap::tile };
-    inline const juce::Colour kHoverBg        { juce::Colour (0xff23232b) };
+    inline const juce::Colour kHoverBg        { juce::Colour (0xff1d1b25) };
     inline const juce::Colour kBorder         { snap::border };
+    inline const juce::Colour kBorderSoft     { snap::borderSoft };
     inline const juce::Colour kElevatedBg     { snap::panelHi };
     inline const juce::Colour kInsetBg        { snap::inset };
     inline const juce::Colour kMainText       { snap::text };
@@ -27,15 +28,25 @@ namespace wavelens::ui
     inline const juce::Colour kNeutralWave    { snap::wave };
     inline const juce::Colour kGridLine       { snap::grid };
     inline const juce::Colour kPurpleAccent   { snap::snap };     // generic accent: SNAPBACK blue
-    inline const juce::Colour kSelectedAccent { snap::snapHi };   // bright bank highlight
+    inline const juce::Colour kSelectedAccent { snap::snap };     // bright bank highlight
     inline const juce::Colour kCyanAccent     { snap::snap };     // trigger indicator accent
     inline const juce::Colour kInputWave      { snap::wave };
-    inline const juce::Colour kMasterWave     { snap::snapHi };
+    inline const juce::Colour kMasterWave     { snap::snap };
     inline const juce::Colour kWarningAmber   { snap::warn };
+    inline const juce::Colour kInk            { snap::icon };     // ui-icon grey stroke colour
+    inline const juce::Colour kThumb          { snap::thumb };    // #e6e4ed slider/trim thumbs
+    inline const juce::Colour kTrackBg        { snap::tileTrack };// #0d0b10 2.2px tracks
+    inline const juce::Colour kFlPoint        { snap::flPoint };  // FL ADSR handle gold
+    inline const juce::Colour kFlOutline      { snap::flOutline };// FL handle dark ring
 
     inline juce::Colour layerColour (int layer) noexcept
     {
         return snap::signalColour (layer);
+    }
+
+    inline juce::Colour layerTrace (int layer) noexcept
+    {
+        return snap::bankTrace (layer);
     }
 
     inline juce::Colour bankAccent (int layer) noexcept
@@ -96,6 +107,7 @@ public:
     juce::Font getComboBoxFont (juce::ComboBox&) override;
     juce::Font getTextButtonFont (juce::TextButton&, int buttonHeight) override;
     juce::Font getPopupMenuFont() override;
+    juce::Slider::SliderLayout getSliderLayout (juce::Slider&) override;
 
 private:
     void drawTileSlider (juce::Graphics&, juce::Rectangle<float> tile, juce::Slider&,

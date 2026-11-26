@@ -72,6 +72,7 @@ public:
         bool muted = false;
         bool solo = false;
         bool reverse = false;
+        bool invertPolarity = false;
         float pogo = 0.0f;
         float trimStart = 0.0f;
         float trimEnd = 1.0f;

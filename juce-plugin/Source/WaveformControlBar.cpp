@@ -32,16 +32,6 @@ TriggerPanelComponent::TriggerPanelComponent (WaveLensProcessor& processor)
     thresholdAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, ids::threshold, thresholdSlider);
     thresholdSlider.updateText();
 
-    preLeadSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-    preLeadSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 42, 18);
-    preLeadSlider.setColour (juce::Slider::trackColourId, ui::kPurpleAccent);
-    preLeadSlider.textFromValueFunction = [] (double v) { return juce::String (v, 1) + " ms"; };
-    preLeadSlider.setTooltip ("PRE lead offset before the dry transient (0 to 100 ms)");
-    addAndMakeVisible (preLeadSlider);
-    preLeadAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-        proc.apvts, ids::preRollMs, preLeadSlider);
-    preLeadSlider.updateText();
-
     if (auto* choice = dynamic_cast<juce::AudioParameterChoice*> (proc.apvts.getParameter (ids::triggerMode)))
         modeBox.addItemList (choice->choices, 1);
     addAndMakeVisible (modeBox);
@@ -129,179 +119,129 @@ void TriggerPanelComponent::timerCallback()
 void TriggerPanelComponent::paint (juce::Graphics& g)
 {
     auto b = getLocalBounds().toFloat();
-    g.setColour (ui::kPanelBg);
-    g.fillRoundedRectangle (b, 4.0f);
+    g.setColour (ui::kMainBg);
+    g.fillRect (b);
     g.setColour (ui::kBorder);
-    g.drawRoundedRectangle (b.reduced (0.5f), 4.0f, 1.0f);
+    g.drawRect (b.reduced (0.5f), 1.0f);
 
-    const float uiScale = (float) getWidth() / 720.0f;
-    // Controls identify themselves through compact values and tooltips; avoid
-    // separate labels that collide when the drawer is hosted at compact widths.
-    juce::ignoreUnused (uiScale);
+    g.setFont (juce::Font (9.5f, juce::Font::bold));
+    g.setColour (ui::kSecondaryText);
+    g.drawText ("THRESH", thresholdSlider.getX() - 48, 0, 44, getHeight(), juce::Justification::centredRight);
+    g.drawText ("MODE", modeBox.getX() - 36, 0, 32, getHeight(), juce::Justification::centredRight);
+    g.drawText ("SPAN", spanBox.getX() - 36, 0, 32, getHeight(), juce::Justification::centredRight);
+    g.drawText ("IN FILTER", inputFilter.getX() - 56, 0, 52, getHeight(), juce::Justification::centredRight);
 
     // Trigger LED indicator on far left
-    const float ledX = 16.0f * uiScale;
+    const float ledX = 16.0f;
     const float ledY = b.getCentreY();
     if (ledFlashAlpha > 0.02f)
     {
         g.setColour (ui::kCyanAccent.withAlpha (0.35f * ledFlashAlpha));
-        g.fillEllipse (ledX - 7.0f * uiScale, ledY - 7.0f * uiScale,
-                       14.0f * uiScale, 14.0f * uiScale);
+        g.fillEllipse (ledX - 7.0f, ledY - 7.0f, 14.0f, 14.0f);
     }
     g.setColour (ui::kControlBg.interpolatedWith (ui::kCyanAccent, 0.20f + 0.80f * ledFlashAlpha));
-    g.fillEllipse (ledX - 4.0f * uiScale, ledY - 4.0f * uiScale,
-                   8.0f * uiScale, 8.0f * uiScale);
+    g.fillEllipse (ledX - 4.0f, ledY - 4.0f, 8.0f, 8.0f);
     g.setColour (ui::kBorder);
-    g.drawEllipse (ledX - 4.0f * uiScale, ledY - 4.0f * uiScale,
-                   8.0f * uiScale, 8.0f * uiScale, 1.0f * uiScale);
+    g.drawEllipse (ledX - 4.0f, ledY - 4.0f, 8.0f, 8.0f, 1.0f);
 }
 
 void TriggerPanelComponent::resized()
 {
-    // Dense settings drawer uses a compact measured row. All widths are
-    // proportional to the 720 x 38 design row, so labels never overlap controls.
-    const float sx = (float) getWidth() / 720.0f;
-    const float sy = (float) getHeight() / 38.0f;
-    auto px = [sx] (float v) { return juce::roundToInt (v * sx); };
-    auto py = [sy] (float v) { return juce::roundToInt (v * sy); };
+    auto r = getLocalBounds().reduced (10, 6);
+    r.removeFromLeft (18); // LED space
 
-    auto r = getLocalBounds().reduced (px (12.0f), py (4.0f));
-    const int gap = px (3.0f);
+    r.removeFromLeft (48); // THRESH label
+    thresholdSlider.setBounds (r.removeFromLeft (152));
+    r.removeFromLeft (44); // MODE label
+    modeBox.setBounds (r.removeFromLeft (84));
+    r.removeFromLeft (12);
 
-    // LED, threshold, trigger mode, algorithm, view/span, PRE lead, filter, listen.
-    r.removeFromLeft (px (12.0f));
-    r.removeFromLeft (gap);
-    thresholdSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false,
-                                     px (38.0f), py (20.0f));
-    thresholdSlider.setBounds (r.removeFromLeft (px (88.0f)));
-    r.removeFromLeft (gap);
-    modeBox.setBounds (r.removeFromLeft (px (62.0f)));
-    r.removeFromLeft (gap);
+    const int segW = 64;
+    drumsBtn.setBounds (r.removeFromLeft (segW));
+    r.removeFromLeft (3);
+    generalBtn.setBounds (r.removeFromLeft (segW));
+    r.removeFromLeft (3);
+    complexBtn.setBounds (r.removeFromLeft (segW));
 
-    const int segmentW = px (38.0f);
-    drumsBtn.setBounds (r.removeFromLeft (segmentW));
-    r.removeFromLeft (px (2.0f));
-    generalBtn.setBounds (r.removeFromLeft (segmentW));
-    r.removeFromLeft (px (2.0f));
-    complexBtn.setBounds (r.removeFromLeft (segmentW));
-    r.removeFromLeft (gap);
+    listenBtn.setBounds (r.removeFromRight (84));
+    r.removeFromRight (6);
+    spanBox.setBounds (r.removeFromRight (76));
+    r.removeFromRight (40); // SPAN label
+    viewBox.setBounds (r.removeFromRight (92));
+    r.removeFromRight (12);
 
-    viewBox.setBounds (r.removeFromLeft (px (64.0f)));
-    r.removeFromLeft (gap);
-    spanBox.setBounds (r.removeFromLeft (px (56.0f)));
-    r.removeFromLeft (gap);
-
-    preLeadSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false,
-                                   px (34.0f), py (20.0f));
-    preLeadSlider.setBounds (r.removeFromLeft (px (76.0f)));
-    r.removeFromLeft (gap);
-
-    inputFilter.setBounds (r.removeFromLeft (juce::jmin (r.getWidth(), px (140.0f))));
-    r.removeFromLeft (gap);
-    listenBtn.setBounds (r.removeFromRight (juce::jmin (r.getWidth(), px (46.0f))));
-
-    listenBtn.setTooltip ("Listen to the selected input filter range");
-    thresholdSlider.setTooltip ("Trigger threshold in dB");
-    modeBox.setTooltip ("Audio, MIDI or combined trigger mode");
-    viewBox.setTooltip ("Trigger detector view");
-    spanBox.setTooltip ("Timeline bar span");
-}
-
-//==============================================================================
-void WaveformControlBar::CollapseButton::paintButton (juce::Graphics& g,
-                                                       bool highlighted,
-                                                       bool down)
-{
-    juce::TextButton::paintButton (g, highlighted, down);
-
-    const float uiScale = (float) getHeight() / 42.0f;
-    const float cx = (float) getWidth() * 0.5f;
-    const float cy = (float) getHeight() - 8.0f * uiScale;
-    g.setColour (juce::Colours::white.withAlpha (0.95f));
-    g.drawLine (cx - 4.0f * uiScale, cy - 2.5f * uiScale,
-                cx, cy + 1.5f * uiScale, 1.3f * uiScale);
-    g.drawLine (cx, cy + 1.5f * uiScale,
-                cx + 4.0f * uiScale, cy - 2.5f * uiScale, 1.3f * uiScale);
-}
-
-//==============================================================================
-void WaveformControlBar::LimiterButton::paintButton (juce::Graphics& g,
-                                                     bool highlighted,
-                                                     bool down)
-{
-    const auto b = getLocalBounds().toFloat();
-    const float uiScale = b.getHeight() / 22.0f;
-    const bool active = getToggleState();
-    auto stroke = active ? ui::kMainText : ui::kSecondaryText;
-    if (down) stroke = stroke.brighter (0.25f);
-    else if (highlighted) stroke = stroke.brighter (0.12f);
-
-    const float cx = b.getCentreX();
-    const float cy = b.getCentreY();
-    const float radius = juce::jmin (6.0f * uiScale, b.getWidth() * 0.38f);
-    juce::Path arc;
-    arc.addCentredArc (cx, cy + 1.0f * uiScale, radius, radius, 0.0f,
-                       0.48f, juce::MathConstants<float>::twoPi - 0.48f, true);
-    g.setColour (stroke);
-    g.strokePath (arc, juce::PathStrokeType (1.4f * uiScale));
-    g.drawLine (cx, cy - 7.0f * uiScale, cx, cy - 0.5f * uiScale, 1.4f * uiScale);
+    const int filterW = juce::jlimit (120, 220, r.getWidth() - 60);
+    if (filterW >= 120)
+        inputFilter.setBounds (r.removeFromRight (filterW));
 }
 
 //==============================================================================
 void WaveformControlBar::MagnifierButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
 {
-    auto b = getLocalBounds().toFloat().reduced (0.5f);
-    const float uiScale = (float) getHeight() / 25.0f;
+    // SVG: magnifier icon - r=3.8 circle + short handle, ui-icon grey.
+    const auto b = getLocalBounds().toFloat();
     const bool active = getToggleState();
+    const float cx = b.getCentreX() - 1.5f;
+    const float cy = b.getCentreY() - 1.5f;
 
-    juce::Colour bg = active ? ui::kSelectedAccent.withAlpha (0.24f) : ui::kControlBg;
-    if (down)
-        bg = bg.brighter (0.14f);
-    else if (highlighted)
-        bg = active ? bg.brighter (0.08f) : ui::kHoverBg;
+    g.setColour (active ? wavelens::ui::kPurpleAccent
+                        : (highlighted || down ? juce::Colour (0xffc9c4d6) : snap::icon));
+    g.drawEllipse (cx - 3.8f, cy - 3.8f, 7.6f, 7.6f, 1.35f);
+    g.drawLine (cx + 2.7f, cy + 2.7f, cx + 5.5f, cy + 5.5f, 1.35f);
+}
 
-    g.setColour (bg);
-    g.fillRoundedRectangle (b, 3.5f * uiScale);
-    g.setColour (active ? ui::kPurpleAccent : ui::kBorder);
-    g.drawRoundedRectangle (b, 3.5f * uiScale, 1.0f * uiScale);
-
-    // SVG order is label first, magnifier second.
-    const float iconCx = b.getRight() - 10.0f * uiScale;
-    const float iconCy = b.getCentreY() - 0.5f * uiScale;
-    g.setColour (active ? ui::kMainText : ui::kSecondaryText);
-    g.drawEllipse (iconCx - 4.0f * uiScale, iconCy - 4.0f * uiScale,
-                   7.5f * uiScale, 7.5f * uiScale, 1.3f * uiScale);
-    g.drawLine (iconCx + 2.2f * uiScale, iconCy + 2.2f * uiScale,
-                iconCx + 5.6f * uiScale, iconCy + 5.6f * uiScale, 1.4f * uiScale);
-
-    g.setFont (juce::Font (10.0f * uiScale, juce::Font::bold));
-    g.drawFittedText ("Detail", b.withTrimmedRight (20.0f * uiScale).toNearestInt(),
-                      juce::Justification::centred, 1);
+void WaveformControlBar::WaveformIconButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
+{
+    // SVG "Output Waveform Icon": four vertical bars of increasing then
+    // decreasing height, ui-icon grey, accent when active.
+    const auto b = getLocalBounds().toFloat();
+    const bool active = getToggleState();
+    const juce::Colour stroke = active ? wavelens::ui::kPurpleAccent
+                                       : (highlighted || down ? juce::Colour (0xffc9c4d6)
+                                                              : snap::icon);
+    const float cy = b.getCentreY();
+    g.setColour (stroke);
+    const float bars[] = { 2.0f, 4.0f, 5.0f, 3.0f };
+    const float spacing = b.getWidth() / 5.0f;
+    for (int i = 0; i < 4; ++i)
+    {
+        const float x = b.getX() + spacing * (float) i + spacing * 0.5f;
+        g.drawLine (x, cy - bars[i], x, cy + bars[i], 1.35f);
+    }
 }
 
 //==============================================================================
 WaveformControlBar::WaveformControlBar (WaveLensProcessor& processor)
     : proc (processor)
 {
+    // The bar is taller than its painted strip (the collapse tab rises 12
+    // SVG units above it); clicks outside the tab must reach the scope.
+    setInterceptsMouseClicks (false, true);
+
+    limiterBtn.setButtonText ("");
+    limiterBtn.getProperties().set ("isPowerIcon", true);
+    limiterBtn.setClickingTogglesState (true);
     limiterBtn.setToggleState (true, juce::dontSendNotification);
+    limiterBtn.setTooltip ("Limiter protection display toggle");
     limiterBtn.getProperties().set ("accentColour", (juce::int64) ui::kPurpleAccent.getARGB());
     addAndMakeVisible (limiterBtn);
 
     preLeadSlider.setSliderStyle (juce::Slider::LinearHorizontal);
-    preLeadSlider.setTextBoxStyle (juce::Slider::TextBoxRight, false, 48, 20);
+    preLeadSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
     preLeadSlider.setColour (juce::Slider::trackColourId, ui::kPurpleAccent);
     preLeadSlider.textFromValueFunction = [] (double v) { return juce::String (v, 1) + " ms"; };
     preLeadSlider.setTooltip ("PRE lead offset before dry transient (0 ms to 100 ms)");
-    addChildComponent (preLeadSlider);
+    addAndMakeVisible (preLeadSlider);
     preLeadAtt = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, ids::preRollMs, preLeadSlider);
     preLeadSlider.updateText();
 
+    // SVG "Collapse Center Tab": trapezoid with COLLAPSE text + chevron.
     collapseTabBtn.setClickingTogglesState (true);
     collapseTabBtn.setTooltip ("Collapse or restore the lower sample editors");
     collapseTabBtn.getProperties().set ("isTrapezoid", true);
-    collapseTabBtn.getProperties().set ("accentColour", (juce::int64) ui::kPurpleAccent.getARGB());
-    collapseTabBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
-    collapseTabBtn.setColour (juce::TextButton::textColourOnId, juce::Colours::white);
+    collapseTabBtn.getProperties().set ("accentColour", (juce::int64) juce::Colour (0xff7d72b3).getARGB());
+    collapseTabBtn.setColour (juce::TextButton::textColourOffId, juce::Colour (0xffa8a3b8));
+    collapseTabBtn.setColour (juce::TextButton::textColourOnId, juce::Colour (0xffa8a3b8));
     collapseTabBtn.onClick = [this]
     {
         if (onCollapseToggled)
@@ -317,12 +257,12 @@ WaveformControlBar::WaveformControlBar (WaveLensProcessor& processor)
         if (onTriggerPanelToggled)
             onTriggerPanelToggled (triggerSettingsBtn.getToggleState());
     };
-    addChildComponent (triggerSettingsBtn);
+    addAndMakeVisible (triggerSettingsBtn);
 
     fireTriggerBtn.setTooltip ("Fire manual trigger audition");
     fireTriggerBtn.getProperties().set ("accentColour", (juce::int64) ui::kCyanAccent.getARGB());
     fireTriggerBtn.onClick = [this] { proc.requestTrigger(); };
-    addChildComponent (fireTriggerBtn);
+    addAndMakeVisible (fireTriggerBtn);
 
     auto setupViewBtn = [this] (juce::TextButton& b, const juce::String& text,
                                 juce::Colour accent, const juce::String& tip)
@@ -334,9 +274,7 @@ WaveformControlBar::WaveformControlBar (WaveLensProcessor& processor)
         addAndMakeVisible (b);
     };
     setupViewBtn (gridBtn, "GRID", ui::kPurpleAccent, "Show beat grid ruler");
-    gridBtn.setVisible (false);
     setupViewBtn (secondsBtn, "SECONDS", snap::tr, "Show milliseconds ruler");
-    secondsBtn.setVisible (false);
     gridBtn.onClick = [this]
     {
         setGridMode (true);
@@ -367,6 +305,10 @@ WaveformControlBar::WaveformControlBar (WaveLensProcessor& processor)
     addAndMakeVisible (zoomOutBtn);
 
     zoomLevelBtn.setTooltip ("Current timeline zoom (click to reset)");
+    // SVG "Zoom Value" is a bright ui-val text with no box styling
+    zoomLevelBtn.getProperties().set ("isTransparentText", true);
+    zoomLevelBtn.setColour (juce::TextButton::textColourOffId, ui::kMainText);
+    zoomLevelBtn.setButtonText ("1/1");
     zoomLevelBtn.onClick = [this]
     {
         if (onZoomReset)
@@ -382,7 +324,7 @@ WaveformControlBar::WaveformControlBar (WaveLensProcessor& processor)
     };
     addAndMakeVisible (zoomInBtn);
 
-    outputBtn.setClickingTogglesState (true);
+    // SVG "Output Waveform Icon": small vertical-bar waveform, ink strokes
     outputBtn.setTooltip ("Toggle live summed Master Output monitor");
     outputBtn.getProperties().set ("accentColour", (juce::int64) ui::kMasterWave.getARGB());
     outputBtn.onClick = [this]
@@ -391,6 +333,16 @@ WaveformControlBar::WaveformControlBar (WaveLensProcessor& processor)
             onOutputToggled (outputBtn.getToggleState());
     };
     addAndMakeVisible (outputBtn);
+
+    // The SVG toolbar shows only Limiter / Collapse / Detail / Zoom / Output;
+    // the rest stay functional but invisible.
+    triggerSettingsBtn.setVisible (false);
+    fireTriggerBtn.setVisible (false);
+    gridBtn.setVisible (false);
+    secondsBtn.setVisible (false);
+    zoomOutBtn.setVisible (false);
+    zoomInBtn.setVisible (false);
+    preLeadSlider.setVisible (false);
 
     startTimerHz (15);
 }
@@ -420,13 +372,13 @@ void WaveformControlBar::setGridMode (bool isGrid) noexcept
 
 void WaveformControlBar::setZoomLevel (float zoomFactor) noexcept
 {
-    const juce::String txt = zoomFactor <= 1.05f
-        ? juce::String ("1.0x")
+    // SVG "Zoom Value" reads as a fraction like "1/2"
+    zoomText = zoomFactor <= 1.05f
+        ? juce::String ("1/1")
         : (zoomFactor >= 9.95f ? juce::String (juce::roundToInt (zoomFactor)) + "x"
                                : juce::String (zoomFactor, 1) + "x");
-    zoomLevelBtn.setButtonText (txt);
-    zoomOutBtn.setEnabled (zoomFactor > 1.05f);
-    zoomInBtn.setEnabled (zoomFactor < 31.5f);
+    // The value is shown by the button itself (ui-val #dcd9e6)
+    zoomLevelBtn.setButtonText (zoomText);
     repaint();
 }
 
@@ -437,66 +389,66 @@ void WaveformControlBar::timerCallback()
 
 void WaveformControlBar::paint (juce::Graphics& g)
 {
-    auto b = getLocalBounds().toFloat();
-    // Keep the 30 px toolbar bar below the scope. Only the raised COLLAPSE
-    // tab occupies the 12 px overlap into the visualizer.
-    b.removeFromTop ((float) juce::roundToInt ((float) getHeight() * 12.0f / 42.0f));
-    g.setColour (ui::kPanelBg);
-    g.fillRect (b);
-    g.setColour (ui::kBorder);
-    g.drawRect (b.reduced (0.5f), 1.0f);
+    // SVG [03]: #18161e strip (28 of the bar's 40 units) with a 2px
+    // #0d0b10 bottom separator; the top 12 units stay transparent so the
+    // COLLAPSE tab can rise above the toolbar into the visualizer.
+    const int stripTop = getHeight() - stripHeight();
+    auto strip = getLocalBounds().withTop (stripTop).toFloat();
+    g.setColour (snap::panelHi);
+    g.fillRect (strip);
+    g.setColour (snap::tileTrack);
+    g.drawHorizontalLine (getHeight() - 1, 0.0f, strip.getRight());
 
-    const float sx = (float) getWidth() / 800.0f;
-    const float sy = (float) getHeight() / 42.0f;
-    g.setFont (juce::Font (10.0f * sy, juce::Font::bold));
-    g.setColour (limiterBtn.getToggleState() ? ui::kMainText : ui::kSecondaryText);
-    g.drawFittedText ("Limiter",
-                      juce::Rectangle<int> (juce::roundToInt (37.0f * sx), limiterBtn.getY(),
-                                            juce::roundToInt (39.0f * sx), limiterBtn.getHeight()),
-                      juce::Justification::centredLeft, 1);
-    g.setFont (juce::Font (10.0f * sy, juce::Font::bold));
-    g.drawFittedText (formatPeakDb (proc.peakNow.load (relaxed)),
-                      juce::Rectangle<int> (juce::roundToInt (78.0f * sx), limiterBtn.getY(),
-                                            juce::roundToInt (52.0f * sx), limiterBtn.getHeight()),
-                      juce::Justification::centredLeft, 1);
+    auto stripText = [this, &g, stripTop] (const juce::String& t, int x, int w, juce::Justification j, juce::Colour c)
+    {
+        g.setColour (c);
+        g.drawText (t, x, stripTop, w, stripHeight(), j);
+    };
 
-    // Small output waveform glyph to the right of the Output label.
-    const float outputCentreY = (float) outputBtn.getBounds().getCentreY();
-    const float outputX = 762.0f * sx;
-    g.setColour (outputBtn.getToggleState() ? ui::kMasterWave : ui::kSecondaryText);
-    g.drawLine (outputX, outputCentreY, outputX + 16.0f * sx, outputCentreY, 0.8f * sy);
-    g.drawLine (outputX + 3.0f * sx, outputCentreY - 2.0f * sy,
-                outputX + 3.0f * sx, outputCentreY + 2.0f * sy, 1.2f * sy);
-    g.drawLine (outputX + 6.0f * sx, outputCentreY - 4.0f * sy,
-                outputX + 6.0f * sx, outputCentreY + 4.0f * sy, 1.2f * sy);
-    g.drawLine (outputX + 9.0f * sx, outputCentreY - 5.0f * sy,
-                outputX + 9.0f * sx, outputCentreY + 5.0f * sy, 1.2f * sy);
-    g.drawLine (outputX + 12.0f * sx, outputCentreY - 3.0f * sy,
-                outputX + 12.0f * sx, outputCentreY + 3.0f * sy, 1.2f * sy);
+    g.setFont (juce::Font (10.5f));
+    stripText ("Limiter", limiterBtn.getRight() + 6, 50, juce::Justification::centredLeft,
+               juce::Colour (0xff8b8699));
+    stripText (formatPeakDb (proc.peakNow.load (relaxed)),
+               limiterBtn.getRight() + 58, 64, juce::Justification::centredLeft,
+               juce::Colour (0xff565261));
+
+    // SVG right side: labels #928da1; the zoom value lives on the button
+    // itself (ui-val #dcd9e6).
+    stripText ("Detail", detailBtn.getX() - 46, 42, juce::Justification::centredRight,
+               juce::Colour (0xff928da1));
+    stripText ("Zoom", zoomLevelBtn.getX() - 40, 36, juce::Justification::centredRight,
+               juce::Colour (0xff928da1));
+    stripText ("Output", outputBtn.getX() - 48, 44, juce::Justification::centredRight,
+               juce::Colour (0xff928da1));
 }
 
 void WaveformControlBar::resized()
 {
+    // SVG [03] toolbar geometry on an 800x28 strip (the bar component is 40
+    // units tall: 12 overhang above the strip for the collapse tab):
+    //   limiter icon @24, "Limiter" @37, "0.0dB" @78
+    //   collapse trapezoid 124x40 centred @400 (spans the whole bar)
+    //   "Detail" @580 + magnifier @613, "Zoom" @646 + value @680,
+    //   "Output" @717 + waveform icon @762
+    const int stripTop = getHeight() - stripHeight();
     const float sx = (float) getWidth() / 800.0f;
-    const float sy = (float) getHeight() / 42.0f;
-    auto px = [sx] (float v) { return juce::roundToInt (v * sx); };
-    auto py = [sy] (float v) { return juce::roundToInt (v * sy); };
+    const float sy = (float) stripHeight() / 28.0f;
+    auto at = [sx, sy, stripTop] (float x, float y, float w, float h)
+    {
+        return juce::Rectangle<int> (juce::roundToInt (x * sx),
+                                     juce::roundToInt (stripTop + (y - 342.0f) * sy),
+                                     juce::roundToInt (w * sx), juce::roundToInt (h * sy));
+    };
 
-    limiterBtn.setBounds (px (18), py (14), px (16), py (22));
-    preLeadSlider.setBounds ({});
+    limiterBtn.setBounds (at (18, 349, 16, 16));
 
-    collapseTabBtn.setBounds (px (338), 0, px (124), getHeight());
+    // Centre trapezoid COLLAPSE tab (SVG: 338..462 wide 124, y 330..370)
+    // fills the whole bar height so its top half stays unclipped.
+    collapseTabBtn.setBounds (juce::roundToInt (338.0f * sx), 0,
+                              juce::roundToInt (124.0f * sx), getHeight());
 
-    detailBtn.setBounds (px (568), py (12), px (62), py (25));
-    zoomOutBtn.setButtonText ("Zoom");
-    zoomOutBtn.setBounds (px (646), py (12), px (30), py (25));
-    zoomLevelBtn.setBounds (px (678), py (12), px (30), py (25));
-    zoomInBtn.setBounds (px (710), py (12), px (12), py (25));
-    outputBtn.setButtonText ("Output");
-    outputBtn.setBounds (px (724), py (12), px (34), py (25));
-
-    triggerSettingsBtn.setBounds ({});
-    fireTriggerBtn.setBounds ({});
-    gridBtn.setBounds ({});
-    secondsBtn.setBounds ({});
+    detailBtn.setBounds (at (613, 349, 16, 16));
+    zoomLevelBtn.setBounds (at (674, 348, 40, 18));
+    outputBtn.setBounds (at (760, 349, 20, 16));
 }
+

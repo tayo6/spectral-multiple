@@ -145,6 +145,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout WaveLensProcessor::createLay
         layout.add (std::make_unique<AudioParameterBool> (PID { ids::layerMute (i), 1 }, "Layer " + suffix + " mute", false));
         layout.add (std::make_unique<AudioParameterBool> (PID { ids::layerSolo (i), 1 }, "Layer " + suffix + " solo", false));
         layout.add (std::make_unique<AudioParameterBool> (PID { ids::layerReverse (i), 1 }, "Layer " + suffix + " reverse", false));
+        layout.add (std::make_unique<AudioParameterBool> (PID { ids::layerPolarity (i), 1 }, "Layer " + suffix + " polarity invert", false));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerPogo (i), 1 }, "Layer " + suffix + " pogo",
                                                            NormalisableRange<float> (-1.0f, 1.0f, 0.01f), 0.0f));
         layout.add (std::make_unique<AudioParameterFloat> (PID { ids::layerTrimStart (i), 1 }, "Layer " + suffix + " front trim",
@@ -229,6 +230,7 @@ WaveLensProcessor::WaveLensProcessor()
         pLayerMute[(size_t) i] = apvts.getRawParameterValue (ids::layerMute (i));
         pLayerSolo[(size_t) i] = apvts.getRawParameterValue (ids::layerSolo (i));
         pLayerReverse[(size_t) i] = apvts.getRawParameterValue (ids::layerReverse (i));
+        pLayerPolarity[(size_t) i] = apvts.getRawParameterValue (ids::layerPolarity (i));
         pLayerPogo[(size_t) i] = apvts.getRawParameterValue (ids::layerPogo (i));
         pLayerTrimStart[(size_t) i] = apvts.getRawParameterValue (ids::layerTrimStart (i));
         pLayerTrimEnd[(size_t) i] = apvts.getRawParameterValue (ids::layerTrimEnd (i));
@@ -541,6 +543,7 @@ void WaveLensProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         params.muted = pLayerMute[(size_t) layer]->load (relaxed) > 0.5f;
         params.solo = pLayerSolo[(size_t) layer]->load (relaxed) > 0.5f;
         params.reverse = pLayerReverse[(size_t) layer]->load (relaxed) > 0.5f;
+        params.invertPolarity = pLayerPolarity[(size_t) layer]->load (relaxed) > 0.5f;
         params.pogo = pLayerPogo[(size_t) layer]->load (relaxed);
         params.trimStart = pLayerTrimStart[(size_t) layer]->load (relaxed);
         params.trimEnd = pLayerTrimEnd[(size_t) layer]->load (relaxed);

@@ -48,6 +48,7 @@ namespace ids
     inline juce::String layerMute (int n)    { return "layerMute" + juce::String (n + 1); }
     inline juce::String layerSolo (int n)    { return "layerSolo" + juce::String (n + 1); }
     inline juce::String layerReverse (int n) { return "layerReverse" + juce::String (n + 1); }
+    inline juce::String layerPolarity (int n) { return "layerPolarity" + juce::String (n + 1); }
     inline juce::String layerPogo (int n)    { return "layerPogo" + juce::String (n + 1); }
     inline juce::String layerTrimStart (int n) { return "layerTrimStart" + juce::String (n + 1); }
     inline juce::String layerTrimEnd (int n) { return "layerTrimEnd" + juce::String (n + 1); }
@@ -223,6 +224,7 @@ private:
     std::array<std::atomic<float>*, kMaxSignals> pLayerMute {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerSolo {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerReverse {};
+    std::array<std::atomic<float>*, kMaxSignals> pLayerPolarity {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerPogo {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerTrimStart {};
     std::array<std::atomic<float>*, kMaxSignals> pLayerTrimEnd {};

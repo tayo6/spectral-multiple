@@ -7,7 +7,7 @@
 #include <memory>
 
 /**
-    Optional Trigger Settings drawer opened from the header menu.
+    Horizontal Trigger Settings drawer revealed by the separate TRIG control in WaveformControlBar.
 */
 class TriggerPanelComponent final : public juce::Component, private juce::Timer
 {
@@ -28,9 +28,6 @@ private:
 
     juce::Slider thresholdSlider;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> thresholdAtt;
-
-    juce::Slider preLeadSlider;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> preLeadAtt;
 
     juce::ComboBox modeBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> modeAtt;
@@ -59,9 +56,11 @@ private:
 
 //==============================================================================
 /**
-    SVG-aligned toolbar. Left: limiter and live peak value. Centre:
-    raised COLLAPSE trapezoid. Right: Detail, Zoom and Output controls.
-    Trigger settings are opened from the header menu.
+    36 px control bar directly beneath the main oscilloscope:
+    Left:   Limiter toggle + live peak ceiling dB + PRE lead slider
+    Centre: Trapezoid TRIGGER settings drawer tab + quick-fire trigger button
+    Right:  GRID / SECONDS ruler toggle, DETAIL magnifier toggle,
+            zoom out / zoom level / zoom in, OUTPUT monitor toggle
 */
 class WaveformControlBar final : public juce::Component, private juce::Timer
 {
@@ -81,31 +80,13 @@ public:
     void setOutputActive (bool active) noexcept;
     void setGridMode (bool isGrid) noexcept;
     void setZoomLevel (float zoomFactor) noexcept;
+    void setCollapsedHint (bool collapsed) noexcept { editorsCollapsedHint = collapsed; repaint(); }
     bool isTriggerPanelOpen() const noexcept { return triggerSettingsBtn.getToggleState(); }
 
     void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
-    class CollapseButton final : public juce::TextButton
-    {
-    public:
-        CollapseButton() : juce::TextButton ("COLLAPSE") {}
-        void paintButton (juce::Graphics&, bool highlighted, bool down) override;
-    };
-
-    class LimiterButton final : public juce::Button
-    {
-    public:
-        LimiterButton() : juce::Button ("Limiter")
-        {
-            setClickingTogglesState (true);
-            setTooltip ("Limiter protection display toggle");
-            setMouseCursor (juce::MouseCursor::PointingHandCursor);
-        }
-        void paintButton (juce::Graphics&, bool highlighted, bool down) override;
-    };
-
     class MagnifierButton final : public juce::Button
     {
     public:
@@ -119,15 +100,31 @@ private:
         void paintButton (juce::Graphics& g, bool highlighted, bool down) override;
     };
 
+    class WaveformIconButton final : public juce::Button
+    {
+    public:
+        WaveformIconButton() : juce::Button ("Output")
+        {
+            setClickingTogglesState (true);
+            setTooltip ("Toggle live summed Master Output monitor");
+            setMouseCursor (juce::MouseCursor::PointingHandCursor);
+        }
+
+        void paintButton (juce::Graphics& g, bool highlighted, bool down) override;
+    };
+
     void timerCallback() override;
+
+    /** Painted strip height (28 of the bar's 40 SVG units). */
+    int stripHeight() const noexcept { return juce::roundToInt ((float) getHeight() * 28.0f / 40.0f); }
 
     WaveLensProcessor& proc;
 
-    LimiterButton limiterBtn;
+    juce::TextButton limiterBtn { "LIMITER" };
     juce::Slider preLeadSlider;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> preLeadAtt;
 
-    CollapseButton collapseTabBtn;
+    juce::TextButton collapseTabBtn { "COLLAPSE" };
     juce::TextButton triggerSettingsBtn { "TRIG" };
     juce::TextButton fireTriggerBtn { ">" };
 
@@ -137,9 +134,11 @@ private:
     juce::TextButton zoomOutBtn { "-" };
     juce::TextButton zoomLevelBtn { "1.0x" };
     juce::TextButton zoomInBtn { "+" };
-    juce::TextButton outputBtn { "OUTPUT" };
+    WaveformIconButton outputBtn;
 
     bool isGridMode = true;
+    bool editorsCollapsedHint = false; // chevron direction hint (set by editor)
+    juce::String zoomText { "1/1" };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (WaveformControlBar)
 };
