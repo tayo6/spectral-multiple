@@ -199,7 +199,7 @@ void SampleGroupComponent::promptLoadActiveLayer()
     const int targetLayer = getSelectedLayer();
     auto chooser = std::make_shared<juce::FileChooser> (
         "Load sample for " + ui::layerFullName (targetLayer),
-        juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3");
+        juce::File(), "*.wav;*.aif;*.aiff;*.flac;*.ogg;*.mp3;*.m4a;*.aac;*.mp4;*.3gp;*.opus");
 
     juce::Component::SafePointer<SampleGroupComponent> safeThis (this);
     chooser->launchAsync (juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles,
@@ -234,7 +234,9 @@ bool SampleGroupComponent::isInterestedInFileDrag (const juce::StringArray& file
 {
     for (const auto& f : files)
         if (f.endsWithIgnoreCase (".wav") || f.endsWithIgnoreCase (".aif") || f.endsWithIgnoreCase (".aiff")
-            || f.endsWithIgnoreCase (".flac") || f.endsWithIgnoreCase (".ogg") || f.endsWithIgnoreCase (".mp3"))
+            || f.endsWithIgnoreCase (".flac") || f.endsWithIgnoreCase (".ogg") || f.endsWithIgnoreCase (".mp3")
+            || f.endsWithIgnoreCase (".m4a") || f.endsWithIgnoreCase (".aac") || f.endsWithIgnoreCase (".mp4")
+            || f.endsWithIgnoreCase (".3gp") || f.endsWithIgnoreCase (".opus"))
             return true;
     return false;
 }

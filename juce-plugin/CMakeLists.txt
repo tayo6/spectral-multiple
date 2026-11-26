@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(WaveLens VERSION 1.0.0 LANGUAGES CXX)
+project(WaveLens VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -25,6 +25,62 @@ else()
         GIT_TAG        7.0.12
         GIT_SHALLOW    ON)
     FetchContent_MakeAvailable(juce)
+endif()
+
+# Additional sample decoders. Keep JUCE pinned at 7.0.12 so the existing
+# Windows 7 deployment target is unchanged.
+include(FetchContent)
+
+function(wavelens_add_opusfile_dependencies)
+    set(BUILD_TESTING OFF)
+    set(BUILD_SHARED_LIBS OFF)
+    set(INSTALL_DOCS OFF CACHE BOOL "" FORCE)
+    set(INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+    set(INSTALL_CMAKE_PACKAGE_MODULE ON CACHE BOOL "" FORCE)
+    set(OPUS_BUILD_SHARED_LIBRARY OFF CACHE BOOL "" FORCE)
+    set(OPUS_BUILD_TESTING OFF CACHE BOOL "" FORCE)
+    set(OPUS_BUILD_PROGRAMS OFF CACHE BOOL "" FORCE)
+    set(OPUS_INSTALL_PKG_CONFIG_MODULE OFF CACHE BOOL "" FORCE)
+    set(OPUS_INSTALL_CMAKE_CONFIG_MODULE ON CACHE BOOL "" FORCE)
+    set(OPUS_STATIC_RUNTIME ON CACHE BOOL "" FORCE)
+    set(OP_DISABLE_HTTP ON CACHE BOOL "" FORCE)
+    set(OP_DISABLE_EXAMPLES ON CACHE BOOL "" FORCE)
+    set(OP_DISABLE_DOCS ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(wavelens_ogg GIT_REPOSITORY https://github.com/xiph/ogg.git GIT_TAG v1.3.6 GIT_SHALLOW ON)
+    FetchContent_MakeAvailable(wavelens_ogg)
+    FetchContent_Declare(wavelens_opus GIT_REPOSITORY https://github.com/xiph/opus.git GIT_TAG v1.6.1 GIT_SHALLOW ON)
+    FetchContent_MakeAvailable(wavelens_opus)
+    set(Ogg_DIR "${wavelens_ogg_BINARY_DIR}")
+    set(Opus_DIR "${wavelens_opus_BINARY_DIR}")
+    FetchContent_Declare(wavelens_opusfile GIT_REPOSITORY https://github.com/xiph/opusfile.git GIT_TAG v0.12 GIT_SHALLOW ON)
+    FetchContent_MakeAvailable(wavelens_opusfile)
+endfunction()
+
+wavelens_add_opusfile_dependencies()
+
+add_library(WaveLensAudioCodecDependencies INTERFACE)
+target_link_libraries(WaveLensAudioCodecDependencies INTERFACE OpusFile::opusfile)
+
+if(WIN32)
+    FetchContent_Declare(wavelens_mole
+        GIT_REPOSITORY https://github.com/perob/MOLE.git
+        GIT_TAG f92ff8b7f55a05b5205e26d9459441b97a557e39)
+    if(POLICY CMP0169)
+        cmake_policy(PUSH)
+        cmake_policy(SET CMP0169 OLD)
+    endif()
+    FetchContent_GetProperties(wavelens_mole)
+    if(NOT wavelens_mole_POPULATED)
+        FetchContent_Populate(wavelens_mole)
+    endif()
+    if(POLICY CMP0169)
+        cmake_policy(POP)
+    endif()
+    juce_add_module("${wavelens_mole_SOURCE_DIR}/modules/mole_audio_formats")
+    target_link_libraries(WaveLensAudioCodecDependencies INTERFACE mole_audio_formats)
+    target_compile_definitions(WaveLensAudioCodecDependencies INTERFACE WAVELENS_ENABLE_MOLE_AUDIO_FORMATS=1)
+else()
+    target_compile_definitions(WaveLensAudioCodecDependencies INTERFACE WAVELENS_ENABLE_MOLE_AUDIO_FORMATS=0)
 endif()
 
 juce_add_plugin(WaveLens
@@ -84,6 +140,7 @@ target_link_libraries(WaveLens
     PRIVATE
         juce::juce_audio_utils
         juce::juce_dsp
+        WaveLensAudioCodecDependencies
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
@@ -104,6 +161,9 @@ if(BUILD_ENGINE_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/Source)
 
     target_compile_features(SpectralMultipleEngineTests PRIVATE cxx_std_17)
+    target_compile_definitions(SpectralMultipleEngineTests PRIVATE
+        WAVELENS_ENABLE_MOLE_AUDIO_FORMATS=0
+        WAVELENS_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Tests/fixtures")
 
     if(MSVC)
         target_compile_options(SpectralMultipleEngineTests PRIVATE /W4)
@@ -116,6 +176,7 @@ if(BUILD_ENGINE_TESTS)
         target_link_libraries(SpectralMultipleEngineTests PRIVATE Threads::Threads)
     endif()
 
+    target_link_libraries(SpectralMultipleEngineTests PRIVATE OpusFile::opusfile)
     add_test(NAME SpectralMultipleEngineTests COMMAND SpectralMultipleEngineTests)
 endif()
 
@@ -158,6 +219,8 @@ if(BUILD_PROCESSOR_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/Source)
 
     target_compile_features(WaveLensProcessorTests PRIVATE cxx_std_17)
+    target_compile_definitions(WaveLensProcessorTests PRIVATE
+        WAVELENS_TEST_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/Tests/fixtures")
 
     target_compile_definitions(WaveLensProcessorTests PRIVATE
         JUCE_WEB_BROWSER=0
@@ -175,6 +238,7 @@ if(BUILD_PROCESSOR_TESTS)
         PRIVATE
             juce::juce_audio_utils
             juce::juce_dsp
+            WaveLensAudioCodecDependencies
             juce::juce_recommended_config_flags
             juce::juce_recommended_warning_flags)
 
@@ -234,6 +298,7 @@ if(BUILD_UI_SNAPSHOT)
         PRIVATE
             juce::juce_audio_utils
             juce::juce_dsp
+            WaveLensAudioCodecDependencies
             juce::juce_recommended_warning_flags)
 endif()
 

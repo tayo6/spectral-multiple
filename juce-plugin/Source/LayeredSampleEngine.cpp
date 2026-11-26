@@ -1,6 +1,144 @@
 #include "LayeredSampleEngine.h"
 
 #include <cmath>
+#include <array>
+#include <cstdio>
+#include <limits>
+#include <memory>
+#include <opusfile.h>
+
+#ifndef WAVELENS_ENABLE_MOLE_AUDIO_FORMATS
+ #define WAVELENS_ENABLE_MOLE_AUDIO_FORMATS 0
+#endif
+
+#if WAVELENS_ENABLE_MOLE_AUDIO_FORMATS
+ #include "mole_audio_formats.h"
+#endif
+
+namespace
+{
+int opusStreamRead (void* source, unsigned char* destination, int numBytes)
+{
+    return static_cast<juce::FileInputStream*> (source)->read (destination, numBytes);
+}
+
+int opusStreamSeek (void* source, opus_int64 offset, int origin)
+{
+    auto& stream = *static_cast<juce::FileInputStream*> (source);
+    juce::int64 base = 0;
+
+    switch (origin)
+    {
+        case SEEK_SET: base = 0; break;
+        case SEEK_CUR: base = stream.getPosition(); break;
+        case SEEK_END: base = stream.getTotalLength(); break;
+        default: return -1;
+    }
+
+    const auto length = stream.getTotalLength();
+    if (base < 0 || (offset > 0 && base > std::numeric_limits<juce::int64>::max() - offset)
+        || (offset < 0 && base < std::numeric_limits<juce::int64>::min() - offset))
+        return -1;
+
+    const auto destinationPosition = base + static_cast<juce::int64> (offset);
+    if (destinationPosition < 0 || destinationPosition > length)
+        return -1;
+
+    return stream.setPosition (destinationPosition) ? 0 : -1;
+}
+
+opus_int64 opusStreamTell (void* source)
+{
+    return static_cast<opus_int64> (static_cast<juce::FileInputStream*> (source)->getPosition());
+}
+
+int opusStreamClose (void*)
+{
+    // The FileInputStream is owned by the caller and outlives op_free().
+    return 0;
+}
+
+bool decodeOggOpusFile (const juce::File& file,
+                        juce::AudioBuffer<float>& destination,
+                        juce::String& error)
+{
+    juce::FileInputStream input (file);
+    if (! input.openedOk())
+    {
+        error = "The Ogg Opus file could not be opened.";
+        return false;
+    }
+
+    static const OpusFileCallbacks callbacks {
+        opusStreamRead, opusStreamSeek, opusStreamTell, opusStreamClose
+    };
+
+    int openError = 0;
+    auto* rawReader = op_open_callbacks (&input, &callbacks, nullptr, 0, &openError);
+    if (rawReader == nullptr)
+    {
+        error = "The Ogg Opus file could not be opened or decoded.";
+        return false;
+    }
+
+    std::unique_ptr<OggOpusFile, decltype (&op_free)> reader (rawReader, &op_free);
+    const opus_int64 totalFrames = op_pcm_total (reader.get(), -1);
+    constexpr opus_int64 opusSampleRate = 48000;
+    constexpr opus_int64 maximumFrames = opusSampleRate * 180;
+
+    if (totalFrames <= 0)
+    {
+        error = "The Ogg Opus file contains no decodable audio.";
+        return false;
+    }
+
+    if (totalFrames > maximumFrames || totalFrames > std::numeric_limits<int>::max())
+    {
+        error = "Samples longer than three minutes are not supported yet.";
+        return false;
+    }
+
+    destination.setSize (2, static_cast<int> (totalFrames), false, true, false);
+
+    // op_read_float_stereo returns interleaved stereo floats and a frame count.
+    std::array<float, 8192> interleaved {};
+    const int frameCapacity = static_cast<int> (interleaved.size() / 2);
+    juce::int64 framesWritten = 0;
+
+    while (framesWritten < totalFrames)
+    {
+        const int framesRead = op_read_float_stereo (reader.get(), interleaved.data(),
+                                                     static_cast<int> (interleaved.size()));
+        if (framesRead <= 0)
+        {
+            destination.setSize (0, 0);
+            error = "The Ogg Opus file ended unexpectedly or contains a decoding error.";
+            return false;
+        }
+
+        const int framesToCopy = juce::jmin (framesRead,
+            static_cast<int> (totalFrames - framesWritten));
+        for (int frame = 0; frame < framesToCopy; ++frame)
+        {
+            const auto sourceIndex = static_cast<size_t> (frame) * 2;
+            const int destinationIndex = static_cast<int> (framesWritten) + frame;
+            destination.setSample (0, destinationIndex, interleaved[sourceIndex]);
+            destination.setSample (1, destinationIndex, interleaved[sourceIndex + 1]);
+        }
+
+        framesWritten += framesToCopy;
+        if (framesRead > frameCapacity)
+        {
+            destination.setSize (0, 0);
+            error = "The Ogg Opus decoder returned an invalid frame count.";
+            return false;
+        }
+    }
+
+    error.clear();
+    return true;
+}
+} // namespace
 
 struct LayeredSampleEngine::AudioBlockEpochGuard
 {
@@ -22,6 +160,13 @@ struct LayeredSampleEngine::AudioBlockEpochGuard
 LayeredSampleEngine::LayeredSampleEngine()
 {
     formatManager.registerBasicFormats();
+
+#if WAVELENS_ENABLE_MOLE_AUDIO_FORMATS
+    // MOLE uses Windows Media Foundation to decode AAC in MP4, AAC and 3GP
+    // containers. M4A is opened explicitly because its extension is not in the
+    // MP4AudioFormat extension list.
+    formatManager.registerFormat (new mole::MP4AudioFormat(), false);
+#endif
 
     for (int i = 0; i < kNumLayers; ++i)
     {
@@ -223,50 +368,88 @@ bool LayeredSampleEngine::loadSampleFromFile (int layer, const juce::File& file,
         return false;
     }
 
-    std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor (file));
-    if (reader == nullptr || reader->lengthInSamples <= 0 || reader->sampleRate <= 0.0)
-    {
-        error = "JUCE could not read this audio file.";
-        return false;
-    }
-
-    // Keep memory use bounded while allowing real multi-second samples.
-    const auto maximumSamples = (juce::int64) (reader->sampleRate * 180.0);
-    if (reader->lengthInSamples > maximumSamples)
-    {
-        error = "Samples longer than three minutes are not supported yet.";
-        return false;
-    }
-
-    const int sampleCount = (int) reader->lengthInSamples;
     auto data = std::make_unique<SampleData>();
-    data->audio.setSize (2, sampleCount, false, true, false);
-    data->sourceSampleRate = reader->sampleRate;
     data->displayName = file.getFileNameWithoutExtension();
 
-    bool readOk = false;
-    if (reader->numChannels == 1)
+    if (file.getFileExtension().equalsIgnoreCase (".opus"))
     {
-        juce::AudioBuffer<float> mono (1, sampleCount);
-        readOk = reader->read (&mono, 0, sampleCount, 0, true, false);
-        if (readOk)
-        {
-            data->audio.copyFrom (0, 0, mono, 0, 0, sampleCount);
-            data->audio.copyFrom (1, 0, mono, 0, 0, sampleCount);
-        }
+        if (! decodeOggOpusFile (file, data->audio, error))
+            return false;
+
+        // Opus is decoded to the format standard 48 kHz PCM output.
+        data->sourceSampleRate = 48000.0;
     }
     else
     {
-        readOk = reader->read (&data->audio, 0, sampleCount, 0, true, true);
+        std::unique_ptr<juce::AudioFormatReader> reader;
+
+#if WAVELENS_ENABLE_MOLE_AUDIO_FORMATS
+        if (file.getFileExtension().equalsIgnoreCase (".m4a"))
+        {
+            mole::MP4AudioFormat aacFormat;
+            auto input = std::make_unique<juce::FileInputStream> (file);
+            if (! input->openedOk())
+            {
+                error = "The selected AAC/M4A file could not be opened.";
+                return false;
+            }
+            reader.reset (aacFormat.createReaderFor (input.release(), true));
+        }
+        else
+#endif
+        {
+            reader.reset (formatManager.createReaderFor (file));
+        }
+
+        if (reader == nullptr || reader->lengthInSamples <= 0 || reader->sampleRate <= 0.0)
+        {
+            error = "No decoder could read this audio file.";
+            return false;
+        }
+
+        // Keep memory use bounded while allowing real multi-second samples.
+        const auto maximumSamples = (juce::int64) (reader->sampleRate * 180.0);
+        if (reader->lengthInSamples > maximumSamples)
+        {
+            error = "Samples longer than three minutes are not supported yet.";
+            return false;
+        }
+
+        const int sampleCount = (int) reader->lengthInSamples;
+        data->audio.setSize (2, sampleCount, false, true, false);
+        data->sourceSampleRate = reader->sampleRate;
+
+        bool readOk = false;
+        if (reader->numChannels == 1)
+        {
+            juce::AudioBuffer<float> mono (1, sampleCount);
+            readOk = reader->read (&mono, 0, sampleCount, 0, true, false);
+            if (readOk)
+            {
+                data->audio.copyFrom (0, 0, mono, 0, 0, sampleCount);
+                data->audio.copyFrom (1, 0, mono, 0, 0, sampleCount);
+            }
+        }
+        else
+        {
+            readOk = reader->read (&data->audio, 0, sampleCount, 0, true, true);
+        }
+
+        if (! readOk)
+        {
+            error = "The audio file could not be decoded.";
+            return false;
+        }
     }
 
-    if (! readOk)
+    const int sampleCount = data->audio.getNumSamples();
+    if (sampleCount <= 0 || data->sourceSampleRate <= 0.0)
     {
-        error = "The audio file could not be decoded.";
+        error = "The audio file decoded to an empty sample.";
         return false;
     }
 
-    data->preview.durationMs = (double) sampleCount * 1000.0 / reader->sampleRate;
+    data->preview.durationMs = (double) sampleCount * 1000.0 / data->sourceSampleRate;
     data->preview.loaded = true;
     for (int point = 0; point < kPreviewPoints; ++point)
     {
@@ -307,7 +490,6 @@ bool LayeredSampleEngine::loadSampleFromFile (int layer, const juce::File& file,
     error.clear();
     return true;
 }
-
 void LayeredSampleEngine::clearSample (int layer)
 {
     if (! juce::isPositiveAndBelow (layer, kNumLayers))

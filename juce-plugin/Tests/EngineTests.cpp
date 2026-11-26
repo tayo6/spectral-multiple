@@ -402,6 +402,30 @@ void testLoadingMonoStereoAndEdgeCases (const fs::path& dir)
         "P1: 1-sample WAV plays cleanly without silence/oob");
 }
 
+void testOpusFileDecoding()
+{
+    LayeredSampleEngine engine;
+    engine.prepareToPlay (44100.0, 256);
+    engine.setTriggerMode (1, 0.05f);
+    engine.setPreRollMilliseconds (0.0f);
+
+    const auto opusPath = fs::path (WAVELENS_TEST_FIXTURE_DIR) / "tone.opus";
+    juce::String error;
+    check (engine.loadSampleFromFile (0, juce::File (opusPath.string()), error),
+           "Opus: Ogg Opus fixture opens and decodes", error.toStdString());
+
+    const auto preview = engine.getWaveformPreview (0);
+    check (preview.loaded && preview.durationMs > 245.0 && preview.durationMs < 270.0,
+           "Opus: 48 kHz decoded duration and waveform preview are correct",
+           "durationMs=" + std::to_string (preview.durationMs));
+
+    engine.requestPreview (0);
+    std::vector<float> zero (20000, 0.0f);
+    const auto output = runBlocks (engine, 20000, 256, zero, zero, {});
+    check (computeRms (output.busL[0]) > 0.005,
+           "Opus: decoded sample produces non-silent preview audio");
+}
+
 void testQsbrMemoryReclamation (const fs::path& dir)
 {
     LayeredSampleEngine engine;
@@ -1316,6 +1340,7 @@ int main()
     fs::create_directories (tempDir);
 
     testLoadingMonoStereoAndEdgeCases (tempDir);
+    testOpusFileDecoding();
     testQsbrMemoryReclamation (tempDir);
     testReverseAndFractionalInterpolation (tempDir);
     testPitchPogoTrimFadesFiltersAndPolyphony (tempDir);
