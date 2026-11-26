@@ -225,7 +225,8 @@ void DualTrimRangeComponent::paint (juce::Graphics& g)
     g.setColour (accent);
     g.drawLine (startX, cy, endX, cy, 2.0f);
 
-    const float radius = juce::jlimit (3.0f, 4.5f, trackBounds.getHeight() * 0.60f);
+    const float radius = juce::jlimit (3.0f * uiScale, 4.5f * uiScale,
+                                        trackBounds.getHeight() * 0.60f);
     for (const float x : { startX, endX })
     {
         g.setColour (ui::kPanelBg);
