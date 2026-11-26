@@ -417,6 +417,21 @@ void WaveformControlBar::paint (juce::Graphics& g)
     g.drawText (formatPeakDb (proc.peakNow.load (relaxed)),
                 78, limiterBtn.getY(), 52, limiterBtn.getHeight(),
                 juce::Justification::centredLeft);
+
+    // Small output waveform glyph to the right of the Output label.
+    const float sx = (float) getWidth() / 800.0f;
+    const float outputCentreY = (float) outputBtn.getBounds().getCentreY();
+    const float outputX = 762.0f * sx;
+    g.setColour (outputBtn.getToggleState() ? ui::kMasterWave : ui::kSecondaryText);
+    g.drawLine (outputX, outputCentreY, outputX + 16.0f * sx, outputCentreY, 0.8f * sy);
+    g.drawLine (outputX + 3.0f * sx, outputCentreY - 2.0f * sy,
+                outputX + 3.0f * sx, outputCentreY + 2.0f * sy, 1.2f * sy);
+    g.drawLine (outputX + 6.0f * sx, outputCentreY - 4.0f * sy,
+                outputX + 6.0f * sx, outputCentreY + 4.0f * sy, 1.2f * sy);
+    g.drawLine (outputX + 9.0f * sx, outputCentreY - 5.0f * sy,
+                outputX + 9.0f * sx, outputCentreY + 5.0f * sy, 1.2f * sy);
+    g.drawLine (outputX + 12.0f * sx, outputCentreY - 3.0f * sy,
+                outputX + 12.0f * sx, outputCentreY + 3.0f * sy, 1.2f * sy);
 }
 
 void WaveformControlBar::resized()
@@ -437,7 +452,7 @@ void WaveformControlBar::resized()
     zoomLevelBtn.setBounds (px (680), py (12), px (34), py (25));
     zoomInBtn.setBounds (px (716), py (12), px (18), py (25));
     outputBtn.setButtonText ("Output");
-    outputBtn.setBounds (px (738), py (12), px (50), py (25));
+    outputBtn.setBounds (px (718), py (12), px (40), py (25));
 
     triggerSettingsBtn.setBounds ({});
     fireTriggerBtn.setBounds ({});
