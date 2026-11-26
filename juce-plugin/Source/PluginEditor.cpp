@@ -199,6 +199,13 @@ WaveLensEditor::WaveLensEditor (WaveLensProcessor& p)
         masterWaveform.resetZoom();
         controlBar.setDetailActive (false);
     };
+    header.onOpenTriggerSettings = [this]
+    {
+        triggerPanelOpen = ! triggerPanelOpen;
+        triggerPanel.setVisible (triggerPanelOpen);
+        resized();
+        repaint();
+    };
     header.onBpmChanged = [this] (double newBpm)
     {
         masterWaveform.setBpm (newBpm);
@@ -360,13 +367,7 @@ void WaveLensEditor::resized()
     transientGroup.setVisible (! editorsCollapsed);
     resizeHandle.setVisible (! editorsCollapsed);
 
-    if (editorsCollapsed)
-    {
-        // Collapse fills the complete editor-bank region with the main scope,
-        // keeping the 30 px toolbar + raised trapezoid immediately above pads.
-        waveformHeight = footerTop - visualizerY - toolbarH + toolbarOverlap;
-    }
-    else
+    if (! editorsCollapsed)
     {
         constexpr float minimumBankHeightSvg = 150.0f;
         constexpr float minimumScopeHeightSvg = 150.0f;
@@ -380,11 +381,15 @@ void WaveLensEditor::resized()
         waveformHeight = juce::jlimit (minimumScopeH, maximumWaveformH, waveformHeight);
     }
 
-    const int waveformBottom = visualizerY + waveformHeight;
+
+    const int activeWaveformHeight = editorsCollapsed
+        ? footerTop - visualizerY - toolbarH + toolbarOverlap
+        : waveformHeight;
+    const int waveformBottom = visualizerY + activeWaveformHeight;
     const int toolbarY = waveformBottom - toolbarOverlap;
     const int bankTop = toolbarY + toolbarH;
 
-    masterWaveform.setBounds (0, visualizerY, getWidth(), waveformHeight);
+    masterWaveform.setBounds (0, visualizerY, getWidth(), activeWaveformHeight);
     controlBar.setBounds (0, toolbarY, getWidth(), toolbarH);
 
     // Trigger settings are a temporary overlay, not a reflow of the SVG canvas.
