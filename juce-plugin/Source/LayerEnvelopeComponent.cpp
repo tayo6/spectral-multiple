@@ -586,7 +586,8 @@ LayerEnvelopeComponent::Geometry LayerEnvelopeComponent::getGeometry (float tota
 
     auto xAt = [&] (float ms)
     {
-        return result.trimX0 + result.trimW * juce::jlimit (0.0f, result.trimmedDurationMs, ms) / result.trimmedDurationMs;
+        return result.trimX0 + result.trimW * juce::jlimit (0.0f, result.envelopeDisplayDurationMs, ms)
+             / result.envelopeDisplayDurationMs;
     };
     const float envTop = result.plot.getY() + 7.0f;
     const float envBot = result.plot.getBottom() - 15.0f;
