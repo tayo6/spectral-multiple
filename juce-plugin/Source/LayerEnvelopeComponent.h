@@ -4,61 +4,18 @@
 #include "SpectralMultipleLookAndFeel.h"
 
 /**
-    Combined front/back sample trim control. One shared range track has two
-    independently editable endpoints, each with a numeric percentage field.
-    The existing layerTrimStart/layerTrimEnd APVTS parameters remain unchanged.
+    WAVESTACK layer editor for one SNAPBACK (0..2) or TRANSIENT (3..5) layer,
+    reproducing the supplied SVG wireframe layout:
+      - left: the 226x152 "sample box" (wave-box) with sample name row,
+        mini waveform with envelope guides and a bottom
+        Attack / Decay / Pitch readout row
+      - right: the parameter card deck - Shift, Width, Pan (left column),
+        Volume fader + Pogo (right column) - rendered as wire-box tiles by
+        SpectralMultipleLookAndFeel ("isTile" slider property)
+      - bottom: one dual-handle "Str Trim / Bk Trim" range card that edits
+        layerTrimStart / layerTrimEnd on a shared dashed track
+    The FL envelope remains fully editable by dragging the A/H/D/S/R circles.
 */
-class DualTrimRangeComponent final : public juce::Component, private juce::Timer
-{
-public:
-    DualTrimRangeComponent (WaveLensProcessor&, int layerIndex, juce::Colour accentColour);
-    ~DualTrimRangeComponent() override;
-
-    void paint (juce::Graphics&) override;
-    void resized() override;
-    void mouseDown (const juce::MouseEvent&) override;
-    void mouseDrag (const juce::MouseEvent&) override;
-    void mouseUp (const juce::MouseEvent&) override;
-
-private:
-    enum class ActiveThumb { None, Start, End };
-
-    void timerCallback() override;
-    void refreshEditors();
-    void commitEditor (bool isStart);
-    void setTrimValue (bool isStart, float value, bool sendGesture);
-    void beginThumbGesture();
-    void endThumbGesture();
-    juce::Rectangle<float> getTrackBounds() const noexcept;
-
-    WaveLensProcessor& processor;
-    const int layer;
-    const juce::Colour accent;
-    std::atomic<float>* startValue = nullptr;
-    std::atomic<float>* endValue = nullptr;
-    juce::RangedAudioParameter* startParameter = nullptr;
-    juce::RangedAudioParameter* endParameter = nullptr;
-
-    juce::TextEditor startEditor;
-    juce::TextEditor endEditor;
-    juce::Rectangle<float> trackBounds;
-    ActiveThumb activeThumb = ActiveThumb::None;
-    float lastStart = -1.0f;
-    float lastEnd = -1.0f;
-    bool gestureActive = false;
-
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DualTrimRangeComponent)
-};
-
-/** Waveform-backed sample editor with draggable envelope and SVG-positioned controls. */
-/** Disabled SVG phase-invert glyph until the processor exposes a polarity parameter. */
-class PhaseInvertPlaceholder final : public juce::Button
-{
-public:
-    PhaseInvertPlaceholder();
-    void paintButton (juce::Graphics&, bool highlighted, bool down) override;
-};
-
 class LayerEnvelopeComponent final : public juce::Component, private juce::Timer
 {
 public:
@@ -67,7 +24,6 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
-    juce::Rectangle<int> getSampleHeaderBounds() const noexcept;
     void mouseDown (const juce::MouseEvent&) override;
     void mouseDrag (const juce::MouseEvent&) override;
     void mouseUp (const juce::MouseEvent&) override;
@@ -80,6 +36,7 @@ private:
         None,
         TrimStart,
         TrimEnd,
+        Pitch,
         Attack,
         Hold,
         Decay,
@@ -110,6 +67,8 @@ private:
         bool tensionDecayVisible = false;
         bool tensionReleaseVisible = false;
     };
+
+    static constexpr int kBottomReadoutHeight = 24;
 
     void timerCallback() override { repaint(); }
     void clampViewport (float nextViewStart, float nextZoom) noexcept;
@@ -153,32 +112,35 @@ private:
     std::atomic<float>* pReleaseTension = nullptr;
     std::atomic<float>* pEnvEnabled = nullptr;
     std::atomic<float>* pReverse = nullptr;
+    std::atomic<float>* pPolarity = nullptr;
     std::atomic<float>* pPitch = nullptr;
     std::atomic<float>* pTrimStart = nullptr;
     std::atomic<float>* pTrimEnd = nullptr;
     std::atomic<float>* pFadeIn = nullptr;
     std::atomic<float>* pFadeOut = nullptr;
 
-    juce::TextButton reverseBtn, envEnableBtn;
-    PhaseInvertPlaceholder phaseInvertBtn;
+    juce::TextButton reverseBtn, envEnableBtn, phaseBtn;
     juce::TextButton focusStartBtn, focusEndBtn, zoomFitBtn, zoomOutBtn, zoomResetBtn, zoomInBtn;
     juce::ComboBox attackCurveBox, decayCurveBox, releaseCurveBox;
     juce::Slider gainSlider, delaySlider, pitchSlider, panSlider, pogoSlider, widthSlider;
-    juce::Slider fadeInSlider, fadeOutSlider;
+    juce::Slider fadeInSlider, fadeOutSlider, trimStartSlider, trimEndSlider;
     juce::Slider hpSlider, lpSlider;
-    std::unique_ptr<DualTrimRangeComponent> trimRange;
 
     using ButtonAtt = juce::AudioProcessorValueTreeState::ButtonAttachment;
     using ComboAtt  = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     using SliderAtt = juce::AudioProcessorValueTreeState::SliderAttachment;
-    std::unique_ptr<ButtonAtt> reverseAttachment, envEnableAttachment;
+    std::unique_ptr<ButtonAtt> reverseAttachment, envEnableAttachment, phaseAttachment;
     std::unique_ptr<ComboAtt> attackCurveAttachment, decayCurveAttachment, releaseCurveAttachment;
     std::unique_ptr<SliderAtt> gainAttachment, delayAttachment, pitchAttachment, panAttachment, pogoAttachment, widthAttachment;
-    std::unique_ptr<SliderAtt> fadeInAttachment, fadeOutAttachment;
+    std::unique_ptr<SliderAtt> fadeInAttachment, fadeOutAttachment, trimStartAttachment, trimEndAttachment;
     std::unique_ptr<SliderAtt> hpAttachment, lpAttachment;
 
-    juce::Rectangle<int> controlStripBounds;
+    juce::Rectangle<int> sampleHeaderBounds;
     juce::Rectangle<float> gainCardBounds;
+    juce::Rectangle<float> volCardBounds;
+    juce::Rectangle<float> trimCardBounds;
+    juce::Rectangle<int> pitchReadoutBounds;
+    juce::Rectangle<float> controlStripBounds;
     juce::Rectangle<float> overviewBarBounds;
     Handle activeHandle = Handle::None;
     float zoomFactor = 1.0f;
@@ -186,7 +148,9 @@ private:
     float dragStartX = 0.0f;
     float dragStartY = 0.0f;
     float dragStartTension = 0.0f;
+    float dragStartPitch = 0.0f;
     float dragStartViewStart = 0.0f;
+    bool draggingTrimCard = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (LayerEnvelopeComponent)
 };

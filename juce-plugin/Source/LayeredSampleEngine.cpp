@@ -1228,7 +1228,8 @@ float LayeredSampleEngine::renderLayerSample (int layer, float& left, float& rig
             ? juce::jlimit (0.0f, 1.0f, remainingSamplesBase / fadeOutSamples)
             : 1.0f;
 
-        const float gain = p.gain * envelope * fadeInGain * fadeOutGain;
+        const float gain = p.gain * envelope * fadeInGain * fadeOutGain
+                         * (p.invertPolarity ? -1.0f : 1.0f);
         left += wideL * gain * leftPan;
         right += wideR * gain * rightPan;
 

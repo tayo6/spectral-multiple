@@ -4,63 +4,51 @@ namespace ui = wavelens::ui;
 
 void PluginHeaderComponent::IconButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
 {
-    auto b = getLocalBounds().toFloat().reduced (0.5f);
-    const float uiScale = (float) getHeight() / 20.0f;
+    const auto b = getLocalBounds().toFloat();
     const bool active = getToggleState();
-
-    juce::Colour bg = active ? ui::kSelectedAccent.withAlpha (0.20f) : ui::kControlBg;
-    if (down)
-        bg = bg.brighter (0.16f);
-    else if (highlighted)
-        bg = active ? ui::kSelectedAccent.withAlpha (0.28f) : ui::kHoverBg;
-
-    g.setColour (bg);
-    g.fillRoundedRectangle (b, 4.0f * uiScale);
-    g.setColour (active ? ui::kPurpleAccent.withAlpha (0.85f) : ui::kBorder);
-    g.drawRoundedRectangle (b, 4.0f * uiScale, 1.0f * uiScale);
-
-    const float cx = b.getCentreX();
-    const float cy = b.getCentreY();
-    const juce::Colour strokeCol = active ? ui::kPurpleAccent.brighter (0.2f)
-                                          : (highlighted ? ui::kMainText : ui::kSecondaryText);
-
-    g.setColour (strokeCol);
+    // ui-icon grey per the SVG; hover brightens, power uses amber when bypassed
+    const auto stroke = down ? ui::kSelectedAccent
+                     : (highlighted ? juce::Colour (0xffc9c4d6) : snap::icon);
+    g.setColour (stroke);
 
     if (kind == Kind::Power)
     {
-        const float r = 5.5f * uiScale;
+        // SVG: "M 26.2,17.2 A 6.2,6.2 0 1,0 33.8,17.2" + vertical stem
+        const float r = b.getHeight() * 0.30f;
+        const float cx = b.getCentreX();
+        const float cy = b.getCentreY() + 1.0f;
         juce::Path arc;
-        arc.addCentredArc (cx, cy + 0.5f * uiScale, r, r, 0.0f,
-                           0.55f, juce::MathConstants<float>::twoPi - 0.55f, true);
-        g.strokePath (arc, juce::PathStrokeType (1.7f * uiScale, juce::PathStrokeType::curved,
+        arc.addCentredArc (cx, cy, r, r, 0.0f, 0.48f, juce::MathConstants<float>::twoPi - 0.48f, true);
+        g.strokePath (arc, juce::PathStrokeType (1.35f, juce::PathStrokeType::curved,
                                                  juce::PathStrokeType::rounded));
-        g.drawLine (cx, cy - 6.5f * uiScale, cx, cy - 1.0f * uiScale, 1.7f * uiScale);
+        g.drawLine (cx, cy - r - 2.2f, cx, cy - 0.5f, 1.35f);
     }
     else if (kind == Kind::Menu)
     {
+        // SVG hamburger: three short horizontal strokes
         for (int i = -1; i <= 1; ++i)
         {
-            const float y = cy + (float) i * 4.0f * uiScale;
-            g.drawLine (cx - 6.0f * uiScale, y, cx + 6.0f * uiScale, y, 1.5f * uiScale);
+            const float y = b.getCentreY() + (float) i * 5.0f;
+            g.drawLine (b.getX() + 5.0f, y, b.getRight() - 5.0f, y, 1.35f);
         }
     }
-    else // Heart
+    else // Heart (favourite) - SVG small heart path
     {
         juce::Path heart;
-        heart.startNewSubPath (cx, cy + 5.2f * uiScale);
-        heart.cubicTo (cx - 7.5f * uiScale, cy + 0.8f * uiScale,
-                       cx - 6.5f * uiScale, cy - 5.5f * uiScale,
-                       cx, cy - 2.2f * uiScale);
-        heart.cubicTo (cx + 6.5f * uiScale, cy - 5.5f * uiScale,
-                       cx + 7.5f * uiScale, cy + 0.8f * uiScale,
-                       cx, cy + 5.2f * uiScale);
+        const float cx = b.getCentreX();
+        const float cy = b.getCentreY();
+        heart.startNewSubPath (cx, cy + 5.2f);
+        heart.cubicTo (cx - 7.5f, cy + 0.8f, cx - 6.5f, cy - 5.5f, cx, cy - 2.2f);
+        heart.cubicTo (cx + 6.5f, cy - 5.5f, cx + 7.5f, cy + 0.8f, cx, cy + 5.2f);
         heart.closeSubPath();
 
         if (active)
+        {
+            g.setColour (snap::flPoint);
             g.fillPath (heart);
+        }
         else
-            g.strokePath (heart, juce::PathStrokeType (1.35f * uiScale,
-                                                       juce::PathStrokeType::curved,
+            g.strokePath (heart, juce::PathStrokeType (1.35f, juce::PathStrokeType::curved,
                                                        juce::PathStrokeType::rounded));
     }
 }
@@ -89,10 +77,14 @@ PluginHeaderComponent::PluginHeaderComponent (WaveLensProcessor& processor)
 
     prevPresetBtn.setTooltip ("Previous preset");
     prevPresetBtn.onClick = [this] { stepPreset (-1); };
+    prevPresetBtn.getProperties().set ("isArrow", true);
+    prevPresetBtn.setColour (juce::TextButton::textColourOffId, ui::kInk);
     addAndMakeVisible (prevPresetBtn);
 
     nextPresetBtn.setTooltip ("Next preset");
     nextPresetBtn.onClick = [this] { stepPreset (1); };
+    nextPresetBtn.getProperties().set ("isArrow", true);
+    nextPresetBtn.setColour (juce::TextButton::textColourOffId, ui::kInk);
     addAndMakeVisible (nextPresetBtn);
 
     resetBtn.setTooltip ("Reset scope view and zoom (samples and parameters are untouched)");
@@ -121,6 +113,7 @@ PluginHeaderComponent::PluginHeaderComponent (WaveLensProcessor& processor)
     }, 1);
     presetBox.setSelectedId (1, juce::dontSendNotification);
     presetBox.setTooltip ("Select factory parameter preset (preserves loaded samples)");
+    presetBox.setJustificationType (juce::Justification::centredLeft);
     presetBox.onChange = [this]
     {
         const int idx = presetBox.getSelectedItemIndex();
@@ -132,6 +125,12 @@ PluginHeaderComponent::PluginHeaderComponent (WaveLensProcessor& processor)
     };
     addAndMakeVisible (presetBox);
     favBtn.setToggleState (favouritePresets[0], juce::dontSendNotification);
+
+    // The SVG header keeps RESET/BPM controls hidden inside the menu; keep
+    // them as functional but invisible overlays so behaviour is unchanged.
+    resetBtn.setVisible (false);
+    bpmDownBtn.setVisible (false);
+    bpmUpBtn.setVisible (false);
 }
 
 void PluginHeaderComponent::setBpm (double nextBpm)
@@ -177,6 +176,7 @@ void PluginHeaderComponent::applyPreset (int presetIndex)
                 setParam (ids::layerHighPass (l), 20.0f);
                 setParam (ids::layerLowPass (l), 20000.0f);
                 setParam (ids::layerReverse (l), 0.0f);
+                setParam (ids::layerPolarity (l), 0.0f);
                 setParam (ids::layerPogo (l), 0.0f);
                 setParam (ids::layerEnvEnabled (l), 0.0f);
                 setParam (ids::layerTrimStart (l), 0.0f);
@@ -348,59 +348,203 @@ void PluginHeaderComponent::openMainMenu()
 void PluginHeaderComponent::paint (juce::Graphics& g)
 {
     const auto bounds = getLocalBounds().toFloat();
-    g.setColour (ui::kHeaderBg);
+    // SVG [01]: header shares the plugin background #110e16, no border line
+    g.setColour (ui::kMainBg);
     g.fillRect (bounds);
-    g.setColour (ui::kBorder);
-    g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
 
-    // Centered WAVESTACK wordmark, matching the supplied coloured SVG identity.
-    g.setGradientFill (juce::ColourGradient (
-        juce::Colour::fromRGB (0xa8, 0x88, 0xeb), 0.0f, 0.0f,
-        juce::Colour::fromRGB (0x8b, 0x9c, 0xf6), (float) getWidth(), 0.0f, false));
-    const float uiScale = (float) getWidth() / 800.0f;
-    g.setFont (juce::Font (19.0f * uiScale, juce::Font::bold));
-    g.drawText ("W A V E S T A C K",
-                getLocalBounds(), juce::Justification::centred);
+    // ---- WAVESTACK wordmark: hand-drawn letters from the SVG paths, filled
+    // with the horizontal a888eb -> 9e92f2 -> 8b9cf6 logo gradient.
+    // SVG logo box is 226x22 at (287,11) on an 800px canvas -> centred 28%.
+    const float logoW = getWidth() * 0.2825f;
+    const float logoH = getHeight() * 0.5f;
+    const float logoX = (getWidth() - logoW) * 0.5f;
+    const float logoY = (getHeight() - logoH) * 0.5f;
 
-    // Compact BPM readout between the - / + buttons
-    if (! bpmValueBounds.isEmpty())
+    // The SVG letters span x=291..509 (218 units of the 226-wide box) and
+    // y=14..30 (16 units of the 22 box). Scale those unit coordinates.
+    const float sx = logoW / 226.0f;
+    const float sy = logoH / 22.0f;
+    const auto map = [&] (float x, float y)
     {
-        g.setColour (ui::kMainText);
-        g.setFont (juce::Font (11.0f * uiScale, juce::Font::bold));
-        g.drawText (juce::String ((int) currentBpm) + " BPM",
-                    bpmValueBounds, juce::Justification::centred);
-    }
+        return juce::Point<float> (logoX + (x - 287.0f) * sx,
+                                   logoY + (y - 11.0f) * sy);
+    };
 
+    juce::Path letter;
+
+    // W  (291..317, 14..30)
+    letter.startNewSubPath (map (291, 14));
+    letter.lineTo (map (296, 14));
+    letter.lineTo (map (299.2f, 24));
+    letter.lineTo (map (302.2f, 14));
+    letter.lineTo (map (305.8f, 14));
+    letter.lineTo (map (308.8f, 24));
+    letter.lineTo (map (312, 14));
+    letter.lineTo (map (317, 14));
+    letter.lineTo (map (312, 30));
+    letter.lineTo (map (307.5f, 30));
+    letter.lineTo (map (304, 19.8f));
+    letter.lineTo (map (300.5f, 30));
+    letter.lineTo (map (296, 30));
+    letter.closeSubPath();
+
+    // A  (321..341)
+    letter.startNewSubPath (map (321, 30));
+    letter.lineTo (map (326.5f, 14));
+    letter.lineTo (map (335.5f, 14));
+    letter.lineTo (map (341, 30));
+    letter.lineTo (map (336, 30));
+    letter.lineTo (map (334.7f, 26.2f));
+    letter.lineTo (map (327.3f, 26.2f));
+    letter.lineTo (map (326, 30));
+    letter.closeSubPath();
+    letter.startNewSubPath (map (328.4f, 22.8f));
+    letter.lineTo (map (333.6f, 22.8f));
+    letter.lineTo (map (331.9f, 17.4f));
+    letter.lineTo (map (330.1f, 17.4f));
+    letter.closeSubPath();
+
+    // V  (345..365)
+    letter.startNewSubPath (map (345, 14));
+    letter.lineTo (map (350, 14));
+    letter.lineTo (map (355, 25.6f));
+    letter.lineTo (map (360, 14));
+    letter.lineTo (map (365, 14));
+    letter.lineTo (map (358.8f, 30));
+    letter.lineTo (map (351.2f, 30));
+    letter.closeSubPath();
+
+    // E  (369..389)
+    letter.startNewSubPath (map (389, 17.5f));
+    letter.lineTo (map (374.2f, 17.5f));
+    letter.lineTo (map (374.2f, 20.3f));
+    letter.lineTo (map (386.5f, 20.3f));
+    letter.lineTo (map (386.5f, 23.7f));
+    letter.lineTo (map (374.2f, 23.7f));
+    letter.lineTo (map (374.2f, 26.5f));
+    letter.lineTo (map (389, 26.5f));
+    letter.lineTo (map (389, 30));
+    letter.lineTo (map (372, 30));
+    letter.quadraticTo (map (369, 30), map (369, 27));
+    letter.lineTo (map (369, 17));
+    letter.quadraticTo (map (369, 14), map (372, 14));
+    letter.lineTo (map (389, 14));
+    letter.closeSubPath();
+
+    // S  (393..413)
+    letter.startNewSubPath (map (413, 17.5f));
+    letter.lineTo (map (398, 17.5f));
+    letter.lineTo (map (398, 20.2f));
+    letter.lineTo (map (410, 20.2f));
+    letter.quadraticTo (map (413, 20.2f), map (413, 23));
+    letter.lineTo (map (413, 27));
+    letter.quadraticTo (map (413, 30), map (410, 30));
+    letter.lineTo (map (393, 30));
+    letter.lineTo (map (393, 26.5f));
+    letter.lineTo (map (408, 26.5f));
+    letter.lineTo (map (408, 23.8f));
+    letter.lineTo (map (396, 23.8f));
+    letter.quadraticTo (map (393, 23.8f), map (393, 21));
+    letter.lineTo (map (393, 17));
+    letter.quadraticTo (map (393, 14), map (396, 14));
+    letter.lineTo (map (413, 14));
+    letter.closeSubPath();
+
+    // T  (417..437)
+    letter.startNewSubPath (map (417, 14));
+    letter.lineTo (map (437, 14));
+    letter.lineTo (map (437, 17.6f));
+    letter.lineTo (map (429.6f, 17.6f));
+    letter.lineTo (map (429.6f, 30));
+    letter.lineTo (map (424.4f, 30));
+    letter.lineTo (map (424.4f, 17.6f));
+    letter.lineTo (map (417, 17.6f));
+    letter.closeSubPath();
+
+    // A2 (441..461)
+    letter.startNewSubPath (map (441, 30));
+    letter.lineTo (map (446.5f, 14));
+    letter.lineTo (map (455.5f, 14));
+    letter.lineTo (map (461, 30));
+    letter.lineTo (map (456, 30));
+    letter.lineTo (map (454.7f, 26.2f));
+    letter.lineTo (map (447.3f, 26.2f));
+    letter.lineTo (map (446, 30));
+    letter.closeSubPath();
+    letter.startNewSubPath (map (448.4f, 22.8f));
+    letter.lineTo (map (453.6f, 22.8f));
+    letter.lineTo (map (451.9f, 17.4f));
+    letter.lineTo (map (450.1f, 17.4f));
+    letter.closeSubPath();
+
+    // C  (465..485)
+    letter.startNewSubPath (map (485, 17.6f));
+    letter.lineTo (map (470.2f, 17.6f));
+    letter.lineTo (map (470.2f, 26.4f));
+    letter.lineTo (map (485, 26.4f));
+    letter.lineTo (map (485, 30));
+    letter.lineTo (map (468, 30));
+    letter.quadraticTo (map (465, 30), map (465, 27));
+    letter.lineTo (map (465, 17));
+    letter.quadraticTo (map (465, 14), map (468, 14));
+    letter.lineTo (map (485, 14));
+    letter.closeSubPath();
+
+    // K  (489..509)
+    letter.startNewSubPath (map (489, 30));
+    letter.lineTo (map (489, 14));
+    letter.lineTo (map (494.2f, 14));
+    letter.lineTo (map (494.2f, 20.5f));
+    letter.lineTo (map (503.2f, 14));
+    letter.lineTo (map (509, 14));
+    letter.lineTo (map (498.6f, 21.8f));
+    letter.lineTo (map (509.4f, 30));
+    letter.lineTo (map (503.2f, 30));
+    letter.lineTo (map (494.2f, 23));
+    letter.lineTo (map (494.2f, 30));
+    letter.closeSubPath();
+
+    // Fill with the SVG "logo-gradient": a888eb -> 9e92f2 -> 8b9cf6 across x
+    juce::ColourGradient gradient (juce::Colour (0xffa888eb), logoX, logoY,
+                                    juce::Colour (0xff8b9cf6), logoX + logoW, logoY, false);
+    gradient.addColour (0.5, juce::Colour (0xff9e92f2));
+    g.setGradientFill (gradient);
+    g.fillPath (letter);
+
+    // BYPASSED warning next to the power button when the plugin is off
     if (! powerBtn.getToggleState())
     {
-        g.setColour (ui::kWarningAmber.withAlpha (0.85f));
-        g.setFont (juce::Font (10.0f * uiScale, juce::Font::bold));
-        const int labelX = juce::jmax (resetBtn.getRight() + juce::roundToInt (8.0f * uiScale),
-                                       menuBtn.getRight() + juce::roundToInt (8.0f * uiScale));
-        g.drawFittedText ("BYPASSED",
-                          juce::Rectangle<int> (labelX, 0,
-                                                juce::jmax (1, getWidth() - labelX - juce::roundToInt (8.0f * uiScale)),
-                                                getHeight()),
-                          juce::Justification::centredLeft, 1);
+        g.setColour (ui::kWarningAmber);
+        g.setFont (juce::Font (10.0f, juce::Font::bold));
+        g.drawText ("BYPASSED",
+                    juce::jmax (menuBtn.getRight() + 8, 0), 0, 68, getHeight(),
+                    juce::Justification::centredLeft);
     }
 }
 
 void PluginHeaderComponent::resized()
 {
+    // SVG [01] geometry on an 800x44 header (scaled to width):
+    //   power 22x20 @19, menu 24x20 @49
+    //   logo centred
+    //   heart @593, preset text @610, prev arrow @751, next arrow @776
+    // The header band scales y by height/44 (56px at 760), so x and y use
+    // separate factors - uniform scaling pushed the icons ~8px too low.
     const float sx = (float) getWidth() / 800.0f;
     const float sy = (float) getHeight() / 44.0f;
-    auto px = [sx] (float v) { return juce::roundToInt (v * sx); };
-    auto py = [sy] (float v) { return juce::roundToInt (v * sy); };
+    auto at = [sx, sy] (float x, float y, float w, float h)
+    {
+        return juce::Rectangle<int> (juce::roundToInt (x * sx), juce::roundToInt (y * sy),
+                                     juce::roundToInt (w * sx), juce::roundToInt (h * sy));
+    };
 
-    powerBtn.setBounds (px (19), py (12), px (22), py (20));
-    menuBtn.setBounds (px (49), py (12), px (24), py (20));
-    resetBtn.setBounds ({});
-    bpmDownBtn.setBounds ({});
-    bpmUpBtn.setBounds ({});
-    bpmValueBounds = {};
+    powerBtn.setBounds (at (19, 12, 22, 20));
+    menuBtn.setBounds (at (49, 12, 24, 20));
 
-    favBtn.setBounds (px (582), py (10), px (24), py (24));
-    presetBox.setBounds (px (610), py (8), px (132), py (28));
-    prevPresetBtn.setBounds (px (748), py (10), px (20), py (24));
-    nextPresetBtn.setBounds (px (776), py (10), px (20), py (24));
+    // Right cluster: next / prev arrows flank the preset name + heart
+    // (SVG chevrons centred at y=22, heart cy=22.85, name baseline y=26).
+    nextPresetBtn.setBounds (at (770, 15, 20, 14));
+    prevPresetBtn.setBounds (at (748, 15, 20, 14));
+    presetBox.setBounds (at (604, 10, 140, 24));
+    favBtn.setBounds (at (585, 12, 22, 20));
 }

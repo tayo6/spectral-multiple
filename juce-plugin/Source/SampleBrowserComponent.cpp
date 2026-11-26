@@ -1,5 +1,7 @@
 #include "SampleBrowserComponent.h"
 
+namespace ui = wavelens::ui;
+
 SampleBrowserComponent::SampleBrowserComponent (WaveLensProcessor& processor)
     : proc (processor)
 {
@@ -9,6 +11,8 @@ SampleBrowserComponent::SampleBrowserComponent (WaveLensProcessor& processor)
         if (onStepSlotRequested)
             onStepSlotRequested (-1);
     };
+    prevBtn.getProperties().set ("isArrow", true);
+    prevBtn.setColour (juce::TextButton::textColourOffId, ui::kInk);
     addAndMakeVisible (prevBtn);
 
     nextBtn.setTooltip ("Select next sample slot in this section");
@@ -17,10 +21,13 @@ SampleBrowserComponent::SampleBrowserComponent (WaveLensProcessor& processor)
         if (onStepSlotRequested)
             onStepSlotRequested (1);
     };
+    nextBtn.getProperties().set ("isArrow", true);
+    nextBtn.setColour (juce::TextButton::textColourOffId, ui::kInk);
     addAndMakeVisible (nextBtn);
 
     selectorBtn.setTooltip ("Click to browse or manage audio sample");
     selectorBtn.onClick = [this] { openBrowserMenu(); };
+    selectorBtn.getProperties().set ("isTransparentText", true);
     addAndMakeVisible (selectorBtn);
 
     refreshDisplay();
@@ -34,8 +41,6 @@ void SampleBrowserComponent::setLayer (int layerIndex) noexcept
 
 void SampleBrowserComponent::refreshDisplay()
 {
-    namespace ui = wavelens::ui;
-
     const auto name = proc.getSampleName (currentLayer);
     const bool missing = proc.isLayerSampleMissing (currentLayer);
     const auto col = ui::layerColour (currentLayer);
@@ -63,17 +68,19 @@ void SampleBrowserComponent::refreshDisplay()
 void SampleBrowserComponent::openBrowserMenu()
 {
     juce::PopupMenu menu;
-    const auto layerName = wavelens::ui::layerFullName (currentLayer);
+    const auto layerName = ui::layerFullName (currentLayer);
     const auto sampleName = proc.getSampleName (currentLayer);
     const bool hasSample = sampleName.isNotEmpty();
 
     menu.addSectionHeader (layerName.toUpperCase() + " SAMPLE");
     menu.addItem (1, hasSample ? "Replace Audio File..." : "Load Audio File...");
     menu.addItem (2, "Clear Sample", hasSample || proc.isLayerSampleMissing (currentLayer));
-    menu.addItem (4, "Preview Sample", hasSample);
 
     const bool reversed = proc.apvts.getRawParameterValue (ids::layerReverse (currentLayer))->load() > 0.5f;
     menu.addItem (3, "Reverse Sample", true, reversed);
+
+    const bool inverted = proc.apvts.getRawParameterValue (ids::layerPolarity (currentLayer))->load() > 0.5f;
+    menu.addItem (4, "Invert Polarity", true, inverted);
 
     menu.addSeparator();
     menu.addSectionHeader ("LOADED LAYERS");
@@ -82,7 +89,7 @@ void SampleBrowserComponent::openBrowserMenu()
     {
         const int idx = base + slot;
         const auto sName = proc.getSampleName (idx);
-        const auto label = wavelens::ui::layerFullName (idx) + ": "
+        const auto label = ui::layerFullName (idx) + ": "
                          + (sName.isNotEmpty() ? sName : juce::String ("Empty"));
         menu.addItem (10 + slot, label, true, idx == currentLayer);
     }
@@ -104,16 +111,23 @@ void SampleBrowserComponent::openBrowserMenu()
             safeThis->onBrowseRequested();
         else if (result == 2 && safeThis->onClearRequested)
             safeThis->onClearRequested();
-        else if (result == 4)
-        {
-            safeThis->proc.requestPreview (safeThis->currentLayer);
-        }
         else if (result == 3)
         {
             if (auto* p = dynamic_cast<juce::RangedAudioParameter*> (
                     safeThis->proc.apvts.getParameter (ids::layerReverse (safeThis->currentLayer))))
             {
                 const bool cur = safeThis->proc.apvts.getRawParameterValue (ids::layerReverse (safeThis->currentLayer))->load() > 0.5f;
+                p->beginChangeGesture();
+                p->setValueNotifyingHost (p->convertTo0to1 (cur ? 0.0f : 1.0f));
+                p->endChangeGesture();
+            }
+        }
+        else if (result == 4)
+        {
+            if (auto* p = dynamic_cast<juce::RangedAudioParameter*> (
+                    safeThis->proc.apvts.getParameter (ids::layerPolarity (safeThis->currentLayer))))
+            {
+                const bool cur = safeThis->proc.apvts.getRawParameterValue (ids::layerPolarity (safeThis->currentLayer))->load() > 0.5f;
                 p->beginChangeGesture();
                 p->setValueNotifyingHost (p->convertTo0to1 (cur ? 0.0f : 1.0f));
                 p->endChangeGesture();
@@ -129,20 +143,21 @@ void SampleBrowserComponent::openBrowserMenu()
     });
 }
 
-void SampleBrowserComponent::paint (juce::Graphics& g)
+void SampleBrowserComponent::paint (juce::Graphics&)
 {
-    juce::ignoreUnused (g);
 }
 
 void SampleBrowserComponent::resized()
 {
-    // The sample title leads the row; both slot arrows sit at the right edge.
-    const float uiScale = (float) getHeight() / 20.0f;
-    auto r = getLocalBounds().reduced (juce::roundToInt (3.0f * uiScale), 0);
-    const int arrowW = juce::jmax (1, juce::roundToInt (22.0f * uiScale));
-    nextBtn.setBounds (r.removeFromRight (arrowW));
-    r.removeFromRight (juce::roundToInt (2.0f * uiScale));
-    prevBtn.setBounds (r.removeFromRight (arrowW));
-    r.removeFromRight (juce::roundToInt (3.0f * uiScale));
+    // SVG sample-name row: name on the left (x=28 of the 226 box), prev and
+    // next chevrons as a tight pair, then a clear zone reserved for the
+    // ENV/REV pills that LayerEnvelopeComponent overlays on this row
+    // (pills span x 167..239, so chevrons end just left of ENV at x 163).
+    auto r = getLocalBounds();
+    r.removeFromRight (79);
+    nextBtn.setBounds (r.removeFromRight (22));
+    r.removeFromRight (6);
+    prevBtn.setBounds (r.removeFromRight (22));
+    r.removeFromRight (4);
     selectorBtn.setBounds (r);
 }
