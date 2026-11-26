@@ -7,7 +7,7 @@
 #include <memory>
 
 /**
-    Horizontal Trigger Settings drawer revealed by the separate TRIG control in WaveformControlBar.
+    Optional Trigger Settings drawer opened from the header menu.
 */
 class TriggerPanelComponent final : public juce::Component, private juce::Timer
 {
