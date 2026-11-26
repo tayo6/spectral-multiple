@@ -129,10 +129,13 @@ void TriggerPanelComponent::timerCallback()
 void TriggerPanelComponent::paint (juce::Graphics& g)
 {
     auto b = getLocalBounds().toFloat();
+    // Only the lower 30 px strip has a toolbar background. The COLLAPSE
+    // trapezoid alone rises into the bottom 12 px of the visualizer.
+    b.removeFromTop ((float) juce::roundToInt ((float) getHeight() * 12.0f / 42.0f));
     g.setColour (ui::kPanelBg);
-    g.fillRoundedRectangle (b, 4.0f);
+    g.fillRect (b);
     g.setColour (ui::kBorder);
-    g.drawRoundedRectangle (b.reduced (0.5f), 4.0f, 1.0f);
+    g.drawRect (b.reduced (0.5f), 1.0f);
 
     g.setFont (juce::Font (9.5f, juce::Font::bold));
     g.setColour (ui::kSecondaryText);
@@ -216,7 +219,7 @@ void WaveformControlBar::MagnifierButton::paintButton (juce::Graphics& g, bool h
     g.drawLine (iconCx + 2.2f, iconCy + 2.2f, iconCx + 5.6f, iconCy + 5.6f, 1.4f);
 
     g.setFont (juce::Font (10.0f, juce::Font::bold));
-    g.drawText ("DETAIL", b.withTrimmedRight (20.0f), juce::Justification::centred);
+    g.drawText ("Detail", b.withTrimmedRight (20.0f), juce::Justification::centred);
 }
 
 //==============================================================================
@@ -385,10 +388,9 @@ void WaveformControlBar::paint (juce::Graphics& g)
     g.setColour (ui::kBorder);
     g.drawRoundedRectangle (b.reduced (0.5f), 4.0f, 1.0f);
 
-    const float sx = (float) getWidth() / 800.0f;
     const float sy = (float) getHeight() / 42.0f;
     const float cx = (float) limiterBtn.getX() + (float) limiterBtn.getWidth() * 0.5f;
-    const float cy = (float) getHeight() * 0.5f;
+    const float cy = (float) limiterBtn.getCentreY();
     const float radius = 5.0f * sy;
     juce::Path powerArc;
     powerArc.addCentredArc (cx, cy + 1.0f * sy, radius, radius, 0.0f,
@@ -399,12 +401,11 @@ void WaveformControlBar::paint (juce::Graphics& g)
 
     g.setFont (juce::Font (10.0f * sy, juce::Font::bold));
     g.setColour (limiterBtn.getToggleState() ? ui::kMainText : ui::kSecondaryText);
-    g.drawText ("Limiter", juce::Rectangle<int> (juce::roundToInt (37.0f * sx), 0,
-                 juce::roundToInt (39.0f * sx), getHeight()), juce::Justification::centredLeft);
+    g.drawText ("Limiter", 37, limiterBtn.getY(), 39, limiterBtn.getHeight(),
+                juce::Justification::centredLeft);
     g.setFont (juce::Font (10.0f * sy, juce::Font::bold));
     g.drawText (formatPeakDb (proc.peakNow.load (relaxed)),
-                juce::Rectangle<int> (juce::roundToInt (78.0f * sx), 0,
-                                       juce::roundToInt (52.0f * sx), getHeight()),
+                78, limiterBtn.getY(), 52, limiterBtn.getHeight(),
                 juce::Justification::centredLeft);
 }
 
@@ -421,11 +422,13 @@ void WaveformControlBar::resized()
 
     collapseTabBtn.setBounds (px (338), 0, px (124), getHeight());
 
-    detailBtn.setBounds (px (568), py (9), px (62), py (25));
-    zoomOutBtn.setBounds (px (646), py (9), px (20), py (25));
-    zoomLevelBtn.setBounds (px (668), py (9), px (42), py (25));
-    zoomInBtn.setBounds (px (712), py (9), px (18), py (25));
-    outputBtn.setBounds (px (738), py (9), px (50), py (25));
+    detailBtn.setBounds (px (568), py (12), px (62), py (25));
+    zoomOutBtn.setButtonText ("Zoom");
+    zoomOutBtn.setBounds (px (646), py (12), px (32), py (25));
+    zoomLevelBtn.setBounds (px (680), py (12), px (34), py (25));
+    zoomInBtn.setBounds (px (716), py (12), px (18), py (25));
+    outputBtn.setButtonText ("Output");
+    outputBtn.setBounds (px (738), py (12), px (50), py (25));
 
     triggerSettingsBtn.setBounds ({});
     fireTriggerBtn.setBounds ({});
