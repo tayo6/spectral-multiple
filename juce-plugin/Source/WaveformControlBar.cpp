@@ -195,6 +195,28 @@ void TriggerPanelComponent::resized()
 }
 
 //==============================================================================
+void WaveformControlBar::LimiterButton::paintButton (juce::Graphics& g,
+                                                     bool highlighted,
+                                                     bool down)
+{
+    const auto b = getLocalBounds().toFloat();
+    const bool active = getToggleState();
+    auto stroke = active ? ui::kMainText : ui::kSecondaryText;
+    if (down) stroke = stroke.brighter (0.25f);
+    else if (highlighted) stroke = stroke.brighter (0.12f);
+
+    const float cx = b.getCentreX();
+    const float cy = b.getCentreY();
+    const float radius = juce::jmin (6.0f, b.getWidth() * 0.38f);
+    juce::Path arc;
+    arc.addCentredArc (cx, cy + 1.0f, radius, radius, 0.0f,
+                       0.48f, juce::MathConstants<float>::twoPi - 0.48f, true);
+    g.setColour (stroke);
+    g.strokePath (arc, juce::PathStrokeType (1.4f));
+    g.drawLine (cx, cy - 7.0f, cx, cy - 0.5f, 1.4f);
+}
+
+//==============================================================================
 void WaveformControlBar::MagnifierButton::paintButton (juce::Graphics& g, bool highlighted, bool down)
 {
     auto b = getLocalBounds().toFloat().reduced (0.5f);
@@ -226,9 +248,7 @@ void WaveformControlBar::MagnifierButton::paintButton (juce::Graphics& g, bool h
 WaveformControlBar::WaveformControlBar (WaveLensProcessor& processor)
     : proc (processor)
 {
-    limiterBtn.setClickingTogglesState (true);
     limiterBtn.setToggleState (true, juce::dontSendNotification);
-    limiterBtn.setTooltip ("Limiter protection display toggle");
     limiterBtn.getProperties().set ("accentColour", (juce::int64) ui::kPurpleAccent.getARGB());
     addAndMakeVisible (limiterBtn);
 
@@ -389,16 +409,6 @@ void WaveformControlBar::paint (juce::Graphics& g)
     g.drawRoundedRectangle (b.reduced (0.5f), 4.0f, 1.0f);
 
     const float sy = (float) getHeight() / 42.0f;
-    const float cx = (float) limiterBtn.getX() + (float) limiterBtn.getWidth() * 0.5f;
-    const float cy = (float) limiterBtn.getCentreY();
-    const float radius = 5.0f * sy;
-    juce::Path powerArc;
-    powerArc.addCentredArc (cx, cy + 1.0f * sy, radius, radius, 0.0f,
-                            0.48f, juce::MathConstants<float>::twoPi - 0.48f, true);
-    g.setColour (limiterBtn.getToggleState() ? ui::kMainText : ui::kSecondaryText);
-    g.strokePath (powerArc, juce::PathStrokeType (1.4f * sy));
-    g.drawLine (cx, cy - 7.0f * sy, cx, cy - 0.5f * sy, 1.4f * sy);
-
     g.setFont (juce::Font (10.0f * sy, juce::Font::bold));
     g.setColour (limiterBtn.getToggleState() ? ui::kMainText : ui::kSecondaryText);
     g.drawText ("Limiter", 37, limiterBtn.getY(), 39, limiterBtn.getHeight(),
@@ -416,7 +426,6 @@ void WaveformControlBar::resized()
     auto px = [sx] (float v) { return juce::roundToInt (v * sx); };
     auto py = [sy] (float v) { return juce::roundToInt (v * sy); };
 
-    limiterBtn.setButtonText ({});
     limiterBtn.setBounds (px (18), py (14), px (16), py (22));
     preLeadSlider.setBounds ({});
 
