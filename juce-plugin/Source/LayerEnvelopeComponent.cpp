@@ -325,9 +325,8 @@ LayerEnvelopeComponent::LayerEnvelopeComponent (WaveLensProcessor& p,
         repaint();
     };
 
-    // The compact SVG layout only shows: sample box, ENV + reverse, zoom-less
-    // mini waveform, and the parameter card deck. Everything else stays
-    // functional but hidden (context menus / sample menu still reach them).
+    // Keep the SVG-style compact control deck while exposing zoom and direct
+    // numeric entry for parameters that are awkward to trim by dragging.
     attackCurveBox.setVisible (false);
     decayCurveBox.setVisible (false);
     releaseCurveBox.setVisible (false);
@@ -416,7 +415,6 @@ void LayerEnvelopeComponent::commitNumericEditor (juce::TextEditor& editor,
         parameter->endChangeGesture();
     }
 
-    editor.giveAwayKeyboardFocus();
     repaint();
 }
 
@@ -682,29 +680,46 @@ void LayerEnvelopeComponent::paint (juce::Graphics& g)
 
         if (preview.loaded)
         {
-            // Filled waveform envelope + stroke trace (mini-blue/purple-grad)
-            const float amplitude = plot.getHeight() * 0.44f;
-            const int cols = juce::jmax (1, (int) std::floor (plot.getWidth()));
-            juce::Path fillPath;
-            fillPath.startNewSubPath (plot.getX(), centre);
-            for (int col = 0; col < cols; ++col)
-                fillPath.lineTo (plot.getX() + (float) col + 0.5f, centre - columnPeak (preview, reversed, viewStartNorm, vpSpan, col, cols, true) * amplitude);
-            for (int col = cols - 1; col >= 0; --col)
-                fillPath.lineTo (plot.getX() + (float) col + 0.5f, centre - columnPeak (preview, reversed, viewStartNorm, vpSpan, col, cols, false) * amplitude);
-            fillPath.closeSubPath();
-            g.setColour (flCurveColour.withAlpha (layer < 3 ? 0.35f : 0.30f));
-            g.fillPath (fillPath);
+            // Build the waveform as two smoothed peak contours. This keeps
+            // transient detail but removes the row of hard vertical spikes.
+            const float amplitude = plot.getHeight() * 0.46f;
+            const int cols = juce::jmax (2, (int) std::floor (plot.getWidth()));
+            std::vector<juce::Point<float>> upper;
+            std::vector<juce::Point<float>> lower;
+            std::vector<juce::Point<float>> lowerReversed;
+            upper.reserve ((size_t) cols);
+            lower.reserve ((size_t) cols);
+            lowerReversed.reserve ((size_t) cols);
 
-            g.setColour (flCurveColour);
             for (int col = 0; col < cols; ++col)
             {
+                const float x = plot.getX() + (float) col / (float) (cols - 1) * plot.getWidth();
                 const float maxV = columnPeak (preview, reversed, viewStartNorm, vpSpan, col, cols, true);
                 const float minV = columnPeak (preview, reversed, viewStartNorm, vpSpan, col, cols, false);
-                const float x = plot.getX() + (float) col + 0.5f;
-                const float top = centre - maxV * amplitude;
-                const float bottom = juce::jmax (top + 1.0f, centre - minV * amplitude);
-                g.drawVerticalLine (juce::roundToInt (x), top, bottom);
+                upper.emplace_back (x, centre - maxV * amplitude);
+                lower.emplace_back (x, centre - minV * amplitude);
             }
+            for (auto point = lower.rbegin(); point != lower.rend(); ++point)
+                lowerReversed.push_back (*point);
+
+            juce::Path fillPath;
+            fillPath.startNewSubPath (upper.front().x, upper.front().y);
+            appendSmoothPath (fillPath, upper, false);
+            fillPath.lineTo (lowerReversed.front().x, lowerReversed.front().y);
+            appendSmoothPath (fillPath, lowerReversed, false);
+            fillPath.closeSubPath();
+
+            g.setColour (flCurveColour.withAlpha (layer < 3 ? 0.38f : 0.34f));
+            g.fillPath (fillPath);
+
+            juce::Path topContour, bottomContour;
+            appendSmoothPath (topContour, upper, true);
+            appendSmoothPath (bottomContour, lower, true);
+            g.setColour (flCurveColour.withAlpha (0.96f));
+            const juce::PathStrokeType stroke (1.15f, juce::PathStrokeType::curved,
+                                               juce::PathStrokeType::rounded);
+            g.strokePath (topContour, stroke);
+            g.strokePath (bottomContour, stroke);
         }
         else
         {
