@@ -265,6 +265,11 @@ void PluginHeaderComponent::openMainMenu()
     menu.addItem (2, "Reset Scope & Meters");
     menu.addItem (3, "Reset Timeline Zoom (1.0x)");
     menu.addItem (4, "Trigger Settings");
+    juce::PopupMenu editorSizes;
+    editorSizes.addItem (30, "Extra Large — SVG reference (800 × 600)", true, currentEditorSizePreset == 0);
+    editorSizes.addItem (31, "Large — Fit available screen", true, currentEditorSizePreset == 1);
+    editorSizes.addItem (32, "Normal — 1024 × 768", true, currentEditorSizePreset == 2);
+    menu.addSubMenu ("Editor Size", editorSizes);
     menu.addSeparator();
     menu.addSectionHeader ("TIMELINE TEMPO (" + juce::String ((int) currentBpm) + " BPM)");
     menu.addItem (10, "Set 90 BPM");
@@ -313,6 +318,18 @@ void PluginHeaderComponent::openMainMenu()
                 if (safeThis->onSampleStateChanged)
                     safeThis->onSampleStateChanged();
                 break;
+            case 30:
+                safeThis->setEditorSizePreset (0);
+                if (safeThis->onEditorSizeSelected) safeThis->onEditorSizeSelected (0);
+                break;
+            case 31:
+                safeThis->setEditorSizePreset (1);
+                if (safeThis->onEditorSizeSelected) safeThis->onEditorSizeSelected (1);
+                break;
+            case 32:
+                safeThis->setEditorSizePreset (2);
+                if (safeThis->onEditorSizeSelected) safeThis->onEditorSizeSelected (2);
+                break;
             default:
                 break;
         }
@@ -331,7 +348,8 @@ void PluginHeaderComponent::paint (juce::Graphics& g)
     g.setGradientFill (juce::ColourGradient (
         juce::Colour::fromRGB (0xa8, 0x88, 0xeb), 0.0f, 0.0f,
         juce::Colour::fromRGB (0x8b, 0x9c, 0xf6), (float) getWidth(), 0.0f, false));
-    g.setFont (juce::Font (19.0f, juce::Font::bold));
+    const float uiScale = (float) getWidth() / 800.0f;
+    g.setFont (juce::Font (19.0f * uiScale, juce::Font::bold));
     g.drawText ("W A V E S T A C K",
                 getLocalBounds(), juce::Justification::centred);
 
@@ -339,7 +357,7 @@ void PluginHeaderComponent::paint (juce::Graphics& g)
     if (! bpmValueBounds.isEmpty())
     {
         g.setColour (ui::kMainText);
-        g.setFont (juce::Font (11.0f, juce::Font::bold));
+        g.setFont (juce::Font (11.0f * uiScale, juce::Font::bold));
         g.drawText (juce::String ((int) currentBpm) + " BPM",
                     bpmValueBounds, juce::Justification::centred);
     }
@@ -347,7 +365,7 @@ void PluginHeaderComponent::paint (juce::Graphics& g)
     if (! powerBtn.getToggleState())
     {
         g.setColour (ui::kWarningAmber.withAlpha (0.85f));
-        g.setFont (juce::Font (10.0f, juce::Font::bold));
+        g.setFont (juce::Font (10.0f * uiScale, juce::Font::bold));
         g.drawText ("BYPASSED", juce::jmax (resetBtn.getRight() + 8, menuBtn.getRight() + 8),
                     0, 68, getHeight(), juce::Justification::centredLeft);
     }
