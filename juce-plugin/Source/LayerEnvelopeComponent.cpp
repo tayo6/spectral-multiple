@@ -1102,6 +1102,7 @@ void LayerEnvelopeComponent::resized()
     const int phaseSize = juce::jlimit (12, 16, juce::roundToInt (14.0f * scaleY));
     phaseInvertBtn.setBounds (delaySlider.getRight() - phaseSize - 4,
                               delaySlider.getY() + 2, phaseSize, phaseSize);
+    phaseInvertBtn.toFront (false);
     leftCol.removeFromTop (juce::jlimit (0, leftCol.getHeight(), cardGap));
     widthSlider.setBounds (leftCol.removeFromTop (juce::jlimit (1, leftCol.getHeight(), cardH)));
     leftCol.removeFromTop (juce::jlimit (0, leftCol.getHeight(), cardGap));
