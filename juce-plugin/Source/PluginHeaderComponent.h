@@ -15,9 +15,14 @@ public:
     std::function<void()> onOpenTriggerSettings;
     std::function<void (double newBpm)> onBpmChanged;
     std::function<void()> onSampleStateChanged;
+    std::function<void (int preset)> onEditorSizeSelected;
 
     double getBpm() const noexcept { return currentBpm; }
     void setBpm (double nextBpm);
+    void setEditorSizePreset (int preset) noexcept
+    {
+        currentEditorSizePreset = juce::jlimit (0, 2, preset);
+    }
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -49,6 +54,7 @@ private:
 
     WaveLensProcessor& proc;
     double currentBpm = 120.0;
+    int currentEditorSizePreset = 2;
     std::array<bool, 6> favouritePresets { false, true, false, false, true, false };
 
     IconButton powerBtn { IconButton::Kind::Power, "Bypass / Power toggle" };
