@@ -396,8 +396,8 @@ juce::Rectangle<int> WaveLensEditor::getLargeEditorSize() const
 void WaveLensEditor::updateResizeConstraints()
 {
     const auto largeSize = getLargeEditorSize();
-    const int maxWidth = juce::jlimit (800, 4096, largeSize.getWidth());
-    const int maxHeight = juce::jlimit (600, 3072, largeSize.getHeight());
+    const int maxWidth = juce::jlimit (1024, 4096, largeSize.getWidth());
+    const int maxHeight = juce::jlimit (768, 3072, largeSize.getHeight());
     setResizeLimits (800, 600, maxWidth, maxHeight);
     if (auto* constrainer = getConstrainer())
         constrainer->setFixedAspectRatio (4.0 / 3.0);
