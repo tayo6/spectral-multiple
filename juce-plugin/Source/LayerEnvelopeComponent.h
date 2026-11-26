@@ -2,6 +2,7 @@
 
 #include "PluginProcessor.h"
 #include "SpectralMultipleLookAndFeel.h"
+#include <functional>
 
 /**
     WAVESTACK layer editor for one SNAPBACK (0..2) or TRANSIENT (3..5) layer,
@@ -29,6 +30,9 @@ public:
     void mouseUp (const juce::MouseEvent&) override;
     void mouseDoubleClick (const juce::MouseEvent&) override;
     void mouseWheelMove (const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
+
+    std::function<void (float viewStart, float zoom)> onViewportChanged;
+    void setViewport (float viewStart, float zoom) noexcept;
 
 private:
     enum class Handle
@@ -58,6 +62,7 @@ private:
         float trimX1 = 0.0f;
         float trimW = 1.0f;
         float trimmedDurationMs = 1000.0f;
+        float envelopeDisplayDurationMs = 1000.0f;
         float attackEndX = 0.0f;
         float holdEndX = 0.0f;
         float releaseStartX = 0.0f;
@@ -70,8 +75,13 @@ private:
 
     static constexpr int kBottomReadoutHeight = 24;
 
-    void timerCallback() override { repaint(); }
-    void clampViewport (float nextViewStart, float nextZoom) noexcept;
+    void timerCallback() override;
+    void configureNumericEditor (juce::TextEditor&, const juce::String& tooltip);
+    void commitNumericEditor (juce::TextEditor&, const juce::String& parameterId,
+                              float minimum, float maximum, float displayMultiplier = 1.0f);
+    void refreshNumericEditor (juce::TextEditor&, const juce::String& parameterId,
+                               float displayMultiplier, int decimalPlaces);
+    void clampViewport (float nextViewStart, float nextZoom, bool notify = true) noexcept;
     void zoomAroundNormalized (float anchorNorm, float factor) noexcept;
     void focusViewportAt (float targetNorm, float defaultZoomIfUnzoomed = 4.0f) noexcept;
     void zoomToFitTrim() noexcept;
@@ -120,6 +130,8 @@ private:
     std::atomic<float>* pFadeOut = nullptr;
 
     juce::TextButton reverseBtn, envEnableBtn, phaseBtn;
+    juce::TextEditor attackValueEditor, releaseValueEditor, pitchValueEditor;
+    juce::TextEditor trimStartValueEditor, trimEndValueEditor;
     juce::TextButton focusStartBtn, focusEndBtn, zoomFitBtn, zoomOutBtn, zoomResetBtn, zoomInBtn;
     juce::ComboBox attackCurveBox, decayCurveBox, releaseCurveBox;
     juce::Slider gainSlider, delaySlider, pitchSlider, panSlider, pogoSlider, widthSlider;
