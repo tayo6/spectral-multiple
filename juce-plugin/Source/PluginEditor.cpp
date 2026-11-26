@@ -60,11 +60,11 @@ void LayerPadStripComponent::PadCell::paint (juce::Graphics& g)
 void LayerPadStripComponent::PadCell::resized()
 {
     const float uiScale = (float) getHeight() / 26.0f;
-    auto r = getLocalBounds().reduced (juce::roundToInt (8.0f * uiScale),
-                                       juce::roundToInt (4.0f * uiScale));
+    auto r = getLocalBounds().reduced (juce::roundToInt (5.0f * uiScale),
+                                       juce::roundToInt (5.0f * uiScale));
     const int buttonW = juce::jmax (1, juce::roundToInt (16.0f * uiScale));
     soloButton.setBounds (r.removeFromRight (buttonW));
-    r.removeFromRight (juce::roundToInt (3.0f * uiScale));
+    r.removeFromRight (juce::roundToInt (4.0f * uiScale));
     muteButton.setBounds (r.removeFromRight (buttonW));
     r.removeFromRight (juce::roundToInt (5.0f * uiScale));
     selectButton.setBounds (r);
@@ -98,8 +98,9 @@ void LayerPadStripComponent::paint (juce::Graphics& g)
     g.setColour (ui::kHeaderBg);
     g.fillRect (b);
     g.setColour (ui::kBorder);
+    const float uiScale = (float) getHeight() / 42.0f;
     g.drawHorizontalLine (0, 0.0f, b.getRight());
-    g.drawVerticalLine (getWidth() / 2, 5.0f, b.getBottom() - 5.0f);
+    g.drawVerticalLine (getWidth() / 2, 5.0f * uiScale, b.getBottom() - 5.0f * uiScale);
 }
 
 void LayerPadStripComponent::resized()
