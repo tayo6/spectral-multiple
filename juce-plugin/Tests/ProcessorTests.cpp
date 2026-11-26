@@ -310,9 +310,18 @@ void testProcessorMonitorOversizedBlockAndDisabledBuses (const fs::path& dir)
         segmented[(size_t) i] = 0.85f;
     const auto wav = writeWavFileFloat32 (dir / "segmented_2048.wav", 44100.0, { segmented, segmented });
 
-    // 1. Optional output buses disabled (default WaveLens bus layout: only Master enabled)
+    // 1. Instrument defaults: MIDI works without an audio connection; only Master is enabled.
     {
         WaveLensProcessor proc;
+        check (proc.acceptsMidi(), "Instrument: accepts MIDI note input");
+        check (proc.getTotalNumInputChannels() == 0,
+               "Instrument: optional trigger input is disabled by default");
+        check (proc.getBusCount (false) == WaveLensProcessor::kMaxSignals + 1,
+               "Instrument: Master plus six individual layer output buses are present");
+        auto* triggerInputBus = proc.getBus (true, 0);
+        check (triggerInputBus != nullptr && ! triggerInputBus->isEnabled(),
+               "Instrument: audio trigger input bus defaults to disabled");
+
         for (int b = 1; b < proc.getBusCount (false); ++b)
         {
             auto* bus = proc.getBus (false, b);
@@ -338,6 +347,11 @@ void testProcessorMonitorOversizedBlockAndDisabledBuses (const fs::path& dir)
         midi.addEvent (juce::MidiMessage::noteOn (1, 60, (juce::uint8) 127), 0);
 
         proc.processBlock (buffer, midi);
+
+        auto masterOut = proc.getBusBuffer (buffer, false, 0);
+        check (masterOut.getNumChannels() > 0
+            && std::abs (masterOut.getSample (0, 100) - 0.20f) < 0.02f,
+               "Instrument: MIDI note renders to the Master output with no audio input");
 
         const int filledCols = proc.filled.load();
         check (proc.hasData.load(), "ProcMonitor(DisabledBuses): monitor marked hasData");
