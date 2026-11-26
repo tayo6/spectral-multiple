@@ -271,14 +271,11 @@ void SampleGroupComponent::paint (juce::Graphics& g)
     g.setColour (ui::kBorder);
     g.drawHorizontalLine (headerBounds.getBottom(), (float) headerBounds.getX(), (float) headerBounds.getRight());
 
-    // Left accent marker
-    g.setColour (activeAccent);
-    g.fillRoundedRectangle (hdr.getX() + 6.0f, hdr.getCentreY() - 7.0f, 3.0f, 14.0f, 1.5f);
-
-    // Section heading (bank accent) immediately preceding the three selector circles
+    // Section heading matches the SVG's text anchor at x=38.
     const juce::String title = (group == 0) ? "SNAPBACK" : "TRANSIENT";
+    const float titleScale = (float) getHeight() / 186.0f;
     g.setColour (snap::bankAccentHi (group * 3));
-    g.setFont (juce::Font (13.5f, juce::Font::bold));
+    g.setFont (juce::Font (11.0f * titleScale, juce::Font::bold));
     const float titleScale = (float) getWidth() / 399.0f;
     g.drawText (title,
                 juce::roundToInt (38.0f * titleScale), headerBounds.getY(),
